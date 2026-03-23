@@ -136,36 +136,57 @@ export type Database = {
       sources: {
         Row: {
           active: boolean
+          consecutive_failures: number
           country_code: string | null
+          crawl_delay_ms: number
           created_at: string
+          domain: string | null
           health_status: string
           id: string
           last_fetched_at: string | null
+          last_success_at: string | null
           name: string
+          parser_config: Json | null
           region: string
+          robots_checked_at: string | null
           rss_url: string
+          source_type: string
         }
         Insert: {
           active?: boolean
+          consecutive_failures?: number
           country_code?: string | null
+          crawl_delay_ms?: number
           created_at?: string
+          domain?: string | null
           health_status?: string
           id?: string
           last_fetched_at?: string | null
+          last_success_at?: string | null
           name: string
+          parser_config?: Json | null
           region?: string
+          robots_checked_at?: string | null
           rss_url: string
+          source_type?: string
         }
         Update: {
           active?: boolean
+          consecutive_failures?: number
           country_code?: string | null
+          crawl_delay_ms?: number
           created_at?: string
+          domain?: string | null
           health_status?: string
           id?: string
           last_fetched_at?: string | null
+          last_success_at?: string | null
           name?: string
+          parser_config?: Json | null
           region?: string
+          robots_checked_at?: string | null
           rss_url?: string
+          source_type?: string
         }
         Relationships: []
       }
