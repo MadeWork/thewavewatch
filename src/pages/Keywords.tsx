@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Star } from "lucide-react";
 import ErrorBanner from "@/components/ErrorBanner";
 import EmptyState from "@/components/EmptyState";
 import { LineChart, Line, ResponsiveContainer } from "recharts";
@@ -42,6 +42,14 @@ export default function Keywords() {
   const toggleMutation = useMutation({
     mutationFn: async ({ id, active }: { id: string; active: boolean }) => {
       const { error } = await supabase.from("keywords").update({ active: !active }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["keywords"] }),
+  });
+
+  const favoriteMutation = useMutation({
+    mutationFn: async ({ id, favorite }: { id: string; favorite: boolean }) => {
+      const { error } = await supabase.from("keywords").update({ favorite: !favorite }).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["keywords"] }),
@@ -89,6 +97,15 @@ export default function Keywords() {
         <div className="space-y-2">
           {keywords.map(kw => (
             <div key={kw.id} className="monitor-card flex items-center gap-4">
+              <button
+                onClick={() => favoriteMutation.mutate({ id: kw.id, favorite: (kw as any).favorite ?? false })}
+                className="p-1 rounded-lg transition hover:bg-bg-subtle"
+                title={((kw as any).favorite) ? "Remove from favorites" : "Add to favorites"}
+              >
+                <Star
+                  className={`w-4 h-4 transition ${(kw as any).favorite ? 'fill-yellow-400 text-yellow-400' : 'text-text-muted'}`}
+                />
+              </button>
               <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: kw.color_tag || "#5b9cf6" }} />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
