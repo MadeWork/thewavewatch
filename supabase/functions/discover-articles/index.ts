@@ -817,10 +817,10 @@ serve(async (req) => {
     const summary = {
       discovered: totalInserted,
       totalCandidates: allDiscovered.length,
-      deepScanned: Math.min(unmatchedToScan.length, deepScanLimit),
+      deepScanned: 0,
       newDomainsFound: newDomains.size,
       keywordsUsed: searchTerms,
-      methods: ["google_news_rss", "approved_domain_feeds", "source_feeds", "approved_domain_sitemaps", "full_text_deep_scan"],
+      methods: ["google_news_rss", "approved_domain_feeds", "source_feeds"],
     };
     console.log("Discovery complete:", summary);
 
