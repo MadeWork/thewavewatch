@@ -145,7 +145,7 @@ export default function Keywords() {
         <div className="flex gap-3">
           <input value={newKeyword} onChange={e => setNewKeyword(e.target.value)}
             placeholder="Enter keyword…"
-            onKeyDown={e => e.key === "Enter" && addMutation.mutate()}
+            onKeyDown={e => e.key === "Enter" && addMutation.mutate(undefined)}
             className="flex-1 px-3 py-2.5 rounded-xl bg-bg-elevated border border-bg-subtle text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition" />
           <div className="segment-control">
             {["AND", "OR", "NOT"].map(op => (
