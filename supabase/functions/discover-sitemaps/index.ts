@@ -158,27 +158,27 @@ serve(async (req) => {
         sitemapUrls.push(`https://${domain}/news-sitemap.xml`);
       }
 
-      // Process max 4 sitemaps per domain, max 2 child sitemaps each
+      // Process more history for high-priority domains
       let allItems: SitemapItem[] = [];
-      for (const sitemapUrl of sitemapUrls.slice(0, 4)) {
+      for (const sitemapUrl of sitemapUrls.slice(0, 6)) {
         try {
           const resp = await fetchWithTimeout(sitemapUrl, 8000);
           if (!resp.ok) { await resp.text().catch(()=>{}); continue; }
           const xml = await resp.text();
 
           if (/<sitemapindex/i.test(xml)) {
-            // It's an index - take only the last 2 child sitemaps (most recent)
-            const children = parseSitemapIndex(xml).slice(-2);
+            // Take more child sitemaps so we don't miss slightly older important stories
+            const children = parseSitemapIndex(xml).slice(-6);
             for (const childUrl of children) {
               try {
                 const childResp = await fetchWithTimeout(childUrl, 8000);
                 if (!childResp.ok) { await childResp.text().catch(()=>{}); continue; }
                 const childXml = await childResp.text();
-                allItems.push(...parseSitemapItems(childXml, domain, name).slice(-20));
+                allItems.push(...parseSitemapItems(childXml, domain, name).slice(-80));
               } catch {}
             }
           } else if (/<urlset/i.test(xml)) {
-            allItems.push(...parseSitemapItems(xml, domain, name).slice(-30));
+            allItems.push(...parseSitemapItems(xml, domain, name).slice(-120));
           }
         } catch {}
       }

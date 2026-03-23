@@ -73,7 +73,7 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       try {
         const sitemapResult = await withTimeout(
           supabase.functions.invoke("discover-sitemaps", {
-            body: { max_domains: 5, deep_scan_limit: 10 },
+            body: { max_domains: 10, deep_scan_limit: 25 },
           }),
           45000
         );
