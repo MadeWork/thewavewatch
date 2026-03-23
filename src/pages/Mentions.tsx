@@ -1,13 +1,21 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { format } from "date-fns";
-import { Search, Download, ExternalLink, ChevronLeft, ChevronRight, X, Filter } from "lucide-react";
+import { format, subMonths } from "date-fns";
+import { Search, Download, ExternalLink, ChevronLeft, ChevronRight, X, Filter, Calendar } from "lucide-react";
 import ErrorBanner from "@/components/ErrorBanner";
 import EmptyState from "@/components/EmptyState";
 
 const PAGE_SIZE = 20;
 const SENTIMENTS = ["all", "positive", "neutral", "negative"];
+const DATE_RANGES = [
+  { label: "All time", value: "all" },
+  { label: "Last 24h", value: "1d" },
+  { label: "Last 7 days", value: "7d" },
+  { label: "Last 30 days", value: "30d" },
+  { label: "Last 3 months", value: "3m" },
+  { label: "Last 6 months", value: "6m" },
+];
 
 export default function Mentions() {
   const [page, setPage] = useState(0);
@@ -17,6 +25,7 @@ export default function Mentions() {
   const [selectedKeyword, setSelectedKeyword] = useState("all");
   const [selectedSource, setSelectedSource] = useState("all");
   const [sentiment, setSentiment] = useState("all");
+  const [dateRange, setDateRange] = useState("all");
   const [sortBy, setSortBy] = useState<"newest" | "oldest">("newest");
   const [showFilters, setShowFilters] = useState(true);
 
