@@ -42,8 +42,8 @@ export default function Mentions() {
     },
   });
 
-  const { data: keywords } = useQuery({
-    queryKey: ["keywords"],
+  const { data: keywordTexts } = useQuery({
+    queryKey: ["keywords-texts"],
     queryFn: async () => {
       const { data } = await supabase.from("keywords").select("text").eq("active", true);
       return data?.map(k => k.text) ?? [];
