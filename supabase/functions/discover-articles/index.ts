@@ -369,7 +369,7 @@ async function collectApprovedDomainCandidates(
   const matched: DiscoveredArticle[] = [];
   const unmatched: RSSItem[] = [];
   const domainsToScan = approvedDomains.slice(0, maxDomains);
-  const DOMAIN_CONCURRENCY = 3;
+  const DOMAIN_CONCURRENCY = 2;
 
   for (let i = 0; i < domainsToScan.length; i += DOMAIN_CONCURRENCY) {
     const batch = domainsToScan.slice(i, i + DOMAIN_CONCURRENCY);
