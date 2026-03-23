@@ -63,9 +63,17 @@ export default function Dashboard() {
           onClick={async () => {
             setFetching(true); setFetchResult(null);
             try {
-              const { data, error } = await supabase.functions.invoke("fetch-rss");
-              if (error) throw error;
-              setFetchResult(`Fetched ${data?.totalInserted ?? 0} articles from ${data?.sourcesProcessed ?? 0} sources`);
+              // Run both: direct sources + global domain discovery
+              const [rssResult, discoverResult] = await Promise.allSettled([
+                supabase.functions.invoke("fetch-rss"),
+                supabase.functions.invoke("discover-articles", { body: { max_domains: 500 } }),
+              ]);
+              const rss = rssResult.status === "fulfilled" ? rssResult.value.data : null;
+              const disc = discoverResult.status === "fulfilled" ? discoverResult.value.data : null;
+              const rssCount = rss?.totalInserted ?? 0;
+              const discCount = disc?.discovered ?? 0;
+              const domainsSearched = disc?.domainsSearched ?? 0;
+              setFetchResult(`Fetched ${rssCount} from sources + discovered ${discCount} from ${domainsSearched} global domains`);
               queryClient.invalidateQueries({ queryKey: ["articles"] });
               queryClient.invalidateQueries({ queryKey: ["mentions"] });
               queryClient.invalidateQueries({ queryKey: ["analytics-articles"] });
