@@ -47,9 +47,14 @@ export function FetchProvider({ children }: { children: ReactNode }) {
   const startFetch = useCallback(async () => {
     if (state.fetching) return;
 
-    setState({ fetching: true, progress: 5, stage: { step: "discover", label: "Discovering articles…" }, result: null });
+    setState({ fetching: true, progress: 2, stage: { step: "discover", label: "Expanding keywords with AI…" }, result: null });
 
     try {
+      // Step 0: Auto-expand keywords before fetching (fast, skips already-expanded)
+      try {
+        await withTimeout(supabase.functions.invoke("expand-keywords", { body: { force: false } }), 30000);
+      } catch {}
+      setState(s => ({ ...s, progress: 5, stage: { step: "discover", label: "Discovering articles…" } }));
       // Step 1: discover-articles with deep scan enabled (0-40%)
       let discCount = 0;
       let newDomains = 0;
