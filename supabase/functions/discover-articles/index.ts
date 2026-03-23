@@ -288,7 +288,7 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const maxDomainFeeds = body.max_domains || 100;
-    const deepScanLimit = body.deep_scan_limit || 50; // max articles to full-text scan
+    const deepScanLimit = body.deep_scan_limit || 150; // max articles to full-text scan
 
     // Load keywords
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
