@@ -244,8 +244,11 @@ serve(async (req) => {
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    const body = await req.json().catch(() => ({}));
+    const maxSources = body.max_sources || 50;
+
     const { data: sources, error: srcErr } = await supabase
-      .from("sources").select("*").eq("active", true);
+      .from("sources").select("*").eq("active", true).limit(maxSources);
     if (srcErr) throw srcErr;
 
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
