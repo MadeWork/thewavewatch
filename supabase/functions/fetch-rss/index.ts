@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-interface ParsedArticle { title: string; snippet: string; url: string; published_at: string; }
+interface ParsedArticle { title: string; snippet: string; url: string; published_at: string | null; language?: string | null; }
 
 async function fetchWithTimeout(url: string, timeoutMs = 10000): Promise<Response> {
   const controller = new AbortController();
@@ -29,6 +29,12 @@ function normalizeDomain(d: string): string {
   return d.replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/.*$/, "").trim().toLowerCase();
 }
 
+function parseDateValue(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
 function extractDateFromUrl(url: string): string | null {
   try {
     const path = new URL(url).pathname;
@@ -39,6 +45,66 @@ function extractDateFromUrl(url: string): string | null {
     }
   } catch {}
   return null;
+}
+
+function detectLanguage(html: string): string | null {
+  const langMatch = html.match(/<html[^>]+lang=["']([^"']+)["']/i);
+  if (langMatch) return langMatch[1].split("-")[0].toLowerCase();
+  return null;
+}
+
+function extractPublishedAtFromHtml(html: string): string | null {
+  const metaPatterns = [
+    /<meta[^>]+property=["']article:published_time["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']article:published_time["']/i,
+    /<meta[^>]+property=["']og:published_time["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:published_time["']/i,
+    /<meta[^>]+name=["']parsely-pub-date["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']parsely-pub-date["']/i,
+    /<meta[^>]+itemprop=["']datePublished["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+itemprop=["']datePublished["']/i,
+  ];
+
+  for (const pattern of metaPatterns) {
+    const match = html.match(pattern);
+    const parsed = parseDateValue(match?.[1]);
+    if (parsed) return parsed;
+  }
+
+  const jsonLdMatches = html.matchAll(/"datePublished"\s*:\s*"([^"]+)"/gi);
+  for (const match of jsonLdMatches) {
+    const parsed = parseDateValue(match[1]);
+    if (parsed) return parsed;
+  }
+
+  const timeMatch = html.match(/<time[^>]+datetime=["']([^"']+)["']/i);
+  const timeParsed = parseDateValue(timeMatch?.[1]);
+  if (timeParsed) return timeParsed;
+
+  const epochMatch = html.match(/data-published-at=["'](\d{10,13})["']/i);
+  if (epochMatch) {
+    const raw = epochMatch[1];
+    const epochMs = raw.length === 13 ? Number(raw) : Number(raw) * 1000;
+    return parseDateValue(new Date(epochMs).toISOString());
+  }
+
+  return null;
+}
+
+async function fetchArticleMetadata(url: string): Promise<{ published_at: string | null; language: string | null } | null> {
+  try {
+    const resp = await fetchWithTimeout(url, 6000);
+    if (!resp.ok) return null;
+    const ct = resp.headers.get("content-type") || "";
+    if (!ct.includes("text/html") && !ct.includes("application/xhtml")) { await resp.text(); return null; }
+    const html = await resp.text();
+    return {
+      published_at: extractPublishedAtFromHtml(html) || extractDateFromUrl(url),
+      language: detectLanguage(html),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function parseRSSAtom(xml: string): ParsedArticle[] {
@@ -53,7 +119,7 @@ function parseRSSAtom(xml: string): ParsedArticle[] {
     const link = getTag(c, "link") || getTag(c, "guid");
     const desc = getTag(c, "description").replace(/<[^>]+>/g, "").slice(0, 500);
     const pubDate = getTag(c, "pubDate") || getTag(c, "dc:date") || getTag(c, "published");
-    if (title && link) items.push({ title, snippet: desc, url: link, published_at: pubDate ? new Date(pubDate).toISOString() : (extractDateFromUrl(link) || new Date().toISOString()) });
+    if (title && link) items.push({ title, snippet: desc, url: link, published_at: parseDateValue(pubDate) || extractDateFromUrl(link) });
   }
   const entryRe = /<entry>([\s\S]*?)<\/entry>/gi;
   while ((m = entryRe.exec(xml)) !== null) {
@@ -63,7 +129,7 @@ function parseRSSAtom(xml: string): ParsedArticle[] {
     const link = linkMatch ? linkMatch[1] : getTag(c, "link");
     const summary = (getTag(c, "summary") || getTag(c, "content")).replace(/<[^>]+>/g, "").slice(0, 500);
     const updated = getTag(c, "updated") || getTag(c, "published");
-    if (title && link) items.push({ title, snippet: summary, url: link, published_at: updated ? new Date(updated).toISOString() : (extractDateFromUrl(link) || new Date().toISOString()) });
+    if (title && link) items.push({ title, snippet: summary, url: link, published_at: parseDateValue(updated) || extractDateFromUrl(link) });
   }
   return items;
 }
@@ -83,7 +149,7 @@ function parseSitemap(xml: string): ParsedArticle[] {
       items.push({
         title: newsTitle ? newsTitle[1].trim() : url.split("/").filter(Boolean).pop() || url,
         snippet: "", url,
-        published_at: (newsPub || lastmod) ? new Date((newsPub || lastmod)![1]).toISOString() : (extractDateFromUrl(url) || new Date().toISOString()),
+        published_at: parseDateValue((newsPub || lastmod)?.[1]) || extractDateFromUrl(url),
       });
     }
   }
@@ -101,7 +167,7 @@ function parseHTMLArticles(html: string, baseUrl: string): ParsedArticle[] {
       if (text.length > 10 && !href.startsWith("#") && !href.startsWith("javascript") && !seen.has(href)) {
         seen.add(href);
         const fullUrl = href.startsWith("http") ? href : new URL(href, baseUrl).toString();
-        items.push({ title: text.slice(0, 200), snippet: "", url: fullUrl, published_at: extractDateFromUrl(fullUrl) || new Date().toISOString() });
+        items.push({ title: text.slice(0, 200), snippet: "", url: fullUrl, published_at: extractDateFromUrl(fullUrl) });
       }
     }
   }
@@ -244,12 +310,32 @@ serve(async (req) => {
             source_name: sourceName || null,
             source_domain: domain ? normalizeDomain(domain) : null,
             published_at: item.published_at, fetched_at: new Date().toISOString(),
-            matched_keywords: matchedKws, language: null,
+            matched_keywords: matchedKws, language: item.language || null,
           };
         });
 
         const withKeywords = articlesToInsert.filter((a: any) => a.matched_keywords.length > 0);
         if (withKeywords.length > 0) {
+          const missingDates = withKeywords.filter((a: any) => !a.published_at);
+          if (missingDates.length > 0) {
+            const META_CONCURRENCY = 3;
+            for (let m = 0; m < missingDates.length; m += META_CONCURRENCY) {
+              const metaBatch = missingDates.slice(m, m + META_CONCURRENCY);
+              const metaResults = await Promise.allSettled(metaBatch.map(async (article: any) => {
+                const metadata = await fetchArticleMetadata(article.url);
+                if (!metadata) return;
+                article.published_at = article.published_at || metadata.published_at;
+                article.language = article.language || metadata.language;
+              }));
+              for (const metaResult of metaResults) {
+                if (metaResult.status === "rejected") console.warn("Metadata resolution failed:", metaResult.reason);
+              }
+            }
+          }
+
+          withKeywords.forEach((article: any) => {
+            article.published_at = article.published_at || new Date().toISOString();
+          });
           console.log(`Source ${sourceName}: ${withKeywords.length} keyword-matched / ${items.length} total`);
           const BATCH_SIZE = 10;
           for (let b = 0; b < withKeywords.length; b += BATCH_SIZE) {

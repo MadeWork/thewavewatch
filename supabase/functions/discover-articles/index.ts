@@ -12,7 +12,7 @@ interface DiscoveredArticle {
   title: string;
   snippet: string;
   url: string;
-  published_at: string;
+  published_at: string | null;
   source_domain: string;
   source_name: string;
   matched_keywords: string[];
@@ -23,7 +23,7 @@ interface RSSItem {
   title: string;
   url: string;
   snippet: string;
-  published_at: string;
+  published_at: string | null;
   source_domain: string;
   source_name: string;
 }
@@ -75,6 +75,12 @@ function uniqueStrings(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.filter((v): v is string => Boolean(v && v.trim())).map(v => v.trim()))];
 }
 
+function parseDateValue(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
 function getXmlTag(content: string, tag: string): string {
   const m = content.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`, "i"));
   return m ? m[1].trim() : "";
@@ -96,6 +102,49 @@ function extractDateFromUrl(url: string): string | null {
       if (!isNaN(d.getTime()) && d.getTime() > new Date("2000-01-01").getTime()) return d.toISOString();
     }
   } catch {}
+  return null;
+}
+
+function extractPublishedAtFromHtml(html: string): string | null {
+  const metaPatterns = [
+    /<meta[^>]+property=["']article:published_time["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']article:published_time["']/i,
+    /<meta[^>]+property=["']og:published_time["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:published_time["']/i,
+    /<meta[^>]+name=["']parsely-pub-date["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']parsely-pub-date["']/i,
+    /<meta[^>]+itemprop=["']datePublished["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+itemprop=["']datePublished["']/i,
+    /<meta[^>]+name=["']pubdate["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']pubdate["']/i,
+    /<meta[^>]+name=["']publishdate["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']publishdate["']/i,
+  ];
+
+  for (const pattern of metaPatterns) {
+    const match = html.match(pattern);
+    const parsed = parseDateValue(match?.[1]);
+    if (parsed) return parsed;
+  }
+
+  const jsonLdMatches = html.matchAll(/"datePublished"\s*:\s*"([^"]+)"/gi);
+  for (const match of jsonLdMatches) {
+    const parsed = parseDateValue(match[1]);
+    if (parsed) return parsed;
+  }
+
+  const timeMatch = html.match(/<time[^>]+datetime=["']([^"']+)["']/i);
+  const timeParsed = parseDateValue(timeMatch?.[1]);
+  if (timeParsed) return timeParsed;
+
+  const epochMatch = html.match(/data-published-at=["'](\d{10,13})["']/i);
+  if (epochMatch) {
+    const raw = epochMatch[1];
+    const epochMs = raw.length === 13 ? Number(raw) : Number(raw) * 1000;
+    const parsed = parseDateValue(new Date(epochMs).toISOString());
+    if (parsed) return parsed;
+  }
+
   return null;
 }
 
@@ -124,6 +173,21 @@ function detectLanguage(html: string): string | null {
   return null;
 }
 
+function extractReadableText(html: string): string {
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  return (bodyMatch ? bodyMatch[1] : html)
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, " ")
+    .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, " ")
+    .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, " ")
+    .replace(/<aside[^>]*>[\s\S]*?<\/aside>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&[a-z#0-9]+;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 // ── Parsers ──────────────────────────────────────────────
 
 function parseRSSItems(xml: string, domain: string, sourceName: string): RSSItem[] {
@@ -139,7 +203,7 @@ function parseRSSItems(xml: string, domain: string, sourceName: string): RSSItem
     const link = getXmlTag(c, "link") || getXmlTag(c, "guid");
     const desc = stripHtml(getXmlTag(c, "description")).slice(0, 500);
     const pubDate = getXmlTag(c, "pubDate") || getXmlTag(c, "dc:date");
-    if (title && link) items.push({ title, url: link, snippet: desc, published_at: pubDate ? new Date(pubDate).toISOString() : (extractDateFromUrl(link) || new Date().toISOString()), source_domain: nd, source_name: sourceName });
+    if (title && link) items.push({ title, url: link, snippet: desc, published_at: parseDateValue(pubDate) || extractDateFromUrl(link), source_domain: nd, source_name: sourceName });
   }
 
   // Atom <entry>
@@ -151,7 +215,7 @@ function parseRSSItems(xml: string, domain: string, sourceName: string): RSSItem
     const link = linkMatch ? linkMatch[1] : getXmlTag(c, "link");
     const summary = stripHtml(getXmlTag(c, "summary") || getXmlTag(c, "content")).slice(0, 500);
     const updated = getXmlTag(c, "updated") || getXmlTag(c, "published");
-    if (title && link) items.push({ title, url: link, snippet: summary, published_at: updated ? new Date(updated).toISOString() : (extractDateFromUrl(link) || new Date().toISOString()), source_domain: nd, source_name: sourceName });
+    if (title && link) items.push({ title, url: link, snippet: summary, published_at: parseDateValue(updated) || extractDateFromUrl(link), source_domain: nd, source_name: sourceName });
   }
   return items;
 }
@@ -172,7 +236,7 @@ function parseGoogleNewsRSS(xml: string, keyword: string): DiscoveredArticle[] {
       try { domain = normalizeDomain(srcMatch ? srcMatch[1] : gnLink); } catch {}
       articles.push({
         title, snippet: desc, url: gnLink,
-        published_at: pubDate ? new Date(pubDate).toISOString() : (extractDateFromUrl(gnLink) || new Date().toISOString()),
+        published_at: parseDateValue(pubDate) || extractDateFromUrl(gnLink),
         source_domain: domain, source_name: srcMatch ? stripHtml(srcMatch[2]) : domain,
         matched_keywords: [keyword],
       });
@@ -182,7 +246,7 @@ function parseGoogleNewsRSS(xml: string, keyword: string): DiscoveredArticle[] {
 }
 
 /** Fetch article body text for deep scanning */
-async function fetchArticleText(url: string): Promise<{ text: string; lang: string | null } | null> {
+async function fetchArticleDetails(url: string, includeText = true): Promise<{ text: string; lang: string | null; publishedAt: string | null } | null> {
   try {
     const resp = await fetchWithTimeout(url, 6000);
     if (!resp.ok) return null;
@@ -190,16 +254,9 @@ async function fetchArticleText(url: string): Promise<{ text: string; lang: stri
     if (!ct.includes("text/html") && !ct.includes("application/xhtml")) { await resp.text(); return null; }
     const html = await resp.text();
     const lang = detectLanguage(html);
-    const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-    const cleaned = (bodyMatch ? bodyMatch[1] : html)
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
-      .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, " ")
-      .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, " ")
-      .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, " ")
-      .replace(/<aside[^>]*>[\s\S]*?<\/aside>/gi, " ")
-      .replace(/<[^>]+>/g, " ").replace(/&[a-z#0-9]+;/gi, " ").replace(/\s+/g, " ").trim();
-    return { text: cleaned.slice(0, 12000), lang };
+    const publishedAt = extractPublishedAtFromHtml(html) || extractDateFromUrl(url);
+    const text = includeText ? extractReadableText(html).slice(0, 12000) : "";
+    return { text, lang, publishedAt };
   } catch { return null; }
 }
 
@@ -400,11 +457,16 @@ serve(async (req) => {
         const batch = sortedUnmatched.slice(i, i + CONC);
         const results = await Promise.allSettled(batch.map(async item => {
           deepScanned++;
-          const result = await fetchArticleText(item.url);
+          const result = await fetchArticleDetails(item.url, true);
           if (!result) return null;
           const kws = matchKeywords(result.text, searchTerms);
           if (kws.length > 0) {
-            return { ...item, matched_keywords: kws, language: result.lang } as DiscoveredArticle;
+            return {
+              ...item,
+              matched_keywords: kws,
+              language: result.lang,
+              published_at: item.published_at || result.publishedAt,
+            } as DiscoveredArticle;
           }
           return null;
         }));
@@ -421,6 +483,25 @@ serve(async (req) => {
       seen.add(n); return true;
     });
     console.log(`After dedup: ${allDiscovered.length} new articles`);
+
+    // ── Resolve missing article publication dates ────────
+    const unresolvedDates = allDiscovered.filter(a => !a.published_at);
+    if (unresolvedDates.length > 0) {
+      console.log(`Resolving missing publication dates for ${unresolvedDates.length} articles...`);
+      const CONC = 3;
+      for (let i = 0; i < unresolvedDates.length; i += CONC) {
+        const batch = unresolvedDates.slice(i, i + CONC);
+        const results = await Promise.allSettled(batch.map(async article => {
+          const details = await fetchArticleDetails(article.url, false);
+          if (!details) return;
+          article.published_at = article.published_at || details.publishedAt;
+          article.language = article.language || details.lang;
+        }));
+        for (const result of results) {
+          if (result.status === "rejected") console.warn("Date resolution failed:", result.reason);
+        }
+      }
+    }
 
     // ── Auto-discover new domains ────────────────────────
     const knownDomains = new Set([
@@ -471,7 +552,7 @@ serve(async (req) => {
           source_id: matchedSource?.id || null,
           source_name: a.source_name || null,
           source_domain: a.source_domain || null,
-          published_at: a.published_at, fetched_at: new Date().toISOString(),
+          published_at: a.published_at || new Date().toISOString(), fetched_at: new Date().toISOString(),
           matched_keywords: a.matched_keywords,
           language: a.language || null,
           sentiment: "neutral" as string, sentiment_score: 0.5,
