@@ -1,0 +1,1 @@
+ALTER TABLE public.keywords ADD COLUMN favorite boolean NOT NULL DEFAULT false;

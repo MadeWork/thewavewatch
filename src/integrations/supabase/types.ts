@@ -126,6 +126,7 @@ export type Database = {
           active: boolean
           color_tag: string | null
           created_at: string
+          favorite: boolean
           id: string
           logic_operator: string
           match_count: number
@@ -135,6 +136,7 @@ export type Database = {
           active?: boolean
           color_tag?: string | null
           created_at?: string
+          favorite?: boolean
           id?: string
           logic_operator?: string
           match_count?: number
@@ -144,6 +146,7 @@ export type Database = {
           active?: boolean
           color_tag?: string | null
           created_at?: string
+          favorite?: boolean
           id?: string
           logic_operator?: string
           match_count?: number
