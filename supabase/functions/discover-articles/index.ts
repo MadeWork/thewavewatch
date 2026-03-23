@@ -700,14 +700,7 @@ serve(async (req) => {
       }
     }
 
-    if (domains && domains.length > 0) {
-      console.log(`Searching approved domain sitemaps for up to ${Math.min(domains.length, maxSitemapDomains)} domains...`);
-      const sitemapCandidates = await collectApprovedDomainCandidates(domains, searchTerms, existingUrlSet, maxSitemapDomains, sitemapChildLimit);
-      console.log(`Approved domain sitemap scan found ${sitemapCandidates.matched.length} title/url matches and ${sitemapCandidates.unmatched.length} body-scan candidates`);
-      allDiscovered.push(...sitemapCandidates.matched);
-      allUnmatchedItems.push(...sitemapCandidates.unmatched);
-    }
-
+    // Sitemap scanning moved to separate 'discover-sitemaps' function to avoid CPU limits
     const unmatchedToScan = allUnmatchedItems.filter((item) => !existingUrlSet.has(normalizeUrl(item.url)));
     if (unmatchedToScan.length > 0) {
       console.log(`Deep scanning ${Math.min(unmatchedToScan.length, deepScanLimit)} of ${unmatchedToScan.length} unmatched articles for full-text keyword matches...`);
