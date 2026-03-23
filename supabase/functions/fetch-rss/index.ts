@@ -196,11 +196,14 @@ async function analyzeSentimentBatch(
       return items.map(() => ({ sentiment: "neutral", score: 0.5 }));
     }
     if (!response.ok) {
-      console.error("AI error:", response.status, await response.text());
+      const errText = await response.text().catch(() => "");
+      console.error("AI error:", response.status, errText);
       return items.map(() => ({ sentiment: "neutral", score: 0.5 }));
     }
 
-    const data = await response.json();
+    const text = await response.text();
+    if (!text) return items.map(() => ({ sentiment: "neutral", score: 0.5 }));
+    const data = JSON.parse(text);
     const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
     if (toolCall?.function?.arguments) {
       const parsed = JSON.parse(toolCall.function.arguments);
