@@ -178,7 +178,17 @@ export default function Mentions() {
               </button>
             )}
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {/* Date Range */}
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5">Date Range</p>
+              <select value={dateRange} onChange={e => { setDateRange(e.target.value); setPage(0); }}
+                className="w-full px-3 py-2 rounded-xl bg-bg-elevated border border-bg-subtle text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-primary/50">
+                {DATE_RANGES.map(d => (
+                  <option key={d.value} value={d.value}>{d.label}</option>
+                ))}
+              </select>
+            </div>
             {/* Region */}
             <div>
               <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5">Region</p>
