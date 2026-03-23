@@ -140,20 +140,19 @@ serve(async (req) => {
       const name = dom.name || domain;
       console.log(`Sitemap scanning ${domain}...`);
 
-      // Find sitemaps from robots.txt
+      // Find sitemaps: use configured sitemap_url first, then robots.txt, then fallback
       const sitemapUrls: string[] = [];
+      if (dom.sitemap_url) sitemapUrls.push(dom.sitemap_url);
       try {
-        const robotsResp = await fetchWithTimeout(`https://${domain}/robots.txt`, 5000);
+        const robotsResp = await fetchWithTimeout(`https://${domain}/robots.txt`, 4000);
         if (robotsResp.ok) {
           const robotsTxt = await robotsResp.text();
           for (const line of robotsTxt.split(/\r?\n/)) {
             const match = line.match(/^Sitemap:\s*(.+)$/i);
-            if (match?.[1]) sitemapUrls.push(match[1].trim());
+            if (match?.[1] && !sitemapUrls.includes(match[1].trim())) sitemapUrls.push(match[1].trim());
           }
         }
       } catch {}
-
-      // Also try news-sitemap.xml
       if (!sitemapUrls.some(u => u.includes("news-sitemap"))) {
         sitemapUrls.push(`https://${domain}/news-sitemap.xml`);
       }
