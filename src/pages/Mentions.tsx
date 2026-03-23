@@ -284,7 +284,8 @@ export default function Mentions() {
             const src = a.sources as any;
             const displayName = src?.name || a.source_name || a.source_domain || "Unknown";
             return (
-              <a key={a.id} href={a.url} target="_blank" rel="noopener noreferrer"
+              <div key={a.id}
+                onClick={() => setSelectedArticle(a)}
                 className="monitor-card flex items-start gap-4 hover:bg-bg-elevated/80 transition group cursor-pointer">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-foreground font-light group-hover:text-primary transition">{a.title}</p>
@@ -303,8 +304,8 @@ export default function Mentions() {
                 <span className={`sentiment-badge flex-shrink-0 ${a.sentiment === 'positive' ? 'sentiment-positive' : a.sentiment === 'negative' ? 'sentiment-negative' : 'sentiment-neutral'}`}>
                   {a.sentiment}
                 </span>
-                <ExternalLink className="w-4 h-4 text-text-muted opacity-0 group-hover:opacity-100 transition mt-1" />
-              </a>
+                <Sparkles className="w-4 h-4 text-text-muted opacity-0 group-hover:opacity-100 transition mt-1" />
+              </div>
             );
           })}
         </div>
