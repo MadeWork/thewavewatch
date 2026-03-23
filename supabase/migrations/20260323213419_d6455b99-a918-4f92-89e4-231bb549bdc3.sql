@@ -1,0 +1,1 @@
+ALTER TABLE public.keywords ADD COLUMN IF NOT EXISTS expanded_terms text[] DEFAULT '{}'::text[];

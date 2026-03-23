@@ -132,6 +132,7 @@ export type Database = {
           active: boolean
           color_tag: string | null
           created_at: string
+          expanded_terms: string[] | null
           favorite: boolean
           id: string
           logic_operator: string
@@ -142,6 +143,7 @@ export type Database = {
           active?: boolean
           color_tag?: string | null
           created_at?: string
+          expanded_terms?: string[] | null
           favorite?: boolean
           id?: string
           logic_operator?: string
@@ -152,6 +154,7 @@ export type Database = {
           active?: boolean
           color_tag?: string | null
           created_at?: string
+          expanded_terms?: string[] | null
           favorite?: boolean
           id?: string
           logic_operator?: string
