@@ -380,6 +380,31 @@ serve(async (req) => {
     console.log(`After dedup: ${allDiscovered.length} new articles`);
 
     // ═══════════════════════════════════════════════════════
+    // RESOLVE GOOGLE NEWS REDIRECT URLS
+    // ═══════════════════════════════════════════════════════
+    const googleNewsArticles = allDiscovered.filter(a => a.url.includes("news.google.com"));
+    if (googleNewsArticles.length > 0) {
+      console.log(`Resolving ${googleNewsArticles.length} Google News redirect URLs...`);
+      const RESOLVE_BATCH = 10;
+      for (let i = 0; i < googleNewsArticles.length; i += RESOLVE_BATCH) {
+        const batch = googleNewsArticles.slice(i, i + RESOLVE_BATCH);
+        const resolved = await Promise.allSettled(
+          batch.map(a => resolveGoogleNewsUrl(a.url))
+        );
+        resolved.forEach((r, idx) => {
+          if (r.status === "fulfilled" && r.value) {
+            batch[idx].url = r.value;
+            try { batch[idx].source_domain = new URL(r.value).hostname.replace("www.", ""); } catch {}
+          }
+        });
+        if (i + RESOLVE_BATCH < googleNewsArticles.length) {
+          await new Promise(r => setTimeout(r, 300));
+        }
+      }
+      console.log(`Resolved ${googleNewsArticles.filter(a => !a.url.includes("news.google.com")).length} URLs`);
+    }
+
+    // ═══════════════════════════════════════════════════════
     // AUTO-DISCOVER NEW SOURCES
     // ═══════════════════════════════════════════════════════
     const newDomains = new Map<string, { name: string; count: number }>();
