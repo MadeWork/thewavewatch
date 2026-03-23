@@ -75,7 +75,7 @@ export default function Mentions() {
     return ["all", ...Array.from(kws).sort()];
   }, [articles, keywords]);
 
-  const activeFilterCount = [selectedRegion, selectedCountry, selectedKeyword, selectedSource, sentiment]
+  const activeFilterCount = [selectedRegion, selectedCountry, selectedKeyword, selectedSource, sentiment, dateRange]
     .filter(v => v !== "all").length;
 
   const filtered = useMemo(() => {
@@ -84,6 +84,19 @@ export default function Mentions() {
       const q = search.toLowerCase();
       result = result.filter(a => a.title.toLowerCase().includes(q) || a.snippet?.toLowerCase().includes(q));
     }
+    if (dateRange !== "all") {
+      const now = new Date();
+      let cutoff: Date;
+      switch (dateRange) {
+        case "1d": cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000); break;
+        case "7d": cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
+        case "30d": cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
+        case "3m": cutoff = subMonths(now, 3); break;
+        case "6m": cutoff = subMonths(now, 6); break;
+        default: cutoff = new Date(0);
+      }
+      result = result.filter(a => new Date(a.published_at) >= cutoff);
+    }
     if (selectedRegion !== "all") result = result.filter(a => (a.sources as any)?.region === selectedRegion);
     if (selectedCountry !== "all") result = result.filter(a => (a.sources as any)?.country_code === selectedCountry);
     if (selectedSource !== "all") result = result.filter(a => (a.sources as any)?.name === selectedSource);
@@ -91,7 +104,7 @@ export default function Mentions() {
     if (sentiment !== "all") result = result.filter(a => a.sentiment === sentiment);
     if (sortBy === "oldest") result = [...result].reverse();
     return result;
-  }, [articles, search, selectedRegion, selectedCountry, selectedSource, selectedKeyword, sentiment, sortBy]);
+  }, [articles, search, dateRange, selectedRegion, selectedCountry, selectedSource, selectedKeyword, sentiment, sortBy]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -99,7 +112,7 @@ export default function Mentions() {
   const clearFilters = () => {
     setSelectedRegion("all"); setSelectedCountry("all");
     setSelectedKeyword("all"); setSelectedSource("all");
-    setSentiment("all"); setSearch(""); setPage(0);
+    setSentiment("all"); setDateRange("all"); setSearch(""); setPage(0);
   };
 
   const exportCSV = () => {
