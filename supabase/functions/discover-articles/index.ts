@@ -37,6 +37,34 @@ function buildGoogleNewsUrl(keyword: string, lang = "en"): string {
   return `https://news.google.com/rss/search?q=${q}&hl=${lang}&gl=US&ceid=US:${lang}`;
 }
 
+async function resolveGoogleNewsUrl(gnUrl: string): Promise<string> {
+  // Google News RSS links are redirects — follow them to get the real URL
+  try {
+    const resp = await fetch(gnUrl, {
+      method: "HEAD",
+      redirect: "follow",
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; MediaPulse/1.0)" },
+      signal: AbortSignal.timeout(5000),
+    });
+    // The final URL after redirects is the real article URL
+    if (resp.url && !resp.url.includes("news.google.com")) {
+      return resp.url;
+    }
+    // Try GET if HEAD didn't resolve
+    const resp2 = await fetch(gnUrl, {
+      redirect: "follow",
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; MediaPulse/1.0)" },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (resp2.url && !resp2.url.includes("news.google.com")) {
+      return resp2.url;
+    }
+    return gnUrl;
+  } catch {
+    return gnUrl;
+  }
+}
+
 function parseGoogleNewsRSS(xml: string, keyword: string): DiscoveredArticle[] {
   const articles: DiscoveredArticle[] = [];
   const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
@@ -54,13 +82,15 @@ function parseGoogleNewsRSS(xml: string, keyword: string): DiscoveredArticle[] {
     const sourceMatch = c.match(/<source[^>]+url=["']([^"']+)["'][^>]*>(.*?)<\/source>/i);
 
     if (title && link) {
+      // Use source URL from <source> tag if available (this is the real publisher URL)
+      const sourceUrl = sourceMatch ? sourceMatch[1] : "";
       let domain = "";
-      try { domain = new URL(link).hostname.replace("www.", ""); } catch {}
+      try { domain = new URL(sourceUrl || link).hostname.replace("www.", ""); } catch {}
 
       articles.push({
         title,
         snippet: description,
-        url: link,
+        url: link, // Will be resolved later
         published_at: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
         source_domain: sourceMatch ? new URL(sourceMatch[1]).hostname.replace("www.", "") : domain,
         source_name: sourceMatch ? sourceMatch[2] : domain,
