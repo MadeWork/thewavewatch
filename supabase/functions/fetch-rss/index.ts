@@ -437,7 +437,7 @@ serve(async (req) => {
             source_name: sourceName || null,
             source_domain: domain ? normalizeDomain(domain) : null,
             published_at: item.published_at, fetched_at: new Date().toISOString(),
-            matched_keywords: matchedKws, language: item.language || null,
+            matched_keywords: Array.from(matchedKws), language: item.language || null,
           };
         });
 
