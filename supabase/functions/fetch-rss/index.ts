@@ -349,7 +349,6 @@ serve(async (req) => {
         if (error) { totalErrors++; continue; }
 
         // Only keep articles that match at least one keyword
-        const matchedArticles: typeof articlesToInsert = [];
         const articlesToInsert = items.map((item) => {
           const matchedKws: string[] = [];
           for (const kw of activeKeywords) {
