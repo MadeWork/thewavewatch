@@ -336,6 +336,15 @@ serve(async (req) => {
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
     const activeKeywords = keywords || [];
 
+    // Build expanded term map for semantic matching
+    const expandedTermMap = new Map<string, string>();
+    for (const kw of activeKeywords) {
+      const expandedTerms = (kw as any).expanded_terms || [];
+      for (const et of expandedTerms) {
+        expandedTermMap.set(et.toLowerCase(), kw.text);
+      }
+    }
+
     let totalInserted = 0;
     let totalErrors = 0;
     const keywordMatchUpdates: Record<string, number> = {};
