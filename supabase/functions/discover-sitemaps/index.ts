@@ -142,8 +142,8 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body = await req.json().catch(() => ({}));
-    const maxDomains = Math.max(1, Number(body.max_domains || 5));
-    const deepScanLimit = Math.max(0, Number(body.deep_scan_limit || 15));
+    const maxDomains = Math.max(1, Math.min(Number(body.max_domains || 3), 5));
+    const deepScanLimit = Math.max(0, Math.min(Number(body.deep_scan_limit || 8), 12));
     const domainOffset = Math.max(0, Number(body.offset || 0));
 
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
@@ -184,27 +184,30 @@ serve(async (req) => {
       }
 
       let allItems: SitemapItem[] = [];
-      for (const sitemapUrl of sitemapUrls.slice(0, 4)) {
+      for (const sitemapUrl of sitemapUrls.slice(0, 3)) {
+        if (allItems.length >= 60) break;
         try {
-          const resp = await fetchWithTimeout(sitemapUrl, 6000);
+          const resp = await fetchWithTimeout(sitemapUrl, 5000);
           if (!resp.ok) { await resp.text().catch(() => {}); continue; }
           const xml = await resp.text();
 
           if (/<sitemapindex/i.test(xml)) {
-            const children = parseSitemapIndex(xml).slice(-3);
+            const children = parseSitemapIndex(xml).slice(-2);
             for (const childUrl of children) {
+              if (allItems.length >= 60) break;
               try {
-                const childResp = await fetchWithTimeout(childUrl, 6000);
+                const childResp = await fetchWithTimeout(childUrl, 5000);
                 if (!childResp.ok) { await childResp.text().catch(() => {}); continue; }
                 const childXml = await childResp.text();
-                allItems.push(...parseSitemapItems(childXml, domain, name).slice(-40));
+                allItems.push(...parseSitemapItems(childXml, domain, name).slice(-25));
               } catch {}
             }
           } else if (/<urlset/i.test(xml)) {
-            allItems.push(...parseSitemapItems(xml, domain, name).slice(-50));
+            allItems.push(...parseSitemapItems(xml, domain, name).slice(-30));
           }
         } catch {}
       }
+      allItems = allItems.slice(0, 60);
 
       console.log(`${domain}: ${allItems.length} sitemap URLs found`);
 
