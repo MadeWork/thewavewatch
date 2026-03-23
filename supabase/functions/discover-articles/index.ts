@@ -181,7 +181,7 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body = await req.json().catch(() => ({}));
-    const maxDomains = body.max_domains || 50;
+    const maxDomains = body.max_domains || 500;
     const regionFilter = body.region || null;
 
     // Load keywords
