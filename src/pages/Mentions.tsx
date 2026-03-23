@@ -29,6 +29,7 @@ export default function Mentions() {
   const [dateRange, setDateRange] = useState("all");
   const [sortBy, setSortBy] = useState<"newest" | "oldest">("newest");
   const [showFilters, setShowFilters] = useState(true);
+  const [selectedArticle, setSelectedArticle] = useState<any>(null);
 
   const { data: articles, isLoading, error } = useQuery({
     queryKey: ["mentions"],
