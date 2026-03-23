@@ -29,6 +29,18 @@ function normalizeDomain(d: string): string {
   return d.replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/.*$/, "").trim().toLowerCase();
 }
 
+function extractDateFromUrl(url: string): string | null {
+  try {
+    const path = new URL(url).pathname;
+    const m = path.match(/\/(\d{4})\/(\d{1,2})\/(\d{1,2})\//);
+    if (m) {
+      const d = new Date(`${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}T12:00:00Z`);
+      if (!isNaN(d.getTime()) && d.getTime() > new Date("2000-01-01").getTime()) return d.toISOString();
+    }
+  } catch {}
+  return null;
+}
+
 function parseRSSAtom(xml: string): ParsedArticle[] {
   const items: ParsedArticle[] = [];
   const getTag = (c: string, tag: string) => { const m = c.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?(.*?)(?:\\]\\]>)?<\\/${tag}>`, "si")); return m ? m[1].trim() : ""; };
