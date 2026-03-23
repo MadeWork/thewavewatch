@@ -63,7 +63,7 @@ function parseRSSAtom(xml: string): ParsedArticle[] {
     const link = linkMatch ? linkMatch[1] : getTag(c, "link");
     const summary = (getTag(c, "summary") || getTag(c, "content")).replace(/<[^>]+>/g, "").slice(0, 500);
     const updated = getTag(c, "updated") || getTag(c, "published");
-    if (title && link) items.push({ title, snippet: summary, url: link, published_at: updated ? new Date(updated).toISOString() : new Date().toISOString() });
+    if (title && link) items.push({ title, snippet: summary, url: link, published_at: updated ? new Date(updated).toISOString() : (extractDateFromUrl(link) || new Date().toISOString()) });
   }
   return items;
 }
