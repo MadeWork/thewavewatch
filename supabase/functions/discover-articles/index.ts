@@ -86,6 +86,19 @@ function matchKeywords(text: string, keywords: string[]): string[] {
   return keywords.filter(kw => n.includes(normalizeText(kw)));
 }
 
+/** Try to extract a publication date from a URL path like /2024/03/15/ */
+function extractDateFromUrl(url: string): string | null {
+  try {
+    const path = new URL(url).pathname;
+    const m = path.match(/\/(\d{4})\/(\d{1,2})\/(\d{1,2})\//);
+    if (m) {
+      const d = new Date(`${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}T12:00:00Z`);
+      if (!isNaN(d.getTime()) && d.getTime() > new Date("2000-01-01").getTime()) return d.toISOString();
+    }
+  } catch {}
+  return null;
+}
+
 function extractTitleFromUrl(url: string): string {
   try {
     const last = new URL(url).pathname.split("/").filter(Boolean).pop() || "";
