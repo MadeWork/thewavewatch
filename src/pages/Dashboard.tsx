@@ -7,7 +7,7 @@ import EmptyState from "@/components/EmptyState";
 import ErrorBanner from "@/components/ErrorBanner";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { format, subDays, startOfDay, startOfWeek, startOfMonth } from "date-fns";
-import { ExternalLink, RefreshCw, Loader2 } from "lucide-react";
+import { ExternalLink, RefreshCw, Loader2, Star } from "lucide-react";
 import WorldMap from "@/components/WorldMap";
 
 const CHART_COLORS = ["hsl(216,90%,66%)", "hsl(160,64%,55%)", "hsl(280,60%,60%)", "hsl(30,90%,60%)", "hsl(0,93%,71%)"];
