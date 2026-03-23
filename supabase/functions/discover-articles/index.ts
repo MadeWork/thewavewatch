@@ -11,8 +11,9 @@ interface DiscoveredArticle {
   snippet: string;
   url: string;
   published_at: string;
-  domain: string;
+  source_domain: string;
   source_name: string;
+  matched_keywords: string[];
 }
 
 async function fetchWithTimeout(url: string, timeoutMs = 10000): Promise<Response> {
@@ -21,18 +22,61 @@ async function fetchWithTimeout(url: string, timeoutMs = 10000): Promise<Respons
   try {
     return await fetch(url, {
       signal: controller.signal,
-      headers: { "User-Agent": "MediaPulse/1.0 ArticleDiscovery" },
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; MediaPulse/1.0)" },
     });
   } finally {
     clearTimeout(timeout);
   }
 }
 
-function parseRSSForKeywords(xml: string, keywords: string[]): DiscoveredArticle[] {
+// ── Google News RSS Search ──────────────────────────────
+// This is the key discovery method - searches across ALL indexed news sources
+
+function buildGoogleNewsUrl(keyword: string, lang = "en"): string {
+  const q = encodeURIComponent(keyword);
+  return `https://news.google.com/rss/search?q=${q}&hl=${lang}&gl=US&ceid=US:${lang}`;
+}
+
+function parseGoogleNewsRSS(xml: string, keyword: string): DiscoveredArticle[] {
+  const articles: DiscoveredArticle[] = [];
+  const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
+  let match;
+  while ((match = itemRegex.exec(xml)) !== null) {
+    const c = match[1];
+    const getTag = (tag: string) => {
+      const m = c.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?(.*?)(?:\\]\\]>)?<\\/${tag}>`, "si"));
+      return m ? m[1].trim() : "";
+    };
+    const title = getTag("title");
+    const link = getTag("link");
+    const description = getTag("description").replace(/<[^>]+>/g, "").slice(0, 500);
+    const pubDate = getTag("pubDate");
+    const sourceMatch = c.match(/<source[^>]+url=["']([^"']+)["'][^>]*>(.*?)<\/source>/i);
+
+    if (title && link) {
+      let domain = "";
+      try { domain = new URL(link).hostname.replace("www.", ""); } catch {}
+
+      articles.push({
+        title,
+        snippet: description,
+        url: link,
+        published_at: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
+        source_domain: sourceMatch ? new URL(sourceMatch[1]).hostname.replace("www.", "") : domain,
+        source_name: sourceMatch ? sourceMatch[2] : domain,
+        matched_keywords: [keyword],
+      });
+    }
+  }
+  return articles;
+}
+
+// ── RSS Feed Search for approved domains ────────────────
+
+function parseRSSForKeywords(xml: string, keywords: string[], domain: string, sourceName: string): DiscoveredArticle[] {
   const articles: DiscoveredArticle[] = [];
   const kwLower = keywords.map(k => k.toLowerCase());
 
-  // Parse RSS items
   const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
   let match;
   while ((match = itemRegex.exec(xml)) !== null) {
@@ -44,24 +88,23 @@ function parseRSSForKeywords(xml: string, keywords: string[]): DiscoveredArticle
     const title = getTag("title");
     const link = getTag("link") || getTag("guid");
     const description = getTag("description").replace(/<[^>]+>/g, "").slice(0, 500);
-    const pubDate = getTag("pubDate") || getTag("dc:date") || getTag("published");
+    const pubDate = getTag("pubDate") || getTag("dc:date");
 
     if (title && link) {
       const combined = (title + " " + description).toLowerCase();
-      if (kwLower.some(kw => combined.includes(kw))) {
+      const matchedKws = keywords.filter(kw => combined.includes(kw.toLowerCase()));
+      if (matchedKws.length > 0) {
         articles.push({
-          title,
-          snippet: description,
-          url: link,
+          title, snippet: description, url: link,
           published_at: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
-          domain: "",
-          source_name: "",
+          source_domain: domain, source_name: sourceName,
+          matched_keywords: matchedKws,
         });
       }
     }
   }
 
-  // Parse Atom entries
+  // Atom entries
   const entryRegex = /<entry>([\s\S]*?)<\/entry>/gi;
   while ((match = entryRegex.exec(xml)) !== null) {
     const c = match[1];
@@ -72,20 +115,18 @@ function parseRSSForKeywords(xml: string, keywords: string[]): DiscoveredArticle
     const title = getTag("title");
     const linkMatch = c.match(/<link[^>]+href=["']([^"']+)["']/i);
     const link = linkMatch ? linkMatch[1] : getTag("link");
-    const summary = getTag("summary") || getTag("content");
-    const snippet = summary.replace(/<[^>]+>/g, "").slice(0, 500);
+    const summary = (getTag("summary") || getTag("content")).replace(/<[^>]+>/g, "").slice(0, 500);
     const updated = getTag("updated") || getTag("published");
 
     if (title && link) {
-      const combined = (title + " " + snippet).toLowerCase();
-      if (kwLower.some(kw => combined.includes(kw))) {
+      const combined = (title + " " + summary).toLowerCase();
+      const matchedKws = keywords.filter(kw => combined.includes(kw.toLowerCase()));
+      if (matchedKws.length > 0) {
         articles.push({
-          title,
-          snippet,
-          url: link,
+          title, snippet: summary, url: link,
           published_at: updated ? new Date(updated).toISOString() : new Date().toISOString(),
-          domain: "",
-          source_name: "",
+          source_domain: domain, source_name: sourceName,
+          matched_keywords: matchedKws,
         });
       }
     }
@@ -93,22 +134,7 @@ function parseRSSForKeywords(xml: string, keywords: string[]): DiscoveredArticle
   return articles;
 }
 
-async function searchDomainFeed(
-  domain: { name: string; domain: string; feed_url: string | null },
-  keywords: string[]
-): Promise<DiscoveredArticle[]> {
-  if (!domain.feed_url) return [];
-
-  try {
-    const resp = await fetchWithTimeout(domain.feed_url);
-    if (!resp.ok) return [];
-    const xml = await resp.text();
-    const articles = parseRSSForKeywords(xml, keywords);
-    return articles.map(a => ({ ...a, domain: domain.domain, source_name: domain.name }));
-  } catch {
-    return [];
-  }
-}
+// ── Sentiment Analysis ──────────────────────────────────
 
 async function analyzeSentimentBatch(
   items: { title: string; snippet: string }[],
@@ -183,8 +209,7 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body = await req.json().catch(() => ({}));
-    const maxDomains = body.max_domains || 500;
-    const regionFilter = body.region || null;
+    const maxDomainFeeds = body.max_domains || 100;
 
     // Load keywords
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
@@ -195,64 +220,183 @@ serve(async (req) => {
       });
     }
 
-    // Also use company name from settings
     const { data: settings } = await supabase.from("settings").select("company_name").limit(1).maybeSingle();
     const searchTerms = activeKeywords.map(k => k.text);
     if (settings?.company_name && settings.company_name !== "My Company") {
       searchTerms.push(settings.company_name);
     }
 
-    // Load approved domains with feeds, prioritized
-    let domainsQuery = supabase
+    // Get existing sources for linking
+    const { data: sources } = await supabase.from("sources").select("id, rss_url, domain");
+    const { data: existingUrls } = await supabase.from("articles").select("url").limit(5000);
+    const existingUrlSet = new Set((existingUrls || []).map(a => a.url));
+
+    let allDiscovered: DiscoveredArticle[] = [];
+
+    // ═══════════════════════════════════════════════════════
+    // METHOD 1: Google News RSS Search (PRIMARY - searches ALL sources)
+    // ═══════════════════════════════════════════════════════
+    console.log(`Searching Google News for ${searchTerms.length} keywords...`);
+
+    for (const term of searchTerms) {
+      try {
+        const url = buildGoogleNewsUrl(term);
+        const resp = await fetchWithTimeout(url, 15000);
+        if (resp.ok) {
+          const xml = await resp.text();
+          const articles = parseGoogleNewsRSS(xml, term);
+          console.log(`Google News "${term}": ${articles.length} articles`);
+          allDiscovered.push(...articles);
+        } else {
+          console.warn(`Google News "${term}": HTTP ${resp.status}`);
+        }
+        // Rate limit between keyword searches
+        await new Promise(r => setTimeout(r, 1000));
+      } catch (e) {
+        console.error(`Google News "${term}" error:`, e);
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // METHOD 2: Approved domain feeds (SUPPLEMENTARY)
+    // ═══════════════════════════════════════════════════════
+    const { data: domains } = await supabase
       .from("approved_domains")
       .select("*")
       .eq("active", true)
       .eq("approval_status", "approved")
       .not("feed_url", "is", null)
       .order("priority", { ascending: false })
-      .limit(maxDomains);
+      .limit(maxDomainFeeds);
 
-    if (regionFilter) {
-      domainsQuery = domainsQuery.eq("region", regionFilter);
-    }
-
-    const { data: domains } = await domainsQuery;
-    if (!domains || domains.length === 0) {
-      return new Response(JSON.stringify({ discovered: 0, message: "No approved domains with feeds" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Get existing source_ids for linking
-    const { data: sources } = await supabase.from("sources").select("id, rss_url, domain");
-
-    // Search domains in batches of 5
-    let allDiscovered: DiscoveredArticle[] = [];
-    const CONCURRENCY = 5;
-    for (let i = 0; i < domains.length; i += CONCURRENCY) {
-      const batch = domains.slice(i, i + CONCURRENCY);
-      const results = await Promise.allSettled(
-        batch.map(d => searchDomainFeed(d, searchTerms))
-      );
-      for (const r of results) {
-        if (r.status === "fulfilled") allDiscovered.push(...r.value);
-      }
-      if (i + CONCURRENCY < domains.length) {
-        await new Promise(r => setTimeout(r, 500));
+    if (domains && domains.length > 0) {
+      console.log(`Searching ${domains.length} approved domain feeds...`);
+      const CONCURRENCY = 5;
+      for (let i = 0; i < domains.length; i += CONCURRENCY) {
+        const batch = domains.slice(i, i + CONCURRENCY);
+        const results = await Promise.allSettled(
+          batch.map(async d => {
+            if (!d.feed_url) return [];
+            try {
+              const resp = await fetchWithTimeout(d.feed_url);
+              if (!resp.ok) return [];
+              const xml = await resp.text();
+              return parseRSSForKeywords(xml, searchTerms, d.domain, d.name);
+            } catch { return []; }
+          })
+        );
+        for (const r of results) {
+          if (r.status === "fulfilled") allDiscovered.push(...r.value);
+        }
+        if (i + CONCURRENCY < domains.length) {
+          await new Promise(r => setTimeout(r, 300));
+        }
       }
     }
 
-    console.log(`Discovery: found ${allDiscovered.length} matching articles across ${domains.length} domains`);
+    // ═══════════════════════════════════════════════════════
+    // METHOD 3: Source RSS feeds (SUPPLEMENTARY)
+    // ═══════════════════════════════════════════════════════
+    const { data: activeSources } = await supabase
+      .from("sources")
+      .select("*")
+      .eq("active", true)
+      .limit(100);
 
-    // Deduplicate by URL
+    if (activeSources && activeSources.length > 0) {
+      console.log(`Searching ${activeSources.length} active source feeds...`);
+      const CONCURRENCY = 5;
+      for (let i = 0; i < activeSources.length; i += CONCURRENCY) {
+        const batch = activeSources.slice(i, i + CONCURRENCY);
+        const results = await Promise.allSettled(
+          batch.map(async s => {
+            try {
+              const resp = await fetchWithTimeout(s.rss_url);
+              if (!resp.ok) return [];
+              const xml = await resp.text();
+              const domain = s.domain || new URL(s.rss_url).hostname.replace("www.", "");
+              return parseRSSForKeywords(xml, searchTerms, domain, s.name);
+            } catch { return []; }
+          })
+        );
+        for (const r of results) {
+          if (r.status === "fulfilled") allDiscovered.push(...r.value);
+        }
+      }
+    }
+
+    console.log(`Total candidates before dedup: ${allDiscovered.length}`);
+
+    // ═══════════════════════════════════════════════════════
+    // DEDUPLICATION
+    // ═══════════════════════════════════════════════════════
     const seen = new Set<string>();
     allDiscovered = allDiscovered.filter(a => {
-      if (seen.has(a.url)) return false;
-      seen.add(a.url);
+      // Normalize URL for dedup
+      let normalizedUrl = a.url;
+      try {
+        const u = new URL(a.url);
+        u.searchParams.delete("utm_source");
+        u.searchParams.delete("utm_medium");
+        u.searchParams.delete("utm_campaign");
+        u.hash = "";
+        normalizedUrl = u.toString();
+      } catch {}
+      if (seen.has(normalizedUrl) || existingUrlSet.has(a.url)) return false;
+      seen.add(normalizedUrl);
       return true;
     });
 
-    // Find or match source_id
+    console.log(`After dedup: ${allDiscovered.length} new articles`);
+
+    // ═══════════════════════════════════════════════════════
+    // AUTO-DISCOVER NEW SOURCES
+    // ═══════════════════════════════════════════════════════
+    const newDomains = new Map<string, { name: string; count: number }>();
+    const knownDomains = new Set([
+      ...(sources || []).map(s => s.domain).filter(Boolean),
+      ...(domains || []).map(d => d.domain),
+    ]);
+
+    for (const article of allDiscovered) {
+      if (article.source_domain && !knownDomains.has(article.source_domain)) {
+        const existing = newDomains.get(article.source_domain);
+        if (existing) {
+          existing.count++;
+        } else {
+          newDomains.set(article.source_domain, { name: article.source_name, count: 1 });
+        }
+      }
+    }
+
+    // Create candidate approved_domains for newly discovered sources
+    if (newDomains.size > 0) {
+      const candidates = Array.from(newDomains.entries()).map(([domain, info]) => ({
+        domain,
+        name: info.name || domain,
+        approval_status: "pending",
+        auto_discovered: true,
+        active: false,
+        priority: 30,
+      }));
+
+      // Only insert truly new domains
+      const { data: existingDomains } = await supabase
+        .from("approved_domains")
+        .select("domain")
+        .in("domain", candidates.map(c => c.domain));
+      const existingDomainSet = new Set((existingDomains || []).map(d => d.domain));
+      const trulyNew = candidates.filter(c => !existingDomainSet.has(c.domain));
+
+      if (trulyNew.length > 0) {
+        await supabase.from("approved_domains").insert(trulyNew);
+        console.log(`Auto-discovered ${trulyNew.length} new source domains`);
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // INSERT ARTICLES WITH SENTIMENT
+    // ═══════════════════════════════════════════════════════
     let totalInserted = 0;
     const keywordMatchUpdates: Record<string, number> = {};
     const BATCH_SIZE = 10;
@@ -261,17 +405,16 @@ serve(async (req) => {
       const batch = allDiscovered.slice(b, b + BATCH_SIZE);
 
       const articlesToInsert = batch.map(a => {
-        const matchedKws: string[] = [];
-        for (const kw of activeKeywords) {
-          if (a.title.toLowerCase().includes(kw.text.toLowerCase()) ||
-              a.snippet.toLowerCase().includes(kw.text.toLowerCase())) {
-            matchedKws.push(kw.text);
-            keywordMatchUpdates[kw.id] = (keywordMatchUpdates[kw.id] || 0) + 1;
-          }
+        // Update keyword match counts
+        for (const kwText of a.matched_keywords) {
+          const kw = activeKeywords.find(k => k.text === kwText);
+          if (kw) keywordMatchUpdates[kw.id] = (keywordMatchUpdates[kw.id] || 0) + 1;
         }
 
+        // Find matching source
         const matchedSource = sources?.find(s =>
-          s.domain === a.domain || (s.rss_url && new URL(s.rss_url).hostname.includes(a.domain))
+          s.domain === a.source_domain ||
+          (s.rss_url && new URL(s.rss_url).hostname.replace("www.", "") === a.source_domain)
         );
 
         return {
@@ -281,25 +424,22 @@ serve(async (req) => {
           source_id: matchedSource?.id || null,
           published_at: a.published_at,
           fetched_at: new Date().toISOString(),
-          matched_keywords: matchedKws,
+          matched_keywords: a.matched_keywords,
           language: "en",
           sentiment: "neutral" as string,
           sentiment_score: 0.5,
         };
       });
 
-      // Only run sentiment on matched articles
-      const matched = articlesToInsert.filter(a => a.matched_keywords.length > 0);
-      if (matched.length > 0) {
-        const sentiments = await analyzeSentimentBatch(
-          matched.map(a => ({ title: a.title, snippet: a.snippet || "" })),
-          lovableApiKey
-        );
-        matched.forEach((a, idx) => {
-          a.sentiment = sentiments[idx].sentiment;
-          a.sentiment_score = sentiments[idx].score;
-        });
-      }
+      // Sentiment analysis
+      const sentiments = await analyzeSentimentBatch(
+        articlesToInsert.map(a => ({ title: a.title, snippet: a.snippet || "" })),
+        lovableApiKey
+      );
+      articlesToInsert.forEach((a, idx) => {
+        a.sentiment = sentiments[idx].sentiment;
+        a.sentiment_score = sentiments[idx].score;
+      });
 
       const { data: inserted, error: insertErr } = await supabase
         .from("articles")
@@ -323,9 +463,10 @@ serve(async (req) => {
 
     const summary = {
       discovered: totalInserted,
-      domainsSearched: domains.length,
-      candidatesFound: allDiscovered.length,
+      totalCandidates: allDiscovered.length,
+      newDomainsFound: newDomains.size,
       keywordsUsed: searchTerms,
+      methods: ["google_news_rss", "approved_domain_feeds", "source_feeds"],
     };
     console.log("Discovery complete:", summary);
 
