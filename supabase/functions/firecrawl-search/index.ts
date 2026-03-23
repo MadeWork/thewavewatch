@@ -105,7 +105,8 @@ serve(async (req) => {
     const { data: sources } = await supabase.from("sources").select("*").eq("active", true);
     const allSources = sources || [];
 
-    const searchTerms = activeKeywords.map((k: any) => k.text);
+    const searchTerms = needsSearch.map((k: any) => k.text);
+    const allKeywordTexts = activeKeywords.map((k: any) => k.text);
     const discovered: any[] = [];
 
     // Search for each keyword using Firecrawl
