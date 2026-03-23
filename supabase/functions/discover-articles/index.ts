@@ -86,6 +86,19 @@ function matchKeywords(text: string, keywords: string[]): string[] {
   return keywords.filter(kw => n.includes(normalizeText(kw)));
 }
 
+/** Try to extract a publication date from a URL path like /2024/03/15/ */
+function extractDateFromUrl(url: string): string | null {
+  try {
+    const path = new URL(url).pathname;
+    const m = path.match(/\/(\d{4})\/(\d{1,2})\/(\d{1,2})\//);
+    if (m) {
+      const d = new Date(`${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}T12:00:00Z`);
+      if (!isNaN(d.getTime()) && d.getTime() > new Date("2000-01-01").getTime()) return d.toISOString();
+    }
+  } catch {}
+  return null;
+}
+
 function extractTitleFromUrl(url: string): string {
   try {
     const last = new URL(url).pathname.split("/").filter(Boolean).pop() || "";
@@ -126,7 +139,7 @@ function parseRSSItems(xml: string, domain: string, sourceName: string): RSSItem
     const link = getXmlTag(c, "link") || getXmlTag(c, "guid");
     const desc = stripHtml(getXmlTag(c, "description")).slice(0, 500);
     const pubDate = getXmlTag(c, "pubDate") || getXmlTag(c, "dc:date");
-    if (title && link) items.push({ title, url: link, snippet: desc, published_at: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(), source_domain: nd, source_name: sourceName });
+    if (title && link) items.push({ title, url: link, snippet: desc, published_at: pubDate ? new Date(pubDate).toISOString() : (extractDateFromUrl(link) || new Date().toISOString()), source_domain: nd, source_name: sourceName });
   }
 
   // Atom <entry>
@@ -138,7 +151,7 @@ function parseRSSItems(xml: string, domain: string, sourceName: string): RSSItem
     const link = linkMatch ? linkMatch[1] : getXmlTag(c, "link");
     const summary = stripHtml(getXmlTag(c, "summary") || getXmlTag(c, "content")).slice(0, 500);
     const updated = getXmlTag(c, "updated") || getXmlTag(c, "published");
-    if (title && link) items.push({ title, url: link, snippet: summary, published_at: updated ? new Date(updated).toISOString() : new Date().toISOString(), source_domain: nd, source_name: sourceName });
+    if (title && link) items.push({ title, url: link, snippet: summary, published_at: updated ? new Date(updated).toISOString() : (extractDateFromUrl(link) || new Date().toISOString()), source_domain: nd, source_name: sourceName });
   }
   return items;
 }
@@ -159,7 +172,7 @@ function parseGoogleNewsRSS(xml: string, keyword: string): DiscoveredArticle[] {
       try { domain = normalizeDomain(srcMatch ? srcMatch[1] : gnLink); } catch {}
       articles.push({
         title, snippet: desc, url: gnLink,
-        published_at: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
+        published_at: pubDate ? new Date(pubDate).toISOString() : (extractDateFromUrl(gnLink) || new Date().toISOString()),
         source_domain: domain, source_name: srcMatch ? stripHtml(srcMatch[2]) : domain,
         matched_keywords: [keyword],
       });

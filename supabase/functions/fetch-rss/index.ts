@@ -29,6 +29,18 @@ function normalizeDomain(d: string): string {
   return d.replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/.*$/, "").trim().toLowerCase();
 }
 
+function extractDateFromUrl(url: string): string | null {
+  try {
+    const path = new URL(url).pathname;
+    const m = path.match(/\/(\d{4})\/(\d{1,2})\/(\d{1,2})\//);
+    if (m) {
+      const d = new Date(`${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}T12:00:00Z`);
+      if (!isNaN(d.getTime()) && d.getTime() > new Date("2000-01-01").getTime()) return d.toISOString();
+    }
+  } catch {}
+  return null;
+}
+
 function parseRSSAtom(xml: string): ParsedArticle[] {
   const items: ParsedArticle[] = [];
   const getTag = (c: string, tag: string) => { const m = c.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?(.*?)(?:\\]\\]>)?<\\/${tag}>`, "si")); return m ? m[1].trim() : ""; };
@@ -41,7 +53,7 @@ function parseRSSAtom(xml: string): ParsedArticle[] {
     const link = getTag(c, "link") || getTag(c, "guid");
     const desc = getTag(c, "description").replace(/<[^>]+>/g, "").slice(0, 500);
     const pubDate = getTag(c, "pubDate") || getTag(c, "dc:date") || getTag(c, "published");
-    if (title && link) items.push({ title, snippet: desc, url: link, published_at: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString() });
+    if (title && link) items.push({ title, snippet: desc, url: link, published_at: pubDate ? new Date(pubDate).toISOString() : (extractDateFromUrl(link) || new Date().toISOString()) });
   }
   const entryRe = /<entry>([\s\S]*?)<\/entry>/gi;
   while ((m = entryRe.exec(xml)) !== null) {
@@ -51,7 +63,7 @@ function parseRSSAtom(xml: string): ParsedArticle[] {
     const link = linkMatch ? linkMatch[1] : getTag(c, "link");
     const summary = (getTag(c, "summary") || getTag(c, "content")).replace(/<[^>]+>/g, "").slice(0, 500);
     const updated = getTag(c, "updated") || getTag(c, "published");
-    if (title && link) items.push({ title, snippet: summary, url: link, published_at: updated ? new Date(updated).toISOString() : new Date().toISOString() });
+    if (title && link) items.push({ title, snippet: summary, url: link, published_at: updated ? new Date(updated).toISOString() : (extractDateFromUrl(link) || new Date().toISOString()) });
   }
   return items;
 }
@@ -71,7 +83,7 @@ function parseSitemap(xml: string): ParsedArticle[] {
       items.push({
         title: newsTitle ? newsTitle[1].trim() : url.split("/").filter(Boolean).pop() || url,
         snippet: "", url,
-        published_at: (newsPub || lastmod) ? new Date((newsPub || lastmod)![1]).toISOString() : new Date().toISOString(),
+        published_at: (newsPub || lastmod) ? new Date((newsPub || lastmod)![1]).toISOString() : (extractDateFromUrl(url) || new Date().toISOString()),
       });
     }
   }
@@ -89,7 +101,7 @@ function parseHTMLArticles(html: string, baseUrl: string): ParsedArticle[] {
       if (text.length > 10 && !href.startsWith("#") && !href.startsWith("javascript") && !seen.has(href)) {
         seen.add(href);
         const fullUrl = href.startsWith("http") ? href : new URL(href, baseUrl).toString();
-        items.push({ title: text.slice(0, 200), snippet: "", url: fullUrl, published_at: new Date().toISOString() });
+        items.push({ title: text.slice(0, 200), snippet: "", url: fullUrl, published_at: extractDateFromUrl(fullUrl) || new Date().toISOString() });
       }
     }
   }

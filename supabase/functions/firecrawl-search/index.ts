@@ -20,6 +20,18 @@ function normalizeDomain(d: string): string {
   return d.replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/.*$/, "").trim().toLowerCase();
 }
 
+function extractDateFromUrl(url: string): string | null {
+  try {
+    const path = new URL(url).pathname;
+    const m = path.match(/\/(\d{4})\/(\d{1,2})\/(\d{1,2})\//);
+    if (m) {
+      const d = new Date(`${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}T12:00:00Z`);
+      if (!isNaN(d.getTime()) && d.getTime() > new Date("2000-01-01").getTime()) return d.toISOString();
+    }
+  } catch {}
+  return null;
+}
+
 function normalizeText(t: string): string {
   return t.toLowerCase().replace(/[_\-–—]+/gu, " ").replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/g, " ").trim();
 }
@@ -152,7 +164,7 @@ serve(async (req) => {
             title: (result.title || "").slice(0, 220),
             snippet: (result.description || (result.markdown || "").slice(0, 300)).slice(0, 500),
             url,
-            published_at: new Date().toISOString(),
+            published_at: extractDateFromUrl(url) || new Date().toISOString(),
             source_domain: domain,
             source_name: domain,
             matched_keywords: matched,
