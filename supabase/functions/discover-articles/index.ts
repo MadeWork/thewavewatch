@@ -363,13 +363,13 @@ async function collectApprovedDomainCandidates(
   approvedDomains: Array<{ domain: string; name: string; sitemap_url?: string | null }>,
   keywords: string[],
   existingUrlSet: Set<string>,
-  maxDomains = 20,
-  childSitemapLimit = 6,
+  maxDomains = 8,
+  childSitemapLimit = 3,
 ): Promise<{ matched: DiscoveredArticle[]; unmatched: RSSItem[] }> {
   const matched: DiscoveredArticle[] = [];
   const unmatched: RSSItem[] = [];
   const domainsToScan = approvedDomains.slice(0, maxDomains);
-  const DOMAIN_CONCURRENCY = 3;
+  const DOMAIN_CONCURRENCY = 2;
 
   for (let i = 0; i < domainsToScan.length; i += DOMAIN_CONCURRENCY) {
     const batch = domainsToScan.slice(i, i + DOMAIN_CONCURRENCY);
@@ -402,7 +402,7 @@ async function collectApprovedDomainCandidates(
 
           for (const xmlText of xmlDocuments) {
             if (!xmlText || !/<urlset/i.test(xmlText)) continue;
-            const parsedItems = parseSitemapItems(xmlText, domain, sourceName).slice(-80);
+            const parsedItems = parseSitemapItems(xmlText, domain, sourceName).slice(-30);
             for (const item of parsedItems) {
               const normalizedItemUrl = normalizeUrl(item.url);
               if (existingUrlSet.has(normalizedItemUrl)) continue;
@@ -562,10 +562,10 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body = await req.json().catch(() => ({}));
-    const maxDomainFeeds = body.max_domains || 100;
-    const deepScanLimit = body.deep_scan_limit || 150;
-    const maxSitemapDomains = body.max_sitemap_domains || 20;
-    const sitemapChildLimit = body.sitemap_child_limit || 6;
+    const maxDomainFeeds = body.max_domains || 50;
+    const deepScanLimit = body.deep_scan_limit || 60;
+    const maxSitemapDomains = body.max_sitemap_domains || 8;
+    const sitemapChildLimit = body.sitemap_child_limit || 3;
 
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
     const activeKeywords = keywords || [];
