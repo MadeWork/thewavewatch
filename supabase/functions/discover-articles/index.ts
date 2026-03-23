@@ -151,7 +151,7 @@ function parseRSSItems(xml: string, domain: string, sourceName: string): RSSItem
     const link = linkMatch ? linkMatch[1] : getXmlTag(c, "link");
     const summary = stripHtml(getXmlTag(c, "summary") || getXmlTag(c, "content")).slice(0, 500);
     const updated = getXmlTag(c, "updated") || getXmlTag(c, "published");
-    if (title && link) items.push({ title, url: link, snippet: summary, published_at: updated ? new Date(updated).toISOString() : new Date().toISOString(), source_domain: nd, source_name: sourceName });
+    if (title && link) items.push({ title, url: link, snippet: summary, published_at: updated ? new Date(updated).toISOString() : (extractDateFromUrl(link) || new Date().toISOString()), source_domain: nd, source_name: sourceName });
   }
   return items;
 }
