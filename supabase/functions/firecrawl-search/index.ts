@@ -72,13 +72,27 @@ serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    const maxResults = Math.min(Number(body.max_results || 10), 20);
+    const maxResults = Math.min(Number(body.max_results || 5), 10);
+    const minThreshold = Number(body.min_threshold ?? 5);
+    const priorCounts: Record<string, number> = body.prior_counts || {};
 
     // Get active keywords
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
     const activeKeywords = keywords || [];
     if (!activeKeywords.length) {
       return new Response(JSON.stringify({ discovered: 0, message: "No active keywords" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Filter to only keywords that need more results
+    const needsSearch = activeKeywords.filter((k: any) => {
+      const prior = priorCounts[k.text] ?? 0;
+      return prior < minThreshold;
+    });
+    console.log(`Keywords needing Firecrawl: ${needsSearch.length}/${activeKeywords.length}`);
+    if (!needsSearch.length) {
+      return new Response(JSON.stringify({ discovered: 0, searched: 0, skipped: activeKeywords.length, method: "firecrawl_search" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
