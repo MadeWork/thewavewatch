@@ -229,7 +229,7 @@ serve(async (req) => {
 
           // Match keywords against title + description only (no markdown = fewer credits)
           const searchText = [result.title || "", result.description || ""].join(" ");
-          const matched = matchKeywords(searchText, allKeywordTexts);
+          const matched = matchKeywordsExpanded(searchText, allMatchTerms);
           if (matched.length === 0) continue;
 
           let domain = "";

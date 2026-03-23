@@ -414,7 +414,7 @@ serve(async (req) => {
             const matched: DiscoveredArticle[] = [];
             const unmatched: RSSItem[] = [];
             for (const item of items) {
-              const kws = matchKeywords(`${item.title} ${item.snippet} ${item.url}`, searchTerms);
+              const kws = matchKeywordsExpanded(`${item.title} ${item.snippet} ${item.url}`, searchTerms);
               if (kws.length > 0) matched.push({ ...item, matched_keywords: kws });
               else unmatched.push(item);
             }
@@ -446,7 +446,7 @@ serve(async (req) => {
             const matched: DiscoveredArticle[] = [];
             const unmatched: RSSItem[] = [];
             for (const item of items) {
-              const kws = matchKeywords(`${item.title} ${item.snippet} ${item.url}`, searchTerms);
+              const kws = matchKeywordsExpanded(`${item.title} ${item.snippet} ${item.url}`, searchTerms);
               if (kws.length > 0) matched.push({ ...item, matched_keywords: kws });
               else unmatched.push(item);
             }
@@ -484,7 +484,7 @@ serve(async (req) => {
           deepScanned++;
           const result = await fetchArticleDetails(item.url, true);
           if (!result) return null;
-          const kws = matchKeywords(result.text, searchTerms);
+          const kws = matchKeywordsExpanded(result.text, searchTerms);
           if (kws.length > 0) {
             return {
               ...item,
