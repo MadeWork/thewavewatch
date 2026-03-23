@@ -76,23 +76,24 @@ function parseGoogleNewsRSS(xml: string, keyword: string): DiscoveredArticle[] {
       return m ? m[1].trim() : "";
     };
     const title = getTag("title");
-    const link = getTag("link");
+    const gnLink = getTag("link");
     const description = getTag("description").replace(/<[^>]+>/g, "").slice(0, 500);
     const pubDate = getTag("pubDate");
     const sourceMatch = c.match(/<source[^>]+url=["']([^"']+)["'][^>]*>(.*?)<\/source>/i);
 
-    if (title && link) {
-      // Use source URL from <source> tag if available (this is the real publisher URL)
-      const sourceUrl = sourceMatch ? sourceMatch[1] : "";
+    if (title && gnLink) {
+      // IMPORTANT: Use the <source url="..."> attribute as the real article URL
+      // Google News <link> URLs are opaque redirects that can't be resolved server-side
+      const realUrl = sourceMatch ? sourceMatch[1] : gnLink;
       let domain = "";
-      try { domain = new URL(sourceUrl || link).hostname.replace("www.", ""); } catch {}
+      try { domain = new URL(realUrl).hostname.replace("www.", ""); } catch {}
 
       articles.push({
         title,
         snippet: description,
-        url: link, // Will be resolved later
+        url: realUrl, // Use source URL directly, not the Google News redirect
         published_at: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
-        source_domain: sourceMatch ? new URL(sourceMatch[1]).hostname.replace("www.", "") : domain,
+        source_domain: domain,
         source_name: sourceMatch ? sourceMatch[2] : domain,
         matched_keywords: [keyword],
       });
