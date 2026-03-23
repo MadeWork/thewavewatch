@@ -369,29 +369,46 @@ serve(async (req) => {
           };
         });
 
-        const BATCH_SIZE = 10;
-        for (let b = 0; b < articlesToInsert.length; b += BATCH_SIZE) {
-          const articleBatch = articlesToInsert.slice(b, b + BATCH_SIZE);
-          const sentiments = await analyzeSentimentBatch(
-            articleBatch.map((a) => ({ title: a.title, snippet: a.snippet || "" })),
-            lovableApiKey
-          );
-          const withSentiment = articleBatch.map((a, idx) => ({
-            ...a,
-            sentiment: sentiments[idx].sentiment,
-            sentiment_score: sentiments[idx].score,
-          }));
+        // Only run sentiment on articles that matched keywords (saves API calls)
+        const withKeywords = articlesToInsert.filter(a => a.matched_keywords.length > 0);
+        const withoutKeywords = articlesToInsert.filter(a => a.matched_keywords.length === 0);
+
+        // Insert non-matching articles with neutral sentiment directly
+        if (withoutKeywords.length > 0) {
+          const neutral = withoutKeywords.map(a => ({ ...a, sentiment: "neutral", sentiment_score: 0.5 }));
           const { data: inserted, error: insertErr } = await supabase
             .from("articles")
-            .upsert(withSentiment, { onConflict: "url", ignoreDuplicates: false })
+            .upsert(neutral, { onConflict: "url", ignoreDuplicates: true })
             .select("id");
-          if (insertErr) {
-            console.error("Insert error:", insertErr);
-            totalErrors++;
-          } else {
-            totalInserted += (inserted?.length || 0);
+          if (!insertErr) totalInserted += (inserted?.length || 0);
+          else console.error("Insert error:", insertErr);
+        }
+
+        // Analyze sentiment only for keyword-matched articles
+        if (withKeywords.length > 0) {
+          const BATCH_SIZE = 10;
+          for (let b = 0; b < withKeywords.length; b += BATCH_SIZE) {
+            const articleBatch = withKeywords.slice(b, b + BATCH_SIZE);
+            const sentiments = await analyzeSentimentBatch(
+              articleBatch.map((a) => ({ title: a.title, snippet: a.snippet || "" })),
+              lovableApiKey
+            );
+            const withSentiment = articleBatch.map((a, idx) => ({
+              ...a,
+              sentiment: sentiments[idx].sentiment,
+              sentiment_score: sentiments[idx].score,
+            }));
+            const { data: inserted, error: insertErr } = await supabase
+              .from("articles")
+              .upsert(withSentiment, { onConflict: "url", ignoreDuplicates: false })
+              .select("id");
+            if (insertErr) {
+              console.error("Insert error:", insertErr);
+              totalErrors++;
+            } else {
+              totalInserted += (inserted?.length || 0);
+            }
           }
-          await new Promise((r) => setTimeout(r, 200));
         }
       }
     }
