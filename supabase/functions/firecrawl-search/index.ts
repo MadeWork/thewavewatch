@@ -72,13 +72,27 @@ serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    const maxResults = Math.min(Number(body.max_results || 10), 20);
+    const maxResults = Math.min(Number(body.max_results || 5), 10);
+    const minThreshold = Number(body.min_threshold ?? 5);
+    const priorCounts: Record<string, number> = body.prior_counts || {};
 
     // Get active keywords
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
     const activeKeywords = keywords || [];
     if (!activeKeywords.length) {
       return new Response(JSON.stringify({ discovered: 0, message: "No active keywords" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Filter to only keywords that need more results
+    const needsSearch = activeKeywords.filter((k: any) => {
+      const prior = priorCounts[k.text] ?? 0;
+      return prior < minThreshold;
+    });
+    console.log(`Keywords needing Firecrawl: ${needsSearch.length}/${activeKeywords.length}`);
+    if (!needsSearch.length) {
+      return new Response(JSON.stringify({ discovered: 0, searched: 0, skipped: activeKeywords.length, method: "firecrawl_search" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -91,7 +105,8 @@ serve(async (req) => {
     const { data: sources } = await supabase.from("sources").select("*").eq("active", true);
     const allSources = sources || [];
 
-    const searchTerms = activeKeywords.map((k: any) => k.text);
+    const searchTerms = needsSearch.map((k: any) => k.text);
+    const allKeywordTexts = activeKeywords.map((k: any) => k.text);
     const discovered: any[] = [];
 
     // Search for each keyword using Firecrawl
@@ -107,8 +122,7 @@ serve(async (req) => {
           body: JSON.stringify({
             query: `${term} news`,
             limit: maxResults,
-            tbs: "qdr:w", // last week
-            scrapeOptions: { formats: ["markdown"] },
+            tbs: "qdr:w",
           }),
         });
 
@@ -126,9 +140,9 @@ serve(async (req) => {
           const url = normalizeUrl(result.url || "");
           if (!url || existingUrlSet.has(url)) continue;
 
-          // Match keywords against title + description + markdown body
-          const searchText = [result.title || "", result.description || "", (result.markdown || "").slice(0, 5000)].join(" ");
-          const matched = matchKeywords(searchText, searchTerms);
+          // Match keywords against title + description only (no markdown = fewer credits)
+          const searchText = [result.title || "", result.description || ""].join(" ");
+          const matched = matchKeywords(searchText, allKeywordTexts);
           if (matched.length === 0) continue;
 
           let domain = "";

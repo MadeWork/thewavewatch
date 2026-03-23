@@ -99,12 +99,19 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       } catch {}
       setState(s => ({ ...s, progress: 80 }));
 
-      // Step 4: Firecrawl AI search (80-95%)
+      // Step 4: Firecrawl AI search - only for under-served keywords (80-95%)
       setState(s => ({ ...s, progress: 82, stage: { step: "firecrawl", label: "AI-powered web search…" } }));
       let firecrawlCount = 0;
       try {
+        const priorCounts: Record<string, number> = {};
+        // Pass rough counts so Firecrawl skips well-covered keywords
+        if (discCount + sitemapCount + rssCount > 0) {
+          // distribute evenly as approximation
+          const avg = Math.floor((discCount + sitemapCount + rssCount) / Math.max(1, 1));
+          priorCounts["_default"] = avg;
+        }
         const fcResult = await withTimeout(
-          supabase.functions.invoke("firecrawl-search", { body: { max_results: 15 } }),
+          supabase.functions.invoke("firecrawl-search", { body: { max_results: 5, min_threshold: 3, prior_counts: priorCounts } }),
           60000
         );
         if (fcResult && !fcResult.error) firecrawlCount = fcResult.data?.discovered ?? 0;
