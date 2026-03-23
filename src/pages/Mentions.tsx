@@ -325,6 +325,11 @@ export default function Mentions() {
           </button>
         </div>
       )}
+
+      {/* Article Detail Drawer */}
+      {selectedArticle && (
+        <ArticleDetailDrawer article={selectedArticle} onClose={() => setSelectedArticle(null)} />
+      )}
     </div>
   );
 }
