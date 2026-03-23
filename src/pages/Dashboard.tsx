@@ -1,17 +1,21 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import MetricCard from "@/components/MetricCard";
 import SkeletonCard from "@/components/SkeletonCard";
 import EmptyState from "@/components/EmptyState";
 import ErrorBanner from "@/components/ErrorBanner";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { format, subDays, startOfDay, startOfWeek, startOfMonth } from "date-fns";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, RefreshCw, Loader2 } from "lucide-react";
 import WorldMap from "@/components/WorldMap";
 
 const CHART_COLORS = ["hsl(216,90%,66%)", "hsl(160,64%,55%)", "hsl(280,60%,60%)", "hsl(30,90%,60%)", "hsl(0,93%,71%)"];
 
 export default function Dashboard() {
+  const queryClient = useQueryClient();
+  const [fetching, setFetching] = useState(false);
+  const [fetchResult, setFetchResult] = useState<string | null>(null);
   const { data: articles, isLoading, error } = useQuery({
     queryKey: ["articles"],
     queryFn: async () => {
@@ -53,7 +57,36 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <h1 className="text-xl font-light tracking-tight text-foreground">Dashboard</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-light tracking-tight text-foreground">Dashboard</h1>
+        <button
+          onClick={async () => {
+            setFetching(true); setFetchResult(null);
+            try {
+              const { data, error } = await supabase.functions.invoke("fetch-rss");
+              if (error) throw error;
+              setFetchResult(`Fetched ${data?.totalInserted ?? 0} articles from ${data?.sourcesProcessed ?? 0} sources`);
+              queryClient.invalidateQueries({ queryKey: ["articles"] });
+              queryClient.invalidateQueries({ queryKey: ["mentions"] });
+              queryClient.invalidateQueries({ queryKey: ["analytics-articles"] });
+              queryClient.invalidateQueries({ queryKey: ["keywords"] });
+            } catch (e: any) {
+              setFetchResult(`Error: ${e.message}`);
+            }
+            setFetching(false);
+          }}
+          disabled={fetching}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition disabled:opacity-50"
+        >
+          {fetching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+          {fetching ? "Fetching…" : "Fetch Now"}
+        </button>
+      </div>
+      {fetchResult && (
+        <div className={`px-4 py-2.5 rounded-xl text-xs ${fetchResult.startsWith("Error") ? "bg-negative/10 text-negative" : "bg-positive/10 text-positive"}`}>
+          {fetchResult}
+        </div>
+      )}
 
       {/* Metrics */}
       <div className="grid grid-cols-3 gap-4">
