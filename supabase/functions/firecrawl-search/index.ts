@@ -163,9 +163,38 @@ serve(async (req) => {
     const { data: sources } = await supabase.from("sources").select("*").eq("active", true);
     const allSources = sources || [];
 
-    const searchTerms = needsSearch.map((k: any) => k.text);
-    const allKeywordTexts = activeKeywords.map((k: any) => k.text);
+    // Build expanded term map: expanded term → original keyword text
+    const expandedTermMap = new Map<string, string>();
+    for (const kw of activeKeywords) {
+      const expandedTerms = (kw as any).expanded_terms || [];
+      for (const et of expandedTerms) {
+        expandedTermMap.set(et.toLowerCase(), kw.text);
+      }
+    }
+
+    // Search terms include both original keywords and expanded terms for broader search
+    const searchTerms = [...new Set([
+      ...needsSearch.map((k: any) => k.text),
+      ...needsSearch.flatMap((k: any) => (k.expanded_terms || []).slice(0, 3)), // top 3 expansions per keyword
+    ])];
+    const allMatchTerms = [...new Set([
+      ...activeKeywords.map((k: any) => k.text),
+      ...Array.from(expandedTermMap.keys()),
+    ])];
     const discovered: any[] = [];
+
+    // Enhanced matchKeywords that maps expanded terms back to original keywords
+    function matchKeywordsExpanded(text: string, terms: string[]): string[] {
+      const n = normalizeText(text);
+      const matched = new Set<string>();
+      for (const term of terms) {
+        if (n.includes(normalizeText(term))) {
+          const original = expandedTermMap.get(term.toLowerCase()) || term;
+          matched.add(original);
+        }
+      }
+      return Array.from(matched);
+    }
 
     // Search for each keyword using Firecrawl
     for (const term of searchTerms) {

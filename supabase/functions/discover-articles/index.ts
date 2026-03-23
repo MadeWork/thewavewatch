@@ -329,10 +329,35 @@ serve(async (req) => {
     if (!activeKeywords.length) return new Response(JSON.stringify({ discovered: 0, message: "No active keywords" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
     const { data: settings } = await supabase.from("settings").select("company_name").limit(1).maybeSingle();
+
+    // Build expanded search terms map: expanded term → original keyword text
+    const expandedTermMap = new Map<string, string>();
+    for (const kw of activeKeywords) {
+      const expandedTerms = (kw as any).expanded_terms || [];
+      for (const et of expandedTerms) {
+        expandedTermMap.set(et.toLowerCase(), kw.text);
+      }
+    }
+
     const searchTerms = uniqueStrings([
       ...activeKeywords.map(k => k.text),
+      ...Array.from(expandedTermMap.keys()),
       settings?.company_name && settings.company_name !== "My Company" ? settings.company_name : undefined,
     ]);
+
+    // Enhanced matchKeywords that maps expanded terms back to original keywords
+    function matchKeywordsExpanded(text: string, terms: string[]): string[] {
+      const n = normalizeText(text);
+      const matched = new Set<string>();
+      for (const term of terms) {
+        if (n.includes(normalizeText(term))) {
+          // Map expanded term back to original keyword, or use term itself
+          const original = expandedTermMap.get(term.toLowerCase()) || term;
+          matched.add(original);
+        }
+      }
+      return Array.from(matched);
+    }
 
     // Fetch ALL existing URLs for dedup
     const { data: existingUrls } = await supabase.from("articles").select("url").limit(5000);
