@@ -140,9 +140,9 @@ serve(async (req) => {
           const url = normalizeUrl(result.url || "");
           if (!url || existingUrlSet.has(url)) continue;
 
-          // Match keywords against title + description + markdown body
-          const searchText = [result.title || "", result.description || "", (result.markdown || "").slice(0, 5000)].join(" ");
-          const matched = matchKeywords(searchText, searchTerms);
+          // Match keywords against title + description only (no markdown = fewer credits)
+          const searchText = [result.title || "", result.description || ""].join(" ");
+          const matched = matchKeywords(searchText, allKeywordTexts);
           if (matched.length === 0) continue;
 
           let domain = "";
