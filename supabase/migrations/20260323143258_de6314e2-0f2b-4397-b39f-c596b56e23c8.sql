@@ -1,0 +1,1 @@
+DELETE FROM articles WHERE url LIKE '%news.google.com/rss/articles%';
