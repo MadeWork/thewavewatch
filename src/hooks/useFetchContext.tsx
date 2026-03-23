@@ -136,7 +136,6 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       if (rssCount > 0) parts.push(`${rssCount} from RSS`);
       if (firecrawlCount > 0) parts.push(`${firecrawlCount} from web search`);
       if (newDomains > 0) parts.push(`${newDomains} new sources`);
-      if (rssPendingInBackground) parts.push("source scan still running in background");
 
       const resultText = parts.length > 0 ? parts.join(" · ") : "No new articles found";
 
@@ -144,15 +143,6 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       queryClient.invalidateQueries({ queryKey: ["mentions"] });
       queryClient.invalidateQueries({ queryKey: ["analytics-articles"] });
       queryClient.invalidateQueries({ queryKey: ["keywords"] });
-
-      if (rssPendingInBackground) {
-        setTimeout(() => {
-          queryClient.invalidateQueries({ queryKey: ["articles"] });
-          queryClient.invalidateQueries({ queryKey: ["mentions"] });
-          queryClient.invalidateQueries({ queryKey: ["analytics-articles"] });
-          queryClient.invalidateQueries({ queryKey: ["keywords"] });
-        }, 25000);
-      }
 
       setState({ fetching: false, progress: 100, stage: { step: "done", label: resultText }, result: resultText });
       setTimeout(() => setState(s => ({ ...s, progress: 0, stage: null })), 4000);
