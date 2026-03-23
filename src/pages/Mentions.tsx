@@ -254,6 +254,7 @@ export default function Mentions() {
       {/* Active filter pills */}
       {activeFilterCount > 0 && !showFilters && (
         <div className="flex items-center gap-2 flex-wrap">
+          {dateRange !== "all" && <span className="px-2.5 py-1 rounded-full bg-primary/10 text-primary text-[11px] flex items-center gap-1">{DATE_RANGES.find(d => d.value === dateRange)?.label} <X className="w-3 h-3 cursor-pointer" onClick={() => setDateRange("all")} /></span>}
           {selectedRegion !== "all" && <span className="px-2.5 py-1 rounded-full bg-primary/10 text-primary text-[11px] flex items-center gap-1">{selectedRegion} <X className="w-3 h-3 cursor-pointer" onClick={() => setSelectedRegion("all")} /></span>}
           {selectedCountry !== "all" && <span className="px-2.5 py-1 rounded-full bg-primary/10 text-primary text-[11px] flex items-center gap-1">{COUNTRY_NAMES[selectedCountry] || selectedCountry} <X className="w-3 h-3 cursor-pointer" onClick={() => setSelectedCountry("all")} /></span>}
           {selectedKeyword !== "all" && <span className="px-2.5 py-1 rounded-full bg-primary/10 text-primary text-[11px] flex items-center gap-1">{selectedKeyword} <X className="w-3 h-3 cursor-pointer" onClick={() => setSelectedKeyword("all")} /></span>}
