@@ -172,7 +172,7 @@ function parseGoogleNewsRSS(xml: string, keyword: string): DiscoveredArticle[] {
       try { domain = normalizeDomain(srcMatch ? srcMatch[1] : gnLink); } catch {}
       articles.push({
         title, snippet: desc, url: gnLink,
-        published_at: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
+        published_at: pubDate ? new Date(pubDate).toISOString() : (extractDateFromUrl(gnLink) || new Date().toISOString()),
         source_domain: domain, source_name: srcMatch ? stripHtml(srcMatch[2]) : domain,
         matched_keywords: [keyword],
       });

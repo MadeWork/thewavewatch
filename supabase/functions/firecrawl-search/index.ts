@@ -164,7 +164,7 @@ serve(async (req) => {
             title: (result.title || "").slice(0, 220),
             snippet: (result.description || (result.markdown || "").slice(0, 300)).slice(0, 500),
             url,
-            published_at: new Date().toISOString(),
+            published_at: extractDateFromUrl(url) || new Date().toISOString(),
             source_domain: domain,
             source_name: domain,
             matched_keywords: matched,

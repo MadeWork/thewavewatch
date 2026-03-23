@@ -101,7 +101,7 @@ function parseHTMLArticles(html: string, baseUrl: string): ParsedArticle[] {
       if (text.length > 10 && !href.startsWith("#") && !href.startsWith("javascript") && !seen.has(href)) {
         seen.add(href);
         const fullUrl = href.startsWith("http") ? href : new URL(href, baseUrl).toString();
-        items.push({ title: text.slice(0, 200), snippet: "", url: fullUrl, published_at: new Date().toISOString() });
+        items.push({ title: text.slice(0, 200), snippet: "", url: fullUrl, published_at: extractDateFromUrl(fullUrl) || new Date().toISOString() });
       }
     }
   }
