@@ -38,8 +38,101 @@ async function fetchWithTimeout(url: string, timeoutMs = 10000): Promise<Respons
   }
 }
 
-// ── Full-text extraction from HTML ─────────────────────
-// Fetches an article URL and extracts visible text for keyword matching
+function stripHtml(text: string): string {
+  return text
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&[a-z0-9#]+;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeText(text: string): string {
+  return stripHtml(text)
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeDomain(domain: string): string {
+  return domain
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "")
+    .replace(/\/.*$/, "")
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "oc"].forEach((param) => {
+      parsed.searchParams.delete(param);
+    });
+    parsed.hash = "";
+    if (parsed.pathname !== "/") {
+      parsed.pathname = parsed.pathname.replace(/\/+$/, "") || "/";
+    }
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  return [...new Set(values.filter((value): value is string => Boolean(value && value.trim())).map((value) => value.trim()))];
+}
+
+function buildOriginsForDomain(domain: string): string[] {
+  const cleanDomain = normalizeDomain(domain);
+  return uniqueStrings([
+    `https://${cleanDomain}`,
+    cleanDomain.startsWith("www.") ? undefined : `https://www.${cleanDomain}`,
+  ]);
+}
+
+function extractTitleFromUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const lastSegment = parsed.pathname.split("/").filter(Boolean).pop() || parsed.hostname;
+    return decodeURIComponent(lastSegment)
+      .replace(/\.(html?|php|aspx?)$/i, "")
+      .replace(/[-_]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  } catch {
+    return url;
+  }
+}
+
+function looksLikeArticleUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.toLowerCase();
+    const lastSegment = path.split("/").filter(Boolean).pop() || "";
+    return /\/\d{4}\/\d{2}\/\d{2}\//.test(path)
+      || /\d{5,}/.test(lastSegment)
+      || lastSegment.split(/[-_]+/).length >= 4;
+  } catch {
+    return false;
+  }
+}
+
+function getXmlTag(content: string, tag: string): string {
+  const match = content.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\/${tag}>`, "i"));
+  return match ? match[1].trim() : "";
+}
+
+async function fetchTextDocument(url: string, timeoutMs = 10000): Promise<string | null> {
+  try {
+    const resp = await fetchWithTimeout(url, timeoutMs);
+    if (!resp.ok) return null;
+    return await resp.text();
+  } catch {
+    return null;
+  }
+}
 
 async function fetchArticleText(url: string): Promise<string | null> {
   try {
@@ -47,33 +140,29 @@ async function fetchArticleText(url: string): Promise<string | null> {
     if (!resp.ok) return null;
     const contentType = resp.headers.get("content-type") || "";
     if (!contentType.includes("text/html") && !contentType.includes("text/xml") && !contentType.includes("application/xhtml")) {
-      await resp.text(); // consume body
+      await resp.text();
       return null;
     }
     const html = await resp.text();
-    // Extract text from <body> if present, otherwise use full HTML
     const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
     const bodyHtml = bodyMatch ? bodyMatch[1] : html;
-    // Remove script and style tags entirely
     const cleaned = bodyHtml
       .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
       .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, " ")
       .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, " ")
       .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, " ")
+      .replace(/<aside[^>]*>[\s\S]*?<\/aside>/gi, " ")
       .replace(/<[^>]+>/g, " ")
       .replace(/&[a-z]+;/gi, " ")
       .replace(/&#\d+;/gi, " ")
       .replace(/\s+/g, " ")
       .trim();
-    // Return first 10000 chars to avoid excessive memory
-    return cleaned.slice(0, 10000);
+    return cleaned.slice(0, 12000);
   } catch {
     return null;
   }
 }
-
-// ── Google News RSS Search ──────────────────────────────
 
 function buildGoogleNewsUrl(keyword: string, lang = "en"): string {
   const q = encodeURIComponent(keyword);
@@ -86,28 +175,27 @@ function parseGoogleNewsRSS(xml: string, keyword: string): DiscoveredArticle[] {
   let match;
   while ((match = itemRegex.exec(xml)) !== null) {
     const c = match[1];
-    const getTag = (tag: string) => {
-      const m = c.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?(.*?)(?:\\]\\]>)?<\\/${tag}>`, "si"));
-      return m ? m[1].trim() : "";
-    };
-    const title = getTag("title");
-    const gnLink = getTag("link");
-    const description = getTag("description").replace(/<[^>]+>/g, "").slice(0, 500);
-    const pubDate = getTag("pubDate");
+    const title = getXmlTag(c, "title");
+    const gnLink = getXmlTag(c, "link");
+    const description = stripHtml(getXmlTag(c, "description")).slice(0, 500);
+    const pubDate = getXmlTag(c, "pubDate");
     const sourceMatch = c.match(/<source[^>]+url=["']([^"']+)["'][^>]*>(.*?)<\/source>/i);
 
     if (title && gnLink) {
-      const realUrl = sourceMatch ? sourceMatch[1] : gnLink;
       let domain = "";
-      try { domain = new URL(realUrl).hostname.replace("www.", ""); } catch {}
+      try {
+        domain = normalizeDomain(sourceMatch ? sourceMatch[1] : gnLink);
+      } catch {
+        domain = "";
+      }
 
       articles.push({
         title,
         snippet: description,
-        url: realUrl,
+        url: gnLink,
         published_at: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
         source_domain: domain,
-        source_name: sourceMatch ? sourceMatch[2] : domain,
+        source_name: sourceMatch ? stripHtml(sourceMatch[2]) : domain,
         matched_keywords: [keyword],
       });
     }
@@ -115,67 +203,257 @@ function parseGoogleNewsRSS(xml: string, keyword: string): DiscoveredArticle[] {
   return articles;
 }
 
-// ── RSS Feed parsing ────────────────────────────────────
-// Returns ALL items from a feed, with keyword matches noted (empty array if no title/snippet match)
-
 function parseRSSItems(xml: string, domain: string, sourceName: string): RSSItem[] {
   const items: RSSItem[] = [];
+  const normalizedDomain = normalizeDomain(domain);
 
   const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
   let match;
   while ((match = itemRegex.exec(xml)) !== null) {
     const c = match[1];
-    const getTag = (tag: string) => {
-      const m = c.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?(.*?)(?:\\]\\]>)?<\\/${tag}>`, "si"));
-      return m ? m[1].trim() : "";
-    };
-    const title = getTag("title");
-    const link = getTag("link") || getTag("guid");
-    const description = getTag("description").replace(/<[^>]+>/g, "").slice(0, 500);
-    const pubDate = getTag("pubDate") || getTag("dc:date");
+    const title = getXmlTag(c, "title");
+    const link = getXmlTag(c, "link") || getXmlTag(c, "guid");
+    const description = stripHtml(getXmlTag(c, "description")).slice(0, 500);
+    const pubDate = getXmlTag(c, "pubDate") || getXmlTag(c, "dc:date");
 
     if (title && link) {
       items.push({
-        title, url: link, snippet: description,
+        title,
+        url: link,
+        snippet: description,
         published_at: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
-        source_domain: domain, source_name: sourceName,
+        source_domain: normalizedDomain,
+        source_name: sourceName,
       });
     }
   }
 
-  // Atom entries
   const entryRegex = /<entry>([\s\S]*?)<\/entry>/gi;
   while ((match = entryRegex.exec(xml)) !== null) {
     const c = match[1];
-    const getTag = (tag: string) => {
-      const m = c.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?(.*?)(?:\\]\\]>)?<\\/${tag}>`, "si"));
-      return m ? m[1].trim() : "";
-    };
-    const title = getTag("title");
+    const title = getXmlTag(c, "title");
     const linkMatch = c.match(/<link[^>]+href=["']([^"']+)["']/i);
-    const link = linkMatch ? linkMatch[1] : getTag("link");
-    const summary = (getTag("summary") || getTag("content")).replace(/<[^>]+>/g, "").slice(0, 500);
-    const updated = getTag("updated") || getTag("published");
+    const link = linkMatch ? linkMatch[1] : getXmlTag(c, "link");
+    const summary = stripHtml(getXmlTag(c, "summary") || getXmlTag(c, "content")).slice(0, 500);
+    const updated = getXmlTag(c, "updated") || getXmlTag(c, "published");
 
     if (title && link) {
       items.push({
-        title, url: link, snippet: summary,
+        title,
+        url: link,
+        snippet: summary,
         published_at: updated ? new Date(updated).toISOString() : new Date().toISOString(),
-        source_domain: domain, source_name: sourceName,
+        source_domain: normalizedDomain,
+        source_name: sourceName,
       });
     }
   }
   return items;
 }
 
-// Match keywords against text, returning matched keyword strings
-function matchKeywords(text: string, keywords: string[]): string[] {
-  const lower = text.toLowerCase();
-  return keywords.filter(kw => lower.includes(kw.toLowerCase()));
+function parseSitemapIndex(xml: string): string[] {
+  const sitemaps: string[] = [];
+  const sitemapRegex = /<sitemap>([\s\S]*?)<\/sitemap>/gi;
+  let match;
+  while ((match = sitemapRegex.exec(xml)) !== null) {
+    const loc = getXmlTag(match[1], "loc");
+    if (loc) sitemaps.push(loc);
+  }
+  return uniqueStrings(sitemaps);
 }
 
-// ── Full-text deep scan ─────────────────────────────────
-// For RSS items that didn't match by title/snippet, fetch the article body and re-check
+function parseSitemapItems(xml: string, domain: string, sourceName: string): RSSItem[] {
+  const items: RSSItem[] = [];
+  const normalizedDomain = normalizeDomain(domain);
+  const urlRegex = /<url>([\s\S]*?)<\/url>/gi;
+  let match;
+
+  while ((match = urlRegex.exec(xml)) !== null) {
+    const content = match[1];
+    const url = getXmlTag(content, "loc");
+    if (!url) continue;
+
+    const title = stripHtml(getXmlTag(content, "news:title") || extractTitleFromUrl(url)).slice(0, 220);
+    const snippet = stripHtml(getXmlTag(content, "news:keywords") || getXmlTag(content, "image:title")).slice(0, 500);
+    const publishedAt = getXmlTag(content, "news:publication_date") || getXmlTag(content, "lastmod");
+
+    items.push({
+      title,
+      url,
+      snippet,
+      published_at: publishedAt ? new Date(publishedAt).toISOString() : new Date().toISOString(),
+      source_domain: normalizedDomain,
+      source_name: sourceName,
+    });
+  }
+
+  return items;
+}
+
+function parseHTMLArticleLinks(html: string, baseUrl: string, domain: string, sourceName: string, limit = 25): RSSItem[] {
+  const items: RSSItem[] = [];
+  const normalizedDomain = normalizeDomain(domain);
+  const patterns = [
+    /<article[^>]*>[\s\S]*?<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
+    /<h[1-4][^>]*>\s*<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
+  ];
+  const seen = new Set<string>();
+
+  for (const regex of patterns) {
+    let match;
+    while ((match = regex.exec(html)) !== null && items.length < limit) {
+      const href = match[1];
+      const text = stripHtml(match[2]);
+      if (!href || !text || text.length < 12 || href.startsWith("#") || href.startsWith("javascript:")) continue;
+
+      const fullUrl = href.startsWith("http") ? href : new URL(href, baseUrl).toString();
+      const normalizedUrl = normalizeUrl(fullUrl);
+      if (seen.has(normalizedUrl) || !looksLikeArticleUrl(fullUrl)) continue;
+      seen.add(normalizedUrl);
+
+      items.push({
+        title: text.slice(0, 220),
+        url: fullUrl,
+        snippet: "",
+        published_at: new Date().toISOString(),
+        source_domain: normalizedDomain,
+        source_name: sourceName,
+      });
+    }
+  }
+
+  return items;
+}
+
+function matchKeywords(text: string, keywords: string[]): string[] {
+  const normalized = normalizeText(text);
+  return keywords.filter((keyword) => normalized.includes(normalizeText(keyword)));
+}
+
+async function fetchRobotsSitemaps(domain: string): Promise<string[]> {
+  const sitemapUrls: string[] = [];
+  const origins = buildOriginsForDomain(domain);
+
+  for (const origin of origins) {
+    try {
+      const text = await fetchTextDocument(`${origin}/robots.txt`, 8000);
+      if (!text) continue;
+      for (const line of text.split(/\r?\n/)) {
+        const match = line.match(/^Sitemap:\s*(.+)$/i);
+        if (match?.[1]) sitemapUrls.push(match[1].trim());
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return uniqueStrings(sitemapUrls);
+}
+
+function buildSitemapGuessUrls(domain: string): string[] {
+  const origins = buildOriginsForDomain(domain);
+  return uniqueStrings(origins.flatMap((origin) => [
+    `${origin}/sitemap.xml`,
+    `${origin}/news-sitemap.xml`,
+    `${origin}/sitemap_index.xml`,
+  ]));
+}
+
+async function collectApprovedDomainCandidates(
+  approvedDomains: Array<{ domain: string; name: string; sitemap_url?: string | null }>,
+  keywords: string[],
+  existingUrlSet: Set<string>,
+  maxDomains = 20,
+  childSitemapLimit = 6,
+): Promise<{ matched: DiscoveredArticle[]; unmatched: RSSItem[] }> {
+  const matched: DiscoveredArticle[] = [];
+  const unmatched: RSSItem[] = [];
+  const domainsToScan = approvedDomains.slice(0, maxDomains);
+  const DOMAIN_CONCURRENCY = 3;
+
+  for (let i = 0; i < domainsToScan.length; i += DOMAIN_CONCURRENCY) {
+    const batch = domainsToScan.slice(i, i + DOMAIN_CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map(async (domainRow) => {
+        const domain = normalizeDomain(domainRow.domain);
+        const sourceName = domainRow.name || domain;
+        const domainMatched: DiscoveredArticle[] = [];
+        const domainUnmatched: RSSItem[] = [];
+        const articleCandidates = new Map<string, RSSItem>();
+        const listingPages = new Set<string>();
+
+        const sitemapUrls = uniqueStrings([
+          domainRow.sitemap_url,
+          ...(await fetchRobotsSitemaps(domain)),
+          ...buildSitemapGuessUrls(domain),
+        ]).slice(0, 8);
+
+        for (const sitemapUrl of sitemapUrls) {
+          const sitemapText = await fetchTextDocument(sitemapUrl, 10000);
+          if (!sitemapText) continue;
+
+          const sitemapDocuments = /<sitemapindex/i.test(sitemapText)
+            ? parseSitemapIndex(sitemapText).slice(-childSitemapLimit)
+            : [sitemapUrl];
+
+          const xmlDocuments = /<sitemapindex/i.test(sitemapText)
+            ? await Promise.all(sitemapDocuments.map((url) => fetchTextDocument(url, 10000)))
+            : [sitemapText];
+
+          for (const xmlText of xmlDocuments) {
+            if (!xmlText || !/<urlset/i.test(xmlText)) continue;
+            const parsedItems = parseSitemapItems(xmlText, domain, sourceName).slice(-80);
+            for (const item of parsedItems) {
+              const normalizedItemUrl = normalizeUrl(item.url);
+              if (existingUrlSet.has(normalizedItemUrl)) continue;
+              if (looksLikeArticleUrl(item.url)) {
+                articleCandidates.set(normalizedItemUrl, item);
+              } else if (listingPages.size < 4) {
+                listingPages.add(item.url);
+              }
+            }
+          }
+        }
+
+        for (const listingUrl of Array.from(listingPages).slice(0, 2)) {
+          const html = await fetchTextDocument(listingUrl, 10000);
+          if (!html) continue;
+          const linkedArticles = parseHTMLArticleLinks(html, listingUrl, domain, sourceName, 25);
+          for (const item of linkedArticles) {
+            const normalizedItemUrl = normalizeUrl(item.url);
+            if (!existingUrlSet.has(normalizedItemUrl)) {
+              articleCandidates.set(normalizedItemUrl, item);
+            }
+          }
+        }
+
+        for (const item of articleCandidates.values()) {
+          const keywordMatches = matchKeywords(`${item.title} ${item.snippet} ${item.url}`, keywords);
+          if (keywordMatches.length > 0) {
+            domainMatched.push({ ...item, matched_keywords: keywordMatches });
+          } else {
+            domainUnmatched.push(item);
+          }
+        }
+
+        return { matched: domainMatched, unmatched: domainUnmatched };
+      })
+    );
+
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        matched.push(...result.value.matched);
+        unmatched.push(...result.value.unmatched);
+      }
+    }
+
+    if (i + DOMAIN_CONCURRENCY < domainsToScan.length) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  }
+
+  return { matched, unmatched };
+}
 
 async function deepScanForKeywords(
   unmatchedItems: RSSItem[],
@@ -183,7 +461,6 @@ async function deepScanForKeywords(
   maxItems = 30,
 ): Promise<DiscoveredArticle[]> {
   const results: DiscoveredArticle[] = [];
-  // Limit to avoid timeout
   const toScan = unmatchedItems.slice(0, maxItems);
   const CONCURRENCY = 5;
 
@@ -203,16 +480,14 @@ async function deepScanForKeywords(
         return null;
       })
     );
-    for (const r of fetched) {
-      if (r.status === "fulfilled" && r.value) {
-        results.push(r.value);
+    for (const result of fetched) {
+      if (result.status === "fulfilled" && result.value) {
+        results.push(result.value);
       }
     }
   }
   return results;
 }
-
-// ── Sentiment Analysis ──────────────────────────────────
 
 async function analyzeSentimentBatch(
   items: { title: string; snippet: string }[],
@@ -267,8 +542,8 @@ async function analyzeSentimentBatch(
       const parsed = JSON.parse(toolCall.function.arguments);
       const results = parsed.results || [];
       return items.map((_, i) => {
-        const r = results.find((x: any) => x.index === i);
-        return r ? { sentiment: r.sentiment, score: r.score } : { sentiment: "neutral", score: 0.5 };
+        const result = results.find((x: any) => x.index === i);
+        return result ? { sentiment: result.sentiment, score: result.score } : { sentiment: "neutral", score: 0.5 };
       });
     }
     return items.map(() => ({ sentiment: "neutral", score: 0.5 }));
@@ -288,9 +563,10 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const maxDomainFeeds = body.max_domains || 100;
-    const deepScanLimit = body.deep_scan_limit || 150; // max articles to full-text scan
+    const deepScanLimit = body.deep_scan_limit || 150;
+    const maxSitemapDomains = body.max_sitemap_domains || 20;
+    const sitemapChildLimit = body.sitemap_child_limit || 6;
 
-    // Load keywords
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
     const activeKeywords = keywords || [];
     if (activeKeywords.length === 0) {
@@ -300,24 +576,19 @@ serve(async (req) => {
     }
 
     const { data: settings } = await supabase.from("settings").select("company_name").limit(1).maybeSingle();
-    const searchTerms = activeKeywords.map(k => k.text);
-    if (settings?.company_name && settings.company_name !== "My Company") {
-      searchTerms.push(settings.company_name);
-    }
+    const searchTerms = uniqueStrings([
+      ...activeKeywords.map((keyword) => keyword.text),
+      settings?.company_name && settings.company_name !== "My Company" ? settings.company_name : undefined,
+    ]);
 
-    // Get existing sources for linking
     const { data: sources } = await supabase.from("sources").select("id, rss_url, domain");
     const { data: existingUrls } = await supabase.from("articles").select("url").limit(5000);
-    const existingUrlSet = new Set((existingUrls || []).map(a => a.url));
+    const existingUrlSet = new Set((existingUrls || []).map((article) => normalizeUrl(article.url)));
 
     let allDiscovered: DiscoveredArticle[] = [];
-    let allUnmatchedItems: RSSItem[] = []; // items that didn't match by title/snippet
+    let allUnmatchedItems: RSSItem[] = [];
 
-    // ═══════════════════════════════════════════════════════
-    // METHOD 1: Google News RSS Search (PRIMARY)
-    // ═══════════════════════════════════════════════════════
     console.log(`Searching Google News for ${searchTerms.length} keywords...`);
-
     for (const term of searchTerms) {
       try {
         const url = buildGoogleNewsUrl(term);
@@ -330,66 +601,61 @@ serve(async (req) => {
         } else {
           console.warn(`Google News "${term}": HTTP ${resp.status}`);
         }
-        await new Promise(r => setTimeout(r, 1000));
-      } catch (e) {
-        console.error(`Google News "${term}" error:`, e);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      } catch (error) {
+        console.error(`Google News "${term}" error:`, error);
       }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // METHOD 2: Approved domain feeds (SUPPLEMENTARY)
-    // ═══════════════════════════════════════════════════════
     const { data: domains } = await supabase
       .from("approved_domains")
       .select("*")
       .eq("active", true)
       .eq("approval_status", "approved")
-      .not("feed_url", "is", null)
       .order("priority", { ascending: false })
       .limit(maxDomainFeeds);
 
-    if (domains && domains.length > 0) {
-      console.log(`Searching ${domains.length} approved domain feeds...`);
+    const domainsWithFeeds = (domains || []).filter((domain) => domain.feed_url);
+    if (domainsWithFeeds.length > 0) {
+      console.log(`Searching ${domainsWithFeeds.length} approved domain feeds...`);
       const CONCURRENCY = 5;
-      for (let i = 0; i < domains.length; i += CONCURRENCY) {
-        const batch = domains.slice(i, i + CONCURRENCY);
+      for (let i = 0; i < domainsWithFeeds.length; i += CONCURRENCY) {
+        const batch = domainsWithFeeds.slice(i, i + CONCURRENCY);
         const results = await Promise.allSettled(
-          batch.map(async d => {
-            if (!d.feed_url) return { matched: [] as DiscoveredArticle[], unmatched: [] as RSSItem[] };
+          batch.map(async (domain) => {
             try {
-              const resp = await fetchWithTimeout(d.feed_url);
+              const resp = await fetchWithTimeout(domain.feed_url, 10000);
               if (!resp.ok) return { matched: [] as DiscoveredArticle[], unmatched: [] as RSSItem[] };
               const xml = await resp.text();
-              const items = parseRSSItems(xml, d.domain, d.name);
+              const items = parseRSSItems(xml, domain.domain, domain.name);
               const matched: DiscoveredArticle[] = [];
               const unmatched: RSSItem[] = [];
               for (const item of items) {
-                const kws = matchKeywords(item.title + " " + item.snippet, searchTerms);
-                if (kws.length > 0) {
-                  matched.push({ ...item, matched_keywords: kws });
+                const keywordsMatched = matchKeywords(`${item.title} ${item.snippet} ${item.url}`, searchTerms);
+                if (keywordsMatched.length > 0) {
+                  matched.push({ ...item, matched_keywords: keywordsMatched });
                 } else {
                   unmatched.push(item);
                 }
               }
               return { matched, unmatched };
-            } catch { return { matched: [] as DiscoveredArticle[], unmatched: [] as RSSItem[] }; }
+            } catch {
+              return { matched: [] as DiscoveredArticle[], unmatched: [] as RSSItem[] };
+            }
           })
         );
-        for (const r of results) {
-          if (r.status === "fulfilled") {
-            allDiscovered.push(...r.value.matched);
-            allUnmatchedItems.push(...r.value.unmatched);
+        for (const result of results) {
+          if (result.status === "fulfilled") {
+            allDiscovered.push(...result.value.matched);
+            allUnmatchedItems.push(...result.value.unmatched);
           }
         }
-        if (i + CONCURRENCY < domains.length) {
-          await new Promise(r => setTimeout(r, 300));
+        if (i + CONCURRENCY < domainsWithFeeds.length) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
         }
       }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // METHOD 3: Source RSS feeds (SUPPLEMENTARY)
-    // ═══════════════════════════════════════════════════════
     const { data: activeSources } = await supabase
       .from("sources")
       .select("*")
@@ -402,41 +668,47 @@ serve(async (req) => {
       for (let i = 0; i < activeSources.length; i += CONCURRENCY) {
         const batch = activeSources.slice(i, i + CONCURRENCY);
         const results = await Promise.allSettled(
-          batch.map(async s => {
+          batch.map(async (source) => {
             try {
-              const resp = await fetchWithTimeout(s.rss_url);
+              const resp = await fetchWithTimeout(source.rss_url, 10000);
               if (!resp.ok) return { matched: [] as DiscoveredArticle[], unmatched: [] as RSSItem[] };
               const xml = await resp.text();
-              const domain = s.domain || new URL(s.rss_url).hostname.replace("www.", "");
-              const items = parseRSSItems(xml, domain, s.name);
+              const domain = source.domain || normalizeDomain(new URL(source.rss_url).hostname);
+              const items = parseRSSItems(xml, domain, source.name);
               const matched: DiscoveredArticle[] = [];
               const unmatched: RSSItem[] = [];
               for (const item of items) {
-                const kws = matchKeywords(item.title + " " + item.snippet, searchTerms);
-                if (kws.length > 0) {
-                  matched.push({ ...item, matched_keywords: kws });
+                const keywordsMatched = matchKeywords(`${item.title} ${item.snippet} ${item.url}`, searchTerms);
+                if (keywordsMatched.length > 0) {
+                  matched.push({ ...item, matched_keywords: keywordsMatched });
                 } else {
                   unmatched.push(item);
                 }
               }
               return { matched, unmatched };
-            } catch { return { matched: [] as DiscoveredArticle[], unmatched: [] as RSSItem[] }; }
+            } catch {
+              return { matched: [] as DiscoveredArticle[], unmatched: [] as RSSItem[] };
+            }
           })
         );
-        for (const r of results) {
-          if (r.status === "fulfilled") {
-            allDiscovered.push(...r.value.matched);
-            allUnmatchedItems.push(...r.value.unmatched);
+        for (const result of results) {
+          if (result.status === "fulfilled") {
+            allDiscovered.push(...result.value.matched);
+            allUnmatchedItems.push(...result.value.unmatched);
           }
         }
       }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // METHOD 4: FULL-TEXT DEEP SCAN (for unmatched RSS items)
-    // ═══════════════════════════════════════════════════════
-    // Filter out already-known URLs from unmatched items before scanning
-    const unmatchedToScan = allUnmatchedItems.filter(item => !existingUrlSet.has(item.url));
+    if (domains && domains.length > 0) {
+      console.log(`Searching approved domain sitemaps for up to ${Math.min(domains.length, maxSitemapDomains)} domains...`);
+      const sitemapCandidates = await collectApprovedDomainCandidates(domains, searchTerms, existingUrlSet, maxSitemapDomains, sitemapChildLimit);
+      console.log(`Approved domain sitemap scan found ${sitemapCandidates.matched.length} title/url matches and ${sitemapCandidates.unmatched.length} body-scan candidates`);
+      allDiscovered.push(...sitemapCandidates.matched);
+      allUnmatchedItems.push(...sitemapCandidates.unmatched);
+    }
+
+    const unmatchedToScan = allUnmatchedItems.filter((item) => !existingUrlSet.has(normalizeUrl(item.url)));
     if (unmatchedToScan.length > 0) {
       console.log(`Deep scanning ${Math.min(unmatchedToScan.length, deepScanLimit)} of ${unmatchedToScan.length} unmatched articles for full-text keyword matches...`);
       const deepMatches = await deepScanForKeywords(unmatchedToScan, searchTerms, deepScanLimit);
@@ -446,46 +718,30 @@ serve(async (req) => {
 
     console.log(`Total candidates before dedup: ${allDiscovered.length}`);
 
-    // ═══════════════════════════════════════════════════════
-    // DEDUPLICATION
-    // ═══════════════════════════════════════════════════════
     const seen = new Set<string>();
-    allDiscovered = allDiscovered.filter(a => {
-      let normalizedUrl = a.url;
-      try {
-        const u = new URL(a.url);
-        u.searchParams.delete("utm_source");
-        u.searchParams.delete("utm_medium");
-        u.searchParams.delete("utm_campaign");
-        u.hash = "";
-        normalizedUrl = u.toString();
-      } catch {}
-      if (seen.has(normalizedUrl) || existingUrlSet.has(a.url)) return false;
-      seen.add(normalizedUrl);
+    allDiscovered = allDiscovered.filter((article) => {
+      const normalized = normalizeUrl(article.url);
+      if (seen.has(normalized) || existingUrlSet.has(normalized)) return false;
+      seen.add(normalized);
       return true;
     });
 
     console.log(`After dedup: ${allDiscovered.length} new articles`);
 
-    // Filter out any remaining unresolved Google News URLs
-    allDiscovered = allDiscovered.filter(a => !a.url.includes("news.google.com/rss/articles"));
-
-    // ═══════════════════════════════════════════════════════
-    // AUTO-DISCOVER NEW SOURCES
-    // ═══════════════════════════════════════════════════════
     const newDomains = new Map<string, { name: string; count: number }>();
     const knownDomains = new Set([
-      ...(sources || []).map(s => s.domain).filter(Boolean),
-      ...(domains || []).map(d => d.domain),
+      ...(sources || []).map((source) => source.domain).filter(Boolean).map((domain) => normalizeDomain(domain!)),
+      ...(domains || []).map((domain) => normalizeDomain(domain.domain)),
     ]);
 
     for (const article of allDiscovered) {
-      if (article.source_domain && !knownDomains.has(article.source_domain)) {
-        const existing = newDomains.get(article.source_domain);
+      if (article.source_domain && !knownDomains.has(normalizeDomain(article.source_domain))) {
+        const key = normalizeDomain(article.source_domain);
+        const existing = newDomains.get(key);
         if (existing) {
-          existing.count++;
+          existing.count += 1;
         } else {
-          newDomains.set(article.source_domain, { name: article.source_name, count: 1 });
+          newDomains.set(key, { name: article.source_name, count: 1 });
         }
       }
     }
@@ -503,9 +759,9 @@ serve(async (req) => {
       const { data: existingDomains } = await supabase
         .from("approved_domains")
         .select("domain")
-        .in("domain", candidates.map(c => c.domain));
-      const existingDomainSet = new Set((existingDomains || []).map(d => d.domain));
-      const trulyNew = candidates.filter(c => !existingDomainSet.has(c.domain));
+        .in("domain", candidates.map((candidate) => candidate.domain));
+      const existingDomainSet = new Set((existingDomains || []).map((domain) => normalizeDomain(domain.domain)));
+      const trulyNew = candidates.filter((candidate) => !existingDomainSet.has(normalizeDomain(candidate.domain)));
 
       if (trulyNew.length > 0) {
         await supabase.from("approved_domains").insert(trulyNew);
@@ -513,35 +769,32 @@ serve(async (req) => {
       }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // INSERT ARTICLES WITH SENTIMENT
-    // ═══════════════════════════════════════════════════════
     let totalInserted = 0;
     const keywordMatchUpdates: Record<string, number> = {};
     const BATCH_SIZE = 10;
 
-    for (let b = 0; b < allDiscovered.length; b += BATCH_SIZE) {
-      const batch = allDiscovered.slice(b, b + BATCH_SIZE);
+    for (let batchIndex = 0; batchIndex < allDiscovered.length; batchIndex += BATCH_SIZE) {
+      const batch = allDiscovered.slice(batchIndex, batchIndex + BATCH_SIZE);
 
-      const articlesToInsert = batch.map(a => {
-        for (const kwText of a.matched_keywords) {
-          const kw = activeKeywords.find(k => k.text === kwText);
-          if (kw) keywordMatchUpdates[kw.id] = (keywordMatchUpdates[kw.id] || 0) + 1;
+      const articlesToInsert = batch.map((article) => {
+        for (const keywordText of article.matched_keywords) {
+          const keyword = activeKeywords.find((entry) => entry.text === keywordText);
+          if (keyword) keywordMatchUpdates[keyword.id] = (keywordMatchUpdates[keyword.id] || 0) + 1;
         }
 
-        const matchedSource = sources?.find(s =>
-          s.domain === a.source_domain ||
-          (s.rss_url && new URL(s.rss_url).hostname.replace("www.", "") === a.source_domain)
+        const matchedSource = sources?.find((source) =>
+          normalizeDomain(source.domain || "") === normalizeDomain(article.source_domain)
+          || (source.rss_url && normalizeDomain(new URL(source.rss_url).hostname) === normalizeDomain(article.source_domain))
         );
 
         return {
-          title: a.title,
-          snippet: a.snippet.slice(0, 500),
-          url: a.url,
+          title: article.title,
+          snippet: article.snippet.slice(0, 500),
+          url: article.url,
           source_id: matchedSource?.id || null,
-          published_at: a.published_at,
+          published_at: article.published_at,
           fetched_at: new Date().toISOString(),
-          matched_keywords: a.matched_keywords,
+          matched_keywords: article.matched_keywords,
           language: "en",
           sentiment: "neutral" as string,
           sentiment_score: 0.5,
@@ -549,12 +802,12 @@ serve(async (req) => {
       });
 
       const sentiments = await analyzeSentimentBatch(
-        articlesToInsert.map(a => ({ title: a.title, snippet: a.snippet || "" })),
-        lovableApiKey
+        articlesToInsert.map((article) => ({ title: article.title, snippet: article.snippet || "" })),
+        lovableApiKey,
       );
-      articlesToInsert.forEach((a, idx) => {
-        a.sentiment = sentiments[idx].sentiment;
-        a.sentiment_score = sentiments[idx].score;
+      articlesToInsert.forEach((article, index) => {
+        article.sentiment = sentiments[index].sentiment;
+        article.sentiment_score = sentiments[index].score;
       });
 
       const { data: inserted, error: insertErr } = await supabase
@@ -565,14 +818,14 @@ serve(async (req) => {
       if (insertErr) {
         console.error("Insert error:", insertErr);
       } else {
-        totalInserted += (inserted?.length || 0);
+        totalInserted += inserted?.length || 0;
       }
     }
 
-    for (const [kwId, addCount] of Object.entries(keywordMatchUpdates)) {
-      const kw = activeKeywords.find(k => k.id === kwId);
-      if (kw) {
-        await supabase.from("keywords").update({ match_count: kw.match_count + addCount }).eq("id", kwId);
+    for (const [keywordId, addCount] of Object.entries(keywordMatchUpdates)) {
+      const keyword = activeKeywords.find((entry) => entry.id === keywordId);
+      if (keyword) {
+        await supabase.from("keywords").update({ match_count: keyword.match_count + addCount }).eq("id", keywordId);
       }
     }
 
@@ -582,16 +835,16 @@ serve(async (req) => {
       deepScanned: Math.min(unmatchedToScan.length, deepScanLimit),
       newDomainsFound: newDomains.size,
       keywordsUsed: searchTerms,
-      methods: ["google_news_rss", "approved_domain_feeds", "source_feeds", "full_text_deep_scan"],
+      methods: ["google_news_rss", "approved_domain_feeds", "source_feeds", "approved_domain_sitemaps", "full_text_deep_scan"],
     };
     console.log("Discovery complete:", summary);
 
     return new Response(JSON.stringify(summary), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (e) {
-    console.error("discover-articles error:", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
+  } catch (error) {
+    console.error("discover-articles error:", error);
+    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
