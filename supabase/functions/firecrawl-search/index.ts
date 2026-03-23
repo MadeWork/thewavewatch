@@ -122,8 +122,7 @@ serve(async (req) => {
           body: JSON.stringify({
             query: `${term} news`,
             limit: maxResults,
-            tbs: "qdr:w", // last week
-            scrapeOptions: { formats: ["markdown"] },
+            tbs: "qdr:w",
           }),
         });
 
