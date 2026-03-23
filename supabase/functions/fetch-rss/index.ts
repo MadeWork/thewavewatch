@@ -7,7 +7,6 @@ const corsHeaders = {
 };
 
 interface ParsedArticle { title: string; snippet: string; url: string; published_at: string | null; language?: string | null; }
-
 interface FetchTarget {
   id: string | null;
   name: string;
@@ -19,7 +18,7 @@ interface FetchTarget {
   isVirtual: boolean;
 }
 
-async function fetchWithTimeout(url: string, timeoutMs = 10000): Promise<Response> {
+async function fetchWithTimeout(url: string, timeoutMs = 6000): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try { return await fetch(url, { signal: controller.signal, headers: { "User-Agent": "MediaPulse/1.0 RSS Reader" } }); }
@@ -61,17 +60,18 @@ function buildVirtualSource(domainRow: any): FetchTarget | null {
   const normalizedDomain = normalizeDomain(domainRow.domain || "");
   if (!normalizedDomain) return null;
 
-  const sourceType = domainRow.sitemap_url || domainRow.source_type === "sitemap" || domainRow.source_type === "news_sitemap"
+  // Only hydrate domains with an explicit feed or sitemap URL
+  const hasFeed = domainRow.feed_url && domainRow.feed_url.trim();
+  const hasSitemap = domainRow.sitemap_url && domainRow.sitemap_url.trim();
+  if (!hasFeed && !hasSitemap) return null;
+
+  const sourceType = hasSitemap || domainRow.source_type === "sitemap" || domainRow.source_type === "news_sitemap"
     ? "sitemap"
-    : domainRow.feed_url
-      ? domainRow.source_type === "atom" ? "atom" : "rss"
-      : "html";
+    : domainRow.source_type === "atom" ? "atom" : "rss";
 
   const targetUrl = sourceType === "sitemap"
     ? (toAbsoluteUrl(domainRow.sitemap_url) || `https://${normalizedDomain}/sitemap.xml`)
-    : sourceType === "html"
-      ? toAbsoluteUrl(domainRow.domain)
-      : toAbsoluteUrl(domainRow.feed_url);
+    : toAbsoluteUrl(domainRow.feed_url);
 
   if (!targetUrl) return null;
 
@@ -255,13 +255,7 @@ async function analyzeSentimentBatch(items: { title: string; snippet: string }[]
 
 const domainLastFetch: Record<string, number> = {};
 async function rateLimitedFetch(url: string, crawlDelayMs: number): Promise<Response> {
-  const domain = new URL(url).hostname;
-  const now = Date.now();
-  const last = domainLastFetch[domain] || 0;
-  const wait = Math.max(0, crawlDelayMs - (now - last));
-  if (wait > 0) await new Promise(r => setTimeout(r, wait));
-  domainLastFetch[domain] = Date.now();
-  return fetchWithTimeout(url);
+  return fetchWithTimeout(url, 6000);
 }
 
 // ── Paginated fetch ──────────────────────────────────────
@@ -309,6 +303,7 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body = await req.json().catch(() => ({}));
+    const maxSources = Math.min(Number(body.max_sources || 120), 200);
 
     // Fetch ALL active sources + hydrate missing approved domains into virtual fetch targets
     const storedSources = await fetchAllSources(supabase);
@@ -334,7 +329,7 @@ serve(async (req) => {
         isVirtual: false,
       })),
       ...hydratedSources,
-    ];
+    ].slice(0, maxSources);
 
     console.log(`Processing ${sources.length} fetch targets (${storedSources.length} stored + ${hydratedSources.length} hydrated)`);
 
@@ -345,7 +340,7 @@ serve(async (req) => {
     let totalErrors = 0;
     const keywordMatchUpdates: Record<string, number> = {};
 
-    const CONCURRENCY = 5;
+    const CONCURRENCY = 8;
     for (let i = 0; i < sources.length; i += CONCURRENCY) {
       const batch = sources.slice(i, i + CONCURRENCY);
       const results = await Promise.allSettled(
