@@ -25,6 +25,24 @@ export default function Dashboard() {
     },
   });
 
+  // Favorite keywords + their articles
+  const { data: favKeywords } = useQuery({
+    queryKey: ["keywords-favorites"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("keywords").select("text, color_tag").eq("favorite", true).eq("active", true);
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const favArticles = useMemo(() => {
+    if (!articles || !favKeywords?.length) return [];
+    const favTexts = favKeywords.map(k => k.text);
+    return articles
+      .filter(a => a.matched_keywords?.some((kw: string) => favTexts.includes(kw)))
+      .slice(0, 10);
+  }, [articles, favKeywords]);
+
   const now = new Date();
   const todayStart = startOfDay(now);
   const weekStart = startOfWeek(now, { weekStartsOn: 1 });
