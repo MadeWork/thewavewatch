@@ -8,6 +8,17 @@ const corsHeaders = {
 
 interface ParsedArticle { title: string; snippet: string; url: string; published_at: string | null; language?: string | null; }
 
+interface FetchTarget {
+  id: string | null;
+  name: string;
+  domain: string | null;
+  rss_url: string;
+  source_type: string;
+  crawl_delay_ms: number;
+  consecutive_failures: number;
+  isVirtual: boolean;
+}
+
 async function fetchWithTimeout(url: string, timeoutMs = 10000): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -27,6 +38,53 @@ function normalizeUrl(url: string): string {
 
 function normalizeDomain(d: string): string {
   return d.replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/.*$/, "").trim().toLowerCase();
+}
+
+function toAbsoluteUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+function getSourceDomain(source: { domain?: string | null; rss_url?: string | null }): string {
+  if (source.domain) return normalizeDomain(source.domain);
+  if (source.rss_url) {
+    try {
+      return normalizeDomain(new URL(source.rss_url).hostname);
+    } catch {}
+  }
+  return "";
+}
+
+function buildVirtualSource(domainRow: any): FetchTarget | null {
+  const normalizedDomain = normalizeDomain(domainRow.domain || "");
+  if (!normalizedDomain) return null;
+
+  const sourceType = domainRow.sitemap_url || domainRow.source_type === "sitemap" || domainRow.source_type === "news_sitemap"
+    ? "sitemap"
+    : domainRow.feed_url
+      ? domainRow.source_type === "atom" ? "atom" : "rss"
+      : "html";
+
+  const targetUrl = sourceType === "sitemap"
+    ? (toAbsoluteUrl(domainRow.sitemap_url) || `https://${normalizedDomain}/sitemap.xml`)
+    : sourceType === "html"
+      ? toAbsoluteUrl(domainRow.domain)
+      : toAbsoluteUrl(domainRow.feed_url);
+
+  if (!targetUrl) return null;
+
+  return {
+    id: null,
+    name: domainRow.name || normalizedDomain,
+    domain: normalizedDomain,
+    rss_url: targetUrl,
+    source_type: sourceType,
+    crawl_delay_ms: 2000,
+    consecutive_failures: 0,
+    isVirtual: true,
+  };
 }
 
 function parseDateValue(value: string | null | undefined): string | null {
@@ -213,7 +271,26 @@ async function fetchAllSources(supabase: any): Promise<any[]> {
   let all: any[] = [];
   let offset = 0;
   while (true) {
-    const { data } = await supabase.from("sources").select("*").eq("active", true).range(offset, offset + PAGE - 1);
+    const { data } = await supabase.from("sources").select("*").eq("active", true).eq("approval_status", "approved").range(offset, offset + PAGE - 1);
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < PAGE) break;
+    offset += PAGE;
+  }
+  return all;
+}
+
+async function fetchAllApprovedDomains(supabase: any): Promise<any[]> {
+  const PAGE = 500;
+  let all: any[] = [];
+  let offset = 0;
+  while (true) {
+    const { data } = await supabase
+      .from("approved_domains")
+      .select("*")
+      .eq("active", true)
+      .eq("approval_status", "approved")
+      .range(offset, offset + PAGE - 1);
     if (!data || data.length === 0) break;
     all = all.concat(data);
     if (data.length < PAGE) break;
@@ -233,9 +310,33 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
 
-    // Fetch ALL active sources (no hard limit)
-    const sources = await fetchAllSources(supabase);
-    console.log(`Processing ${sources.length} active sources`);
+    // Fetch ALL active sources + hydrate missing approved domains into virtual fetch targets
+    const storedSources = await fetchAllSources(supabase);
+    const approvedDomains = await fetchAllApprovedDomains(supabase);
+    const storedSourceDomains = new Set(storedSources.map((source: any) => getSourceDomain(source)).filter(Boolean));
+    const hydratedSources = approvedDomains
+      .filter((domainRow: any) => {
+        const normalizedDomain = normalizeDomain(domainRow.domain || "");
+        return normalizedDomain && !storedSourceDomains.has(normalizedDomain);
+      })
+      .map(buildVirtualSource)
+      .filter((source): source is FetchTarget => Boolean(source));
+
+    const sources: FetchTarget[] = [
+      ...storedSources.map((source: any) => ({
+        id: source.id ?? null,
+        name: source.name,
+        domain: source.domain || null,
+        rss_url: source.rss_url,
+        source_type: source.source_type || "rss",
+        crawl_delay_ms: source.crawl_delay_ms || 2000,
+        consecutive_failures: source.consecutive_failures || 0,
+        isVirtual: false,
+      })),
+      ...hydratedSources,
+    ];
+
+    console.log(`Processing ${sources.length} fetch targets (${storedSources.length} stored + ${hydratedSources.length} hydrated)`);
 
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
     const activeKeywords = keywords || [];
@@ -248,7 +349,7 @@ serve(async (req) => {
     for (let i = 0; i < sources.length; i += CONCURRENCY) {
       const batch = sources.slice(i, i + CONCURRENCY);
       const results = await Promise.allSettled(
-        batch.map(async (source: any) => {
+        batch.map(async (source: FetchTarget) => {
           try {
             const sourceType = source.source_type || "rss";
             const crawlDelay = source.crawl_delay_ms || 2000;
@@ -257,32 +358,42 @@ serve(async (req) => {
             if (sourceType === "rss" || sourceType === "atom") {
               const resp = await rateLimitedFetch(source.rss_url, crawlDelay);
               if (!resp.ok) {
-                await supabase.from("sources").update({ health_status: "error", consecutive_failures: (source.consecutive_failures || 0) + 1 }).eq("id", source.id);
+                if (source.id) {
+                  await supabase.from("sources").update({ health_status: "error", consecutive_failures: (source.consecutive_failures || 0) + 1 }).eq("id", source.id);
+                }
                 return { sourceId: source.id, sourceName: source.name, domain: source.domain, items: [], error: `HTTP ${resp.status}` };
               }
               articles = parseRSSAtom(await resp.text());
             } else if (sourceType === "sitemap" || sourceType === "news_sitemap") {
               const resp = await rateLimitedFetch(source.rss_url, crawlDelay);
               if (!resp.ok) {
-                await supabase.from("sources").update({ health_status: "error", consecutive_failures: (source.consecutive_failures || 0) + 1 }).eq("id", source.id);
+                if (source.id) {
+                  await supabase.from("sources").update({ health_status: "error", consecutive_failures: (source.consecutive_failures || 0) + 1 }).eq("id", source.id);
+                }
                 return { sourceId: source.id, sourceName: source.name, domain: source.domain, items: [], error: `HTTP ${resp.status}` };
               }
               articles = parseSitemap(await resp.text()).slice(0, 50);
             } else if (sourceType === "html") {
               const resp = await rateLimitedFetch(source.rss_url, crawlDelay);
               if (!resp.ok) {
-                await supabase.from("sources").update({ health_status: "error", consecutive_failures: (source.consecutive_failures || 0) + 1 }).eq("id", source.id);
+                if (source.id) {
+                  await supabase.from("sources").update({ health_status: "error", consecutive_failures: (source.consecutive_failures || 0) + 1 }).eq("id", source.id);
+                }
                 return { sourceId: source.id, sourceName: source.name, domain: source.domain, items: [], error: `HTTP ${resp.status}` };
               }
               articles = parseHTMLArticles(await resp.text(), new URL(source.rss_url).origin);
             }
 
-            await supabase.from("sources").update({ last_fetched_at: new Date().toISOString(), last_success_at: new Date().toISOString(), health_status: "healthy", consecutive_failures: 0 }).eq("id", source.id);
+            if (source.id) {
+              await supabase.from("sources").update({ last_fetched_at: new Date().toISOString(), last_success_at: new Date().toISOString(), health_status: "healthy", consecutive_failures: 0 }).eq("id", source.id);
+            }
             return { sourceId: source.id, sourceName: source.name, domain: source.domain, items: articles, error: null };
           } catch (e) {
             console.error(`Error fetching ${source.name}:`, e);
             const failures = (source.consecutive_failures || 0) + 1;
-            await supabase.from("sources").update({ health_status: failures >= 4 ? "failing" : "degraded", consecutive_failures: failures }).eq("id", source.id);
+            if (source.id) {
+              await supabase.from("sources").update({ health_status: failures >= 4 ? "failing" : "degraded", consecutive_failures: failures }).eq("id", source.id);
+            }
             return { sourceId: source.id, sourceName: source.name, domain: source.domain, items: [], error: String(e) };
           }
         })
@@ -355,7 +466,7 @@ serve(async (req) => {
       if (kw) await supabase.from("keywords").update({ match_count: kw.match_count + addCount }).eq("id", kwId);
     }
 
-    const summary = { totalInserted, totalErrors, sourcesProcessed: sources.length };
+    const summary = { totalInserted, totalErrors, sourcesProcessed: sources.length, hydratedApprovedDomains: hydratedSources.length };
     console.log("Fetch complete:", JSON.stringify(summary));
     return new Response(JSON.stringify(summary), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
