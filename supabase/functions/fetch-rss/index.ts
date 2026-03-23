@@ -53,7 +53,7 @@ function parseRSSAtom(xml: string): ParsedArticle[] {
     const link = getTag(c, "link") || getTag(c, "guid");
     const desc = getTag(c, "description").replace(/<[^>]+>/g, "").slice(0, 500);
     const pubDate = getTag(c, "pubDate") || getTag(c, "dc:date") || getTag(c, "published");
-    if (title && link) items.push({ title, snippet: desc, url: link, published_at: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString() });
+    if (title && link) items.push({ title, snippet: desc, url: link, published_at: pubDate ? new Date(pubDate).toISOString() : (extractDateFromUrl(link) || new Date().toISOString()) });
   }
   const entryRe = /<entry>([\s\S]*?)<\/entry>/gi;
   while ((m = entryRe.exec(xml)) !== null) {
