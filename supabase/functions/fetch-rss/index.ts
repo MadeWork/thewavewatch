@@ -409,14 +409,26 @@ serve(async (req) => {
         if (error) { totalErrors++; console.log(`Source ${sourceName}: ${error}`); continue; }
 
         const articlesToInsert = items.map((item: ParsedArticle) => {
-          const matchedKws: string[] = [];
+          const matchedKws = new Set<string>();
+          const nTitle = normalizeText(item.title);
+          const nSnippet = normalizeText(item.snippet);
+          // Check original keywords
           for (const kw of activeKeywords) {
-            const nTitle = normalizeText(item.title);
-            const nSnippet = normalizeText(item.snippet);
             const nKw = normalizeText(kw.text);
             if (nTitle.includes(nKw) || nSnippet.includes(nKw)) {
-              matchedKws.push(kw.text);
+              matchedKws.add(kw.text);
               keywordMatchUpdates[kw.id] = (keywordMatchUpdates[kw.id] || 0) + 1;
+            }
+          }
+          // Check expanded terms
+          for (const [term, originalKw] of expandedTermMap) {
+            const nTerm = normalizeText(term);
+            if (nTitle.includes(nTerm) || nSnippet.includes(nTerm)) {
+              if (!matchedKws.has(originalKw)) {
+                matchedKws.add(originalKw);
+                const kw = activeKeywords.find((k: any) => k.text === originalKw);
+                if (kw) keywordMatchUpdates[kw.id] = (keywordMatchUpdates[kw.id] || 0) + 1;
+              }
             }
           }
           return {
