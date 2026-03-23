@@ -377,7 +377,7 @@ serve(async (req) => {
           }));
           const { data: inserted, error: insertErr } = await supabase
             .from("articles")
-            .upsert(withSentiment, { onConflict: "url", ignoreDuplicates: true })
+            .upsert(withSentiment, { onConflict: "url", ignoreDuplicates: false })
             .select("id");
           if (insertErr) {
             console.error("Insert error:", insertErr);
