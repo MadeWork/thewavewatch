@@ -348,6 +348,8 @@ serve(async (req) => {
         const { sourceId, items, error } = result.value;
         if (error) { totalErrors++; continue; }
 
+        // Only keep articles that match at least one keyword
+        const matchedArticles: typeof articlesToInsert = [];
         const articlesToInsert = items.map((item) => {
           const matchedKws: string[] = [];
           for (const kw of activeKeywords) {
@@ -369,23 +371,11 @@ serve(async (req) => {
           };
         });
 
-        // Only run sentiment on articles that matched keywords (saves API calls)
+        // ONLY store articles matching at least one keyword
         const withKeywords = articlesToInsert.filter(a => a.matched_keywords.length > 0);
-        const withoutKeywords = articlesToInsert.filter(a => a.matched_keywords.length === 0);
 
-        // Insert non-matching articles with neutral sentiment directly
-        if (withoutKeywords.length > 0) {
-          const neutral = withoutKeywords.map(a => ({ ...a, sentiment: "neutral", sentiment_score: 0.5 }));
-          const { data: inserted, error: insertErr } = await supabase
-            .from("articles")
-            .upsert(neutral, { onConflict: "url", ignoreDuplicates: true })
-            .select("id");
-          if (!insertErr) totalInserted += (inserted?.length || 0);
-          else console.error("Insert error:", insertErr);
-        }
-
-        // Analyze sentiment only for keyword-matched articles
         if (withKeywords.length > 0) {
+          console.log(`Source ${sourceId}: ${withKeywords.length} keyword-matched articles out of ${items.length}`);
           const BATCH_SIZE = 10;
           for (let b = 0; b < withKeywords.length; b += BATCH_SIZE) {
             const articleBatch = withKeywords.slice(b, b + BATCH_SIZE);
