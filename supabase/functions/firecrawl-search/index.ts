@@ -32,6 +32,52 @@ function extractDateFromUrl(url: string): string | null {
   return null;
 }
 
+function parseDateValue(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function extractPublishedAtFromHtml(html: string): string | null {
+  const metaPatterns = [
+    /<meta[^>]+property=["']article:published_time["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']article:published_time["']/i,
+    /<meta[^>]+property=["']og:published_time["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:published_time["']/i,
+    /<meta[^>]+name=["']parsely-pub-date["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']parsely-pub-date["']/i,
+    /<meta[^>]+itemprop=["']datePublished["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+itemprop=["']datePublished["']/i,
+  ];
+  for (const pattern of metaPatterns) {
+    const match = html.match(pattern);
+    const parsed = parseDateValue(match?.[1]);
+    if (parsed) return parsed;
+  }
+  const jsonLdMatches = html.matchAll(/"datePublished"\s*:\s*"([^"]+)"/gi);
+  for (const match of jsonLdMatches) {
+    const parsed = parseDateValue(match[1]);
+    if (parsed) return parsed;
+  }
+  const timeMatch = html.match(/<time[^>]+datetime=["']([^"']+)["']/i);
+  const timeParsed = parseDateValue(timeMatch?.[1]);
+  if (timeParsed) return timeParsed;
+  return null;
+}
+
+async function fetchArticleDate(url: string): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    try {
+      const resp = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "Mozilla/5.0 (compatible; MediaPulse/1.0)" } });
+      if (!resp.ok) return null;
+      const html = await resp.text();
+      return extractPublishedAtFromHtml(html);
+    } finally { clearTimeout(timeout); }
+  } catch { return null; }
+}
+
 function normalizeText(t: string): string {
   return t.toLowerCase().replace(/[_\-–—]+/gu, " ").replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/g, " ").trim();
 }
