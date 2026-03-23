@@ -79,7 +79,9 @@ export type Database = {
           sentiment: string | null
           sentiment_score: number | null
           snippet: string | null
+          source_domain: string | null
           source_id: string | null
+          source_name: string | null
           title: string
           url: string
         }
@@ -93,7 +95,9 @@ export type Database = {
           sentiment?: string | null
           sentiment_score?: number | null
           snippet?: string | null
+          source_domain?: string | null
           source_id?: string | null
+          source_name?: string | null
           title: string
           url: string
         }
@@ -107,7 +111,9 @@ export type Database = {
           sentiment?: string | null
           sentiment_score?: number | null
           snippet?: string | null
+          source_domain?: string | null
           source_id?: string | null
+          source_name?: string | null
           title?: string
           url?: string
         }
