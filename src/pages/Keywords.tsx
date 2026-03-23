@@ -154,7 +154,7 @@ export default function Keywords() {
               </button>
             ))}
           </div>
-          <button onClick={() => addMutation.mutate()} disabled={!newKeyword.trim()}
+          <button onClick={() => addMutation.mutate(undefined)} disabled={!newKeyword.trim()}
             className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition disabled:opacity-50">
             <Plus className="w-4 h-4" />
           </button>
