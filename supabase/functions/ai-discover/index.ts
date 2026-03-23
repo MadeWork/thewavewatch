@@ -121,6 +121,12 @@ Rules:
       const parsed = JSON.parse(toolCall.function.arguments);
       queries = parsed.queries || [];
     }
+    // Normalize source_keyword to match exact DB keyword text (fuzzy match)
+    const keywordLookup = new Map(keywordTexts.map((t: string) => [t.toLowerCase().trim(), t]));
+    queries = queries.map(q => {
+      const exact = keywordLookup.get(q.source_keyword.toLowerCase().trim());
+      return { ...q, source_keyword: exact || keywordTexts[0] }; // fallback to first keyword
+    });
     console.log(`AI generated ${queries.length} search queries`);
 
     if (!queries.length) {
