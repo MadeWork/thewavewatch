@@ -41,8 +41,8 @@ serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    const maxQueriesPerKeyword = Math.min(Number(body.max_queries || 3), 5);
-    const maxResultsPerQuery = Math.min(Number(body.max_results || 5), 10);
+    const maxQueriesPerKeyword = Math.min(Number(body.max_queries || 6), 10);
+    const maxResultsPerQuery = Math.min(Number(body.max_results || 8), 10);
 
     // Get active keywords
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
@@ -155,7 +155,7 @@ Rules:
     let searchesDone = 0;
 
     for (const q of queries) {
-      if (searchesDone >= 15) break; // cap total searches to control credits
+      if (searchesDone >= 30) break; // cap total searches
       try {
         console.log(`Firecrawl AI query: "${q.query}" (keyword: ${q.source_keyword})`);
         const response = await fetch("https://api.firecrawl.dev/v1/search", {
