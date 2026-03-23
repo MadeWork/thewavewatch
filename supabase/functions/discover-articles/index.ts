@@ -258,7 +258,6 @@ serve(async (req) => {
     for (let b = 0; b < allDiscovered.length; b += BATCH_SIZE) {
       const batch = allDiscovered.slice(b, b + BATCH_SIZE);
 
-      // Find matching source or use null
       const articlesToInsert = batch.map(a => {
         const matchedKws: string[] = [];
         for (const kw of activeKeywords) {
@@ -269,7 +268,6 @@ serve(async (req) => {
           }
         }
 
-        // Try to find matching source
         const matchedSource = sources?.find(s =>
           s.domain === a.domain || (s.rss_url && new URL(s.rss_url).hostname.includes(a.domain))
         );
@@ -283,24 +281,27 @@ serve(async (req) => {
           fetched_at: new Date().toISOString(),
           matched_keywords: matchedKws,
           language: "en",
+          sentiment: "neutral" as string,
+          sentiment_score: 0.5,
         };
       });
 
-      // Sentiment analysis
-      const sentiments = await analyzeSentimentBatch(
-        articlesToInsert.map(a => ({ title: a.title, snippet: a.snippet || "" })),
-        lovableApiKey
-      );
-
-      const withSentiment = articlesToInsert.map((a, idx) => ({
-        ...a,
-        sentiment: sentiments[idx].sentiment,
-        sentiment_score: sentiments[idx].score,
-      }));
+      // Only run sentiment on matched articles
+      const matched = articlesToInsert.filter(a => a.matched_keywords.length > 0);
+      if (matched.length > 0) {
+        const sentiments = await analyzeSentimentBatch(
+          matched.map(a => ({ title: a.title, snippet: a.snippet || "" })),
+          lovableApiKey
+        );
+        matched.forEach((a, idx) => {
+          a.sentiment = sentiments[idx].sentiment;
+          a.sentiment_score = sentiments[idx].score;
+        });
+      }
 
       const { data: inserted, error: insertErr } = await supabase
         .from("articles")
-        .upsert(withSentiment, { onConflict: "url", ignoreDuplicates: false })
+        .upsert(articlesToInsert, { onConflict: "url", ignoreDuplicates: true })
         .select("id");
 
       if (insertErr) {
@@ -308,8 +309,6 @@ serve(async (req) => {
       } else {
         totalInserted += (inserted?.length || 0);
       }
-
-      await new Promise(r => setTimeout(r, 300));
     }
 
     // Update keyword match counts
