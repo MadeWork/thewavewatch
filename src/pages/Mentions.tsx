@@ -38,7 +38,7 @@ export default function Mentions() {
         .order("published_at", { ascending: false })
         .limit(1000);
       if (error) throw error;
-      return data;
+      return data as any[];
     },
   });
 
