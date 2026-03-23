@@ -231,6 +231,21 @@ serve(async (req) => {
 
     console.log(`Firecrawl total unique articles: ${discovered.length}`);
 
+    // Resolve dates from HTML for articles still missing published_at
+    const needDates = discovered.filter(a => !a.published_at);
+    if (needDates.length > 0) {
+      console.log(`Fetching HTML dates for ${needDates.length} articles`);
+      for (let i = 0; i < needDates.length; i += 3) {
+        const batch = needDates.slice(i, i + 3);
+        await Promise.allSettled(batch.map(async (a) => {
+          const date = await fetchArticleDate(a.url);
+          if (date) a.published_at = date;
+        }));
+      }
+    }
+    // Final fallback: use current time for any still missing
+    discovered.forEach(a => { if (!a.published_at) a.published_at = new Date().toISOString(); });
+
     // Insert with sentiment
     let totalInserted = 0;
     for (let b = 0; b < discovered.length; b += 10) {
