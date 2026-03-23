@@ -117,8 +117,9 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body = await req.json().catch(() => ({}));
-    const maxDomains = body.max_domains || 5;
-    const deepScanLimit = body.deep_scan_limit || 20;
+    const maxDomains = Math.max(1, Number(body.max_domains || 5));
+    const deepScanLimit = Math.max(0, Number(body.deep_scan_limit || 20));
+    const domainOffset = Math.max(0, Number(body.offset || 0));
 
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
     const activeKeywords = keywords || [];
@@ -129,7 +130,7 @@ serve(async (req) => {
     const { data: existingUrls } = await supabase.from("articles").select("url").limit(5000);
     const existingUrlSet = new Set((existingUrls||[]).map(a => normalizeUrl(a.url)));
 
-    const { data: domains } = await supabase.from("approved_domains").select("*").eq("active",true).eq("approval_status","approved").order("priority",{ascending:false}).limit(maxDomains);
+    const { data: domains } = await supabase.from("approved_domains").select("*").eq("active",true).eq("approval_status","approved").order("priority",{ascending:false}).range(domainOffset, domainOffset + maxDomains - 1);
 
     let discovered: { title:string; snippet:string; url:string; published_at:string; source_domain:string; source_name:string; matched_keywords:string[] }[] = [];
     let unmatchedForDeepScan: SitemapItem[] = [];
@@ -243,7 +244,7 @@ serve(async (req) => {
       if (kw) await supabase.from("keywords").update({ match_count: kw.match_count + count }).eq("id", id);
     }
 
-    const summary = { discovered: totalInserted, sitemapArticlesScanned: unmatchedForDeepScan.length, deepScanned: toScan.length, domainsScanned: (domains||[]).length };
+    const summary = { discovered: totalInserted, sitemapArticlesScanned: unmatchedForDeepScan.length, deepScanned: toScan.length, domainsScanned: (domains||[]).length, domainOffset };
     console.log("Sitemap discovery complete:", summary);
     return new Response(JSON.stringify(summary), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
