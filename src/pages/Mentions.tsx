@@ -100,7 +100,7 @@ export default function Mentions() {
     }
     if (selectedRegion !== "all") result = result.filter(a => (a.sources as any)?.region === selectedRegion);
     if (selectedCountry !== "all") result = result.filter(a => (a.sources as any)?.country_code === selectedCountry);
-    if (selectedSource !== "all") result = result.filter(a => (a.sources as any)?.name === selectedSource);
+    if (selectedSource !== "all") result = result.filter(a => ((a.sources as any)?.name || a.source_name) === selectedSource);
     if (selectedKeyword !== "all") result = result.filter(a => a.matched_keywords?.includes(selectedKeyword));
     if (sentiment !== "all") result = result.filter(a => a.sentiment === sentiment);
     if (sortBy === "oldest") result = [...result].reverse();
