@@ -38,7 +38,7 @@ export default function Mentions() {
         .order("published_at", { ascending: false })
         .limit(1000);
       if (error) throw error;
-      return data;
+      return data as any[];
     },
   });
 
@@ -59,7 +59,8 @@ export default function Mentions() {
       const s = a.sources as any;
       if (s?.region) regions.add(s.region);
       if (s?.country_code) countries.add(s.country_code);
-      if (s?.name) sources.add(s.name);
+      const sourceName = s?.name || a.source_name;
+      if (sourceName) sources.add(sourceName);
     });
     return {
       regions: ["all", ...Array.from(regions).sort()],
@@ -99,7 +100,7 @@ export default function Mentions() {
     }
     if (selectedRegion !== "all") result = result.filter(a => (a.sources as any)?.region === selectedRegion);
     if (selectedCountry !== "all") result = result.filter(a => (a.sources as any)?.country_code === selectedCountry);
-    if (selectedSource !== "all") result = result.filter(a => (a.sources as any)?.name === selectedSource);
+    if (selectedSource !== "all") result = result.filter(a => ((a.sources as any)?.name || a.source_name) === selectedSource);
     if (selectedKeyword !== "all") result = result.filter(a => a.matched_keywords?.includes(selectedKeyword));
     if (sentiment !== "all") result = result.filter(a => a.sentiment === sentiment);
     if (sortBy === "oldest") result = [...result].reverse();
@@ -119,7 +120,7 @@ export default function Mentions() {
     const rows = [["Title", "Source", "Region", "Country", "Date", "Sentiment", "Keywords", "URL"]];
     filtered.forEach(a => {
       const s = a.sources as any;
-      rows.push([a.title, s?.name || "", s?.region || "", s?.country_code || "", format(new Date(a.published_at), "yyyy-MM-dd"), a.sentiment || "", (a.matched_keywords || []).join("; "), a.url]);
+      rows.push([a.title, s?.name || a.source_name || a.source_domain || "", s?.region || "", s?.country_code || "", format(new Date(a.published_at), "yyyy-MM-dd"), a.sentiment || "", (a.matched_keywords || []).join("; "), a.url]);
     });
     const csv = rows.map(r => r.map(c => `"${(c || "").replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -279,6 +280,7 @@ export default function Mentions() {
         <div className="space-y-2">
           {paged.map(a => {
             const src = a.sources as any;
+            const displayName = src?.name || a.source_name || a.source_domain || "Unknown";
             return (
               <a key={a.id} href={a.url} target="_blank" rel="noopener noreferrer"
                 className="monitor-card flex items-start gap-4 hover:bg-bg-elevated/80 transition group cursor-pointer">
@@ -287,7 +289,7 @@ export default function Mentions() {
                   {a.snippet && <p className="text-xs text-text-muted mt-1 line-clamp-2">{a.snippet}</p>}
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
                     {src?.country_code && <span className="text-xs">{src.country_code}</span>}
-                    <span className="text-xs text-text-secondary">{src?.name}</span>
+                    <span className="text-xs text-text-secondary">{displayName}</span>
                     <span className="text-xs text-text-muted">·</span>
                     <span className="text-xs text-text-muted">{format(new Date(a.published_at), "MMM d, yyyy")}</span>
                     {src?.region && <span className="px-1.5 py-0.5 rounded bg-bg-subtle text-text-muted text-[10px]">{src.region}</span>}

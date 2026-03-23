@@ -6,7 +6,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-async function fetchWithTimeout(url: string, timeoutMs = 8000): Promise<Response> {
+// ── Utilities ────────────────────────────────────────────
+
+async function fetchWithTimeout(url: string, timeoutMs = 6000): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -17,7 +19,7 @@ async function fetchWithTimeout(url: string, timeoutMs = 8000): Promise<Response
 function normalizeUrl(url: string): string {
   try {
     const u = new URL(url);
-    ["utm_source","utm_medium","utm_campaign","utm_term","utm_content","oc"].forEach(p => u.searchParams.delete(p));
+    ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "oc", "ref", "fbclid", "gclid"].forEach(p => u.searchParams.delete(p));
     u.hash = "";
     if (u.pathname !== "/") u.pathname = u.pathname.replace(/\/+$/, "") || "/";
     return u.toString();
@@ -25,7 +27,7 @@ function normalizeUrl(url: string): string {
 }
 
 function normalizeDomain(d: string): string {
-  return d.replace(/^https?:\/\//i,"").replace(/^www\./i,"").replace(/\/.*$/,"").trim().toLowerCase();
+  return d.replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/.*$/, "").trim().toLowerCase();
 }
 
 function getXmlTag(c: string, tag: string): string {
@@ -34,11 +36,12 @@ function getXmlTag(c: string, tag: string): string {
 }
 
 function stripHtml(t: string): string {
-  return t.replace(/<[^>]+>/g," ").replace(/&[a-z0-9#]+;/gi," ").replace(/\s+/g," ").trim();
+  return t.replace(/<[^>]+>/g, " ").replace(/&[a-z0-9#]+;/gi, " ").replace(/\s+/g, " ").trim();
 }
 
+/** Unicode-safe normalization */
 function normalizeText(t: string): string {
-  return stripHtml(t).toLowerCase().replace(/[_-]+/g," ").replace(/[^a-z0-9]+/g," ").replace(/\s+/g," ").trim();
+  return stripHtml(t).toLowerCase().replace(/[_\-–—]+/gu, " ").replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/g, " ").trim();
 }
 
 function matchKeywords(text: string, keywords: string[]): string[] {
@@ -49,14 +52,14 @@ function matchKeywords(text: string, keywords: string[]): string[] {
 function extractTitleFromUrl(url: string): string {
   try {
     const last = new URL(url).pathname.split("/").filter(Boolean).pop() || "";
-    return decodeURIComponent(last).replace(/\.(html?|php|aspx?)$/i,"").replace(/[-_]+/g," ").trim();
+    return decodeURIComponent(last).replace(/\.(html?|php|aspx?)$/i, "").replace(/[-_]+/g, " ").trim();
   } catch { return url; }
 }
 
 function parseSitemapIndex(xml: string): string[] {
   const urls: string[] = [];
   const re = /<sitemap>([\s\S]*?)<\/sitemap>/gi;
-  let m; while ((m = re.exec(xml)) !== null) { const loc = getXmlTag(m[1],"loc"); if (loc) urls.push(loc); }
+  let m; while ((m = re.exec(xml)) !== null) { const loc = getXmlTag(m[1], "loc"); if (loc) urls.push(loc); }
   return urls;
 }
 
@@ -66,10 +69,10 @@ function parseSitemapItems(xml: string, domain: string, name: string): SitemapIt
   const items: SitemapItem[] = [];
   const re = /<url>([\s\S]*?)<\/url>/gi;
   let m; while ((m = re.exec(xml)) !== null) {
-    const url = getXmlTag(m[1],"loc"); if (!url) continue;
-    const title = stripHtml(getXmlTag(m[1],"news:title") || extractTitleFromUrl(url)).slice(0,220);
-    const snippet = stripHtml(getXmlTag(m[1],"news:keywords")).slice(0,500);
-    const pubDate = getXmlTag(m[1],"news:publication_date") || getXmlTag(m[1],"lastmod");
+    const url = getXmlTag(m[1], "loc"); if (!url) continue;
+    const title = stripHtml(getXmlTag(m[1], "news:title") || extractTitleFromUrl(url)).slice(0, 220);
+    const snippet = stripHtml(getXmlTag(m[1], "news:keywords")).slice(0, 500);
+    const pubDate = getXmlTag(m[1], "news:publication_date") || getXmlTag(m[1], "lastmod");
     items.push({ title, url, snippet, published_at: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(), source_domain: normalizeDomain(domain), source_name: name });
   }
   return items;
@@ -77,36 +80,58 @@ function parseSitemapItems(xml: string, domain: string, name: string): SitemapIt
 
 async function fetchArticleText(url: string): Promise<string | null> {
   try {
-    const resp = await fetchWithTimeout(url, 6000);
+    const resp = await fetchWithTimeout(url, 5000);
     if (!resp.ok) return null;
     const ct = resp.headers.get("content-type") || "";
     if (!ct.includes("text/html")) { await resp.text(); return null; }
     const html = await resp.text();
     const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
     return (bodyMatch ? bodyMatch[1] : html)
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi," ")
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi," ")
-      .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi," ")
-      .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi," ")
-      .replace(/<[^>]+>/g," ").replace(/&[a-z]+;/gi," ").replace(/\s+/g," ").trim().slice(0,10000);
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+      .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, " ")
+      .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, " ")
+      .replace(/<[^>]+>/g, " ").replace(/&[a-z]+;/gi, " ").replace(/\s+/g, " ").trim().slice(0, 10000);
   } catch { return null; }
 }
 
-async function analyzeSentimentBatch(items: {title:string;snippet:string}[], apiKey: string): Promise<{sentiment:string;score:number}[]> {
+async function analyzeSentimentBatch(items: { title: string; snippet: string }[], apiKey: string): Promise<{ sentiment: string; score: number }[]> {
   if (!items.length) return [];
-  const prompt = items.map((it,i) => `[${i}] Title: ${it.title}\nSnippet: ${it.snippet}`).join("\n\n");
+  const prompt = items.map((it, i) => `[${i}] Title: ${it.title}\nSnippet: ${it.snippet}`).join("\n\n");
   try {
     const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method:"POST", headers:{Authorization:`Bearer ${apiKey}`,"Content-Type":"application/json"},
-      body: JSON.stringify({model:"google/gemini-2.5-flash-lite",tools:[{type:"function",function:{name:"classify_sentiments",description:"Classify sentiment",parameters:{type:"object",properties:{results:{type:"array",items:{type:"object",properties:{index:{type:"number"},sentiment:{type:"string",enum:["positive","neutral","negative"]},score:{type:"number"}},required:["index","sentiment","score"]}}},required:["results"]}}}],tool_choice:{type:"function",function:{name:"classify_sentiments"}},messages:[{role:"system",content:"Classify the sentiment of each news article."},{role:"user",content:prompt}]}),
+      method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "google/gemini-2.5-flash-lite", tools: [{ type: "function", function: { name: "classify_sentiments", description: "Classify sentiment", parameters: { type: "object", properties: { results: { type: "array", items: { type: "object", properties: { index: { type: "number" }, sentiment: { type: "string", enum: ["positive", "neutral", "negative"] }, score: { type: "number" } }, required: ["index", "sentiment", "score"] } } }, required: ["results"] } } }], tool_choice: { type: "function", function: { name: "classify_sentiments" } }, messages: [{ role: "system", content: "Classify the sentiment of each news article." }, { role: "user", content: prompt }] }),
     });
-    if (!r.ok) return items.map(()=>({sentiment:"neutral",score:0.5}));
+    if (!r.ok) return items.map(() => ({ sentiment: "neutral", score: 0.5 }));
     const d = JSON.parse(await r.text());
     const tc = d.choices?.[0]?.message?.tool_calls?.[0];
-    if (tc?.function?.arguments) { const p = JSON.parse(tc.function.arguments); const res = p.results||[]; return items.map((_,i)=>{ const x=res.find((r:any)=>r.index===i); return x?{sentiment:x.sentiment,score:x.score}:{sentiment:"neutral",score:0.5}; }); }
-    return items.map(()=>({sentiment:"neutral",score:0.5}));
-  } catch { return items.map(()=>({sentiment:"neutral",score:0.5})); }
+    if (tc?.function?.arguments) { const p = JSON.parse(tc.function.arguments); const res = p.results || []; return items.map((_, i) => { const x = res.find((r: any) => r.index === i); return x ? { sentiment: x.sentiment, score: x.score } : { sentiment: "neutral", score: 0.5 }; }); }
+    return items.map(() => ({ sentiment: "neutral", score: 0.5 }));
+  } catch { return items.map(() => ({ sentiment: "neutral", score: 0.5 })); }
 }
+
+// ── Paginated fetch ──────────────────────────────────────
+
+async function fetchAllRows(supabase: any, table: string, filters: Record<string, any>, orderBy?: { col: string; asc: boolean }): Promise<any[]> {
+  const PAGE = 500;
+  let all: any[] = [];
+  let offset = 0;
+  while (true) {
+    let q = supabase.from(table).select("*");
+    for (const [k, v] of Object.entries(filters)) q = q.eq(k, v);
+    if (orderBy) q = q.order(orderBy.col, { ascending: orderBy.asc });
+    q = q.range(offset, offset + PAGE - 1);
+    const { data } = await q;
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < PAGE) break;
+    offset += PAGE;
+  }
+  return all;
+}
+
+// ── Main ─────────────────────────────────────────────────
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -118,29 +143,29 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const maxDomains = Math.max(1, Number(body.max_domains || 5));
-    const deepScanLimit = Math.max(0, Number(body.deep_scan_limit || 20));
+    const deepScanLimit = Math.max(0, Number(body.deep_scan_limit || 15));
     const domainOffset = Math.max(0, Number(body.offset || 0));
 
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
     const activeKeywords = keywords || [];
     if (!activeKeywords.length) return new Response(JSON.stringify({ discovered: 0, message: "No active keywords" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-    const searchTerms = activeKeywords.map(k => k.text);
-    const { data: sources } = await supabase.from("sources").select("id, rss_url, domain");
+    const searchTerms = activeKeywords.map((k: any) => k.text);
+    const allSources = await fetchAllRows(supabase, "sources", { active: true });
     const { data: existingUrls } = await supabase.from("articles").select("url").limit(5000);
-    const existingUrlSet = new Set((existingUrls||[]).map(a => normalizeUrl(a.url)));
+    const existingUrlSet = new Set((existingUrls || []).map((a: any) => normalizeUrl(a.url)));
 
-    const { data: domains } = await supabase.from("approved_domains").select("*").eq("active",true).eq("approval_status","approved").order("priority",{ascending:false}).range(domainOffset, domainOffset + maxDomains - 1);
+    const { data: domains } = await supabase.from("approved_domains").select("*").eq("active", true).eq("approval_status", "approved").order("priority", { ascending: false }).range(domainOffset, domainOffset + maxDomains - 1);
 
-    let discovered: { title:string; snippet:string; url:string; published_at:string; source_domain:string; source_name:string; matched_keywords:string[] }[] = [];
+    let discovered: { title: string; snippet: string; url: string; published_at: string; source_domain: string; source_name: string; matched_keywords: string[] }[] = [];
     let unmatchedForDeepScan: SitemapItem[] = [];
 
-    for (const dom of (domains||[])) {
+    for (const dom of (domains || [])) {
       const domain = normalizeDomain(dom.domain);
       const name = dom.name || domain;
       console.log(`Sitemap scanning ${domain}...`);
 
-      // Find sitemaps: use configured sitemap_url first, then robots.txt, then fallback
+      // Discover sitemap URLs
       const sitemapUrls: string[] = [];
       if (dom.sitemap_url) sitemapUrls.push(dom.sitemap_url);
       try {
@@ -153,26 +178,26 @@ serve(async (req) => {
           }
         }
       } catch {}
-      if (!sitemapUrls.some(u => u.includes("news-sitemap"))) {
-        sitemapUrls.push(`https://${domain}/news-sitemap.xml`);
+      // Fallback guesses
+      for (const guess of [`https://${domain}/sitemap.xml`, `https://${domain}/news-sitemap.xml`, `https://${domain}/sitemap_index.xml`]) {
+        if (!sitemapUrls.includes(guess)) sitemapUrls.push(guess);
       }
 
-      // Process sitemaps - keep limits tight to avoid compute limits
       let allItems: SitemapItem[] = [];
-      for (const sitemapUrl of sitemapUrls.slice(0, 3)) {
+      for (const sitemapUrl of sitemapUrls.slice(0, 4)) {
         try {
           const resp = await fetchWithTimeout(sitemapUrl, 6000);
-          if (!resp.ok) { await resp.text().catch(()=>{}); continue; }
+          if (!resp.ok) { await resp.text().catch(() => {}); continue; }
           const xml = await resp.text();
 
           if (/<sitemapindex/i.test(xml)) {
-            const children = parseSitemapIndex(xml).slice(-2);
+            const children = parseSitemapIndex(xml).slice(-3);
             for (const childUrl of children) {
               try {
                 const childResp = await fetchWithTimeout(childUrl, 6000);
-                if (!childResp.ok) { await childResp.text().catch(()=>{}); continue; }
+                if (!childResp.ok) { await childResp.text().catch(() => {}); continue; }
                 const childXml = await childResp.text();
-                allItems.push(...parseSitemapItems(childXml, domain, name).slice(-30));
+                allItems.push(...parseSitemapItems(childXml, domain, name).slice(-40));
               } catch {}
             }
           } else if (/<urlset/i.test(xml)) {
@@ -222,28 +247,36 @@ serve(async (req) => {
 
     // Insert with sentiment
     let totalInserted = 0;
-    const keywordMatchUpdates: Record<string,number> = {};
+    const keywordMatchUpdates: Record<string, number> = {};
 
     for (let b = 0; b < discovered.length; b += 10) {
       const batch = discovered.slice(b, b + 10);
       const toInsert = batch.map(a => {
-        for (const kw of a.matched_keywords) { const k = activeKeywords.find(x=>x.text===kw); if (k) keywordMatchUpdates[k.id]=(keywordMatchUpdates[k.id]||0)+1; }
-        const src = sources?.find(s => normalizeDomain(s.domain||"") === normalizeDomain(a.source_domain));
-        return { title: a.title, snippet: a.snippet.slice(0,500), url: a.url, source_id: src?.id||null, published_at: a.published_at, fetched_at: new Date().toISOString(), matched_keywords: a.matched_keywords, language: "en", sentiment: "neutral" as string, sentiment_score: 0.5 };
+        for (const kw of a.matched_keywords) { const k = activeKeywords.find((x: any) => x.text === kw); if (k) keywordMatchUpdates[k.id] = (keywordMatchUpdates[k.id] || 0) + 1; }
+        const src = allSources.find((s: any) => normalizeDomain(s.domain || "") === normalizeDomain(a.source_domain));
+        return {
+          title: a.title, snippet: a.snippet.slice(0, 500), url: a.url,
+          source_id: src?.id || null,
+          source_name: a.source_name || null,
+          source_domain: a.source_domain || null,
+          published_at: a.published_at, fetched_at: new Date().toISOString(),
+          matched_keywords: a.matched_keywords, language: null,
+          sentiment: "neutral" as string, sentiment_score: 0.5,
+        };
       });
-      const sentiments = await analyzeSentimentBatch(toInsert.map(a=>({title:a.title,snippet:a.snippet||""})), lovableApiKey);
-      toInsert.forEach((a,i) => { a.sentiment = sentiments[i].sentiment; a.sentiment_score = sentiments[i].score; });
+      const sentiments = await analyzeSentimentBatch(toInsert.map(a => ({ title: a.title, snippet: a.snippet || "" })), lovableApiKey);
+      toInsert.forEach((a, i) => { a.sentiment = sentiments[i].sentiment; a.sentiment_score = sentiments[i].score; });
       const { data: ins, error } = await supabase.from("articles").upsert(toInsert, { onConflict: "url", ignoreDuplicates: true }).select("id");
       if (error) console.error("Insert error:", error); else totalInserted += ins?.length || 0;
     }
 
     for (const [id, count] of Object.entries(keywordMatchUpdates)) {
-      const kw = activeKeywords.find(k=>k.id===id);
+      const kw = activeKeywords.find((k: any) => k.id === id);
       if (kw) await supabase.from("keywords").update({ match_count: kw.match_count + count }).eq("id", id);
     }
 
-    const summary = { discovered: totalInserted, sitemapArticlesScanned: unmatchedForDeepScan.length, deepScanned: toScan.length, domainsScanned: (domains||[]).length, domainOffset };
-    console.log("Sitemap discovery complete:", summary);
+    const summary = { discovered: totalInserted, sitemapArticlesScanned: unmatchedForDeepScan.length, deepScanned: toScan.length, domainsScanned: (domains || []).length, domainOffset };
+    console.log("Sitemap discovery complete:", JSON.stringify(summary));
     return new Response(JSON.stringify(summary), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     console.error("discover-sitemaps error:", e);

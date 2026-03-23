@@ -27,7 +27,6 @@ const FetchContext = createContext<FetchContextValue>({
   startFetch: () => {},
 });
 
-/** Wrap a promise with a timeout – resolves to null on timeout instead of throwing */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   return Promise.race([
     promise,
@@ -50,12 +49,12 @@ export function FetchProvider({ children }: { children: ReactNode }) {
     setState({ fetching: true, progress: 5, stage: { step: "discover", label: "Discovering articles…" }, result: null });
 
     try {
-      // Step 1: discover-articles – 60s timeout (0-40%)
+      // Step 1: discover-articles with deep scan enabled (0-40%)
       let discCount = 0;
       let newDomains = 0;
       const discoverResult = await withTimeout(
-        supabase.functions.invoke("discover-articles", { body: { max_domains: 20 } }),
-        60000
+        supabase.functions.invoke("discover-articles", { body: { deep_scan_limit: 20 } }),
+        90000
       );
       if (discoverResult && !discoverResult.error) {
         discCount = discoverResult.data?.discovered ?? 0;
@@ -63,20 +62,20 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       }
       setState(s => ({ ...s, progress: 40 }));
 
-      // Step 2: discover-sitemaps in 2 small batches (40-70%)
+      // Step 2: discover-sitemaps in 3 batches (40-70%)
       let sitemapCount = 0;
-      for (let batch = 0; batch < 2; batch++) {
+      for (let batch = 0; batch < 3; batch++) {
         setState(s => ({
           ...s,
-          progress: 45 + batch * 13,
-          stage: { step: "sitemaps", label: `Scanning sitemaps… (${batch + 1}/2)` },
+          progress: 42 + batch * 10,
+          stage: { step: "sitemaps", label: `Scanning sitemaps… (${batch + 1}/3)` },
         }));
         try {
           const sitemapResult = await withTimeout(
             supabase.functions.invoke("discover-sitemaps", {
-              body: { max_domains: 3, deep_scan_limit: 8, offset: batch * 3 },
+              body: { max_domains: 5, deep_scan_limit: 15, offset: batch * 5 },
             }),
-            40000
+            50000
           );
           if (sitemapResult && !sitemapResult.error) {
             sitemapCount += sitemapResult.data?.discovered ?? 0;
@@ -85,20 +84,18 @@ export function FetchProvider({ children }: { children: ReactNode }) {
           // batch failed, continue
         }
       }
-      setState(s => ({ ...s, progress: 70 }));
+      setState(s => ({ ...s, progress: 72 }));
 
-      // Step 3: fetch-rss (70-95%)
+      // Step 3: fetch-rss (72-95%)
       setState(s => ({ ...s, progress: 75, stage: { step: "rss", label: "Fetching RSS feeds…" } }));
       let rssCount = 0;
       try {
         const rssResult = await withTimeout(
-          supabase.functions.invoke("fetch-rss", { body: { max_sources: 30 } }),
-          30000
+          supabase.functions.invoke("fetch-rss"),
+          60000
         );
         if (rssResult && !rssResult.error) rssCount = rssResult.data?.totalInserted ?? 0;
-      } catch {
-        // RSS fetch failed, continue
-      }
+      } catch {}
 
       // Build result
       const parts: string[] = [];
