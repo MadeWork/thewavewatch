@@ -562,8 +562,8 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body = await req.json().catch(() => ({}));
-    const maxDomainFeeds = body.max_domains || 50;
-    const deepScanLimit = body.deep_scan_limit || 30;
+    const maxDomainFeeds = body.max_domains || 20;
+    const deepScanLimit = 0; // Deep scan moved to discover-sitemaps for speed
 
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
     const activeKeywords = keywords || [];
@@ -590,7 +590,7 @@ serve(async (req) => {
     for (const term of searchTerms) {
       try {
         const url = buildGoogleNewsUrl(term);
-        const resp = await fetchWithTimeout(url, 15000);
+        const resp = await fetchWithTimeout(url, 8000);
         if (resp.ok) {
           const xml = await resp.text();
           const articles = parseGoogleNewsRSS(xml, term);
@@ -658,7 +658,7 @@ serve(async (req) => {
       .from("sources")
       .select("*")
       .eq("active", true)
-      .limit(100);
+      .limit(30);
 
     if (activeSources && activeSources.length > 0) {
       console.log(`Searching ${activeSources.length} active source feeds...`);
@@ -698,14 +698,8 @@ serve(async (req) => {
       }
     }
 
-    // Sitemap scanning is handled by separate 'discover-sitemaps' function
-    const unmatchedToScan = allUnmatchedItems.filter((item) => !existingUrlSet.has(normalizeUrl(item.url)));
-    if (unmatchedToScan.length > 0) {
-      console.log(`Deep scanning ${Math.min(unmatchedToScan.length, deepScanLimit)} of ${unmatchedToScan.length} unmatched articles for full-text keyword matches...`);
-      const deepMatches = await deepScanForKeywords(unmatchedToScan, searchTerms, deepScanLimit);
-      console.log(`Deep scan found ${deepMatches.length} additional articles with keyword matches in body text`);
-      allDiscovered.push(...deepMatches);
-    }
+    // Deep scanning is handled by the separate 'discover-sitemaps' function
+    // to keep this function fast and within compute limits
 
     console.log(`Total candidates before dedup: ${allDiscovered.length}`);
 
