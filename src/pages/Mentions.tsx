@@ -2,9 +2,10 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { format, subMonths } from "date-fns";
-import { Search, Download, ExternalLink, ChevronLeft, ChevronRight, X, Filter, Calendar } from "lucide-react";
+import { Search, Download, ExternalLink, ChevronLeft, ChevronRight, X, Filter, Sparkles } from "lucide-react";
 import ErrorBanner from "@/components/ErrorBanner";
 import EmptyState from "@/components/EmptyState";
+import ArticleDetailDrawer from "@/components/ArticleDetailDrawer";
 
 const PAGE_SIZE = 20;
 const SENTIMENTS = ["all", "positive", "neutral", "negative"];
@@ -28,6 +29,7 @@ export default function Mentions() {
   const [dateRange, setDateRange] = useState("all");
   const [sortBy, setSortBy] = useState<"newest" | "oldest">("newest");
   const [showFilters, setShowFilters] = useState(true);
+  const [selectedArticle, setSelectedArticle] = useState<any>(null);
 
   const { data: articles, isLoading, error } = useQuery({
     queryKey: ["mentions"],
@@ -282,7 +284,8 @@ export default function Mentions() {
             const src = a.sources as any;
             const displayName = src?.name || a.source_name || a.source_domain || "Unknown";
             return (
-              <a key={a.id} href={a.url} target="_blank" rel="noopener noreferrer"
+              <div key={a.id}
+                onClick={() => setSelectedArticle(a)}
                 className="monitor-card flex items-start gap-4 hover:bg-bg-elevated/80 transition group cursor-pointer">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-foreground font-light group-hover:text-primary transition">{a.title}</p>
@@ -301,8 +304,8 @@ export default function Mentions() {
                 <span className={`sentiment-badge flex-shrink-0 ${a.sentiment === 'positive' ? 'sentiment-positive' : a.sentiment === 'negative' ? 'sentiment-negative' : 'sentiment-neutral'}`}>
                   {a.sentiment}
                 </span>
-                <ExternalLink className="w-4 h-4 text-text-muted opacity-0 group-hover:opacity-100 transition mt-1" />
-              </a>
+                <Sparkles className="w-4 h-4 text-text-muted opacity-0 group-hover:opacity-100 transition mt-1" />
+              </div>
             );
           })}
         </div>
@@ -321,6 +324,11 @@ export default function Mentions() {
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
+      )}
+
+      {/* Article Detail Drawer */}
+      {selectedArticle && (
+        <ArticleDetailDrawer article={selectedArticle} onClose={() => setSelectedArticle(null)} />
       )}
     </div>
   );

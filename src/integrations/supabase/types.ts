@@ -68,9 +68,62 @@ export type Database = {
         }
         Relationships: []
       }
+      article_enrichments: {
+        Row: {
+          article_id: string
+          author_bio: string | null
+          author_email: string | null
+          author_name: string | null
+          author_social: Json | null
+          author_url: string | null
+          comments: Json | null
+          enriched_at: string
+          full_text: string | null
+          id: string
+          key_quotes: string[] | null
+        }
+        Insert: {
+          article_id: string
+          author_bio?: string | null
+          author_email?: string | null
+          author_name?: string | null
+          author_social?: Json | null
+          author_url?: string | null
+          comments?: Json | null
+          enriched_at?: string
+          full_text?: string | null
+          id?: string
+          key_quotes?: string[] | null
+        }
+        Update: {
+          article_id?: string
+          author_bio?: string | null
+          author_email?: string | null
+          author_name?: string | null
+          author_social?: Json | null
+          author_url?: string | null
+          comments?: Json | null
+          enriched_at?: string
+          full_text?: string | null
+          id?: string
+          key_quotes?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "article_enrichments_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: true
+            referencedRelation: "articles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       articles: {
         Row: {
           ai_summary: string | null
+          author_email: string | null
+          author_name: string | null
+          author_url: string | null
           fetched_at: string
           id: string
           language: string | null
@@ -87,6 +140,9 @@ export type Database = {
         }
         Insert: {
           ai_summary?: string | null
+          author_email?: string | null
+          author_name?: string | null
+          author_url?: string | null
           fetched_at?: string
           id?: string
           language?: string | null
@@ -103,6 +159,9 @@ export type Database = {
         }
         Update: {
           ai_summary?: string | null
+          author_email?: string | null
+          author_name?: string | null
+          author_url?: string | null
           fetched_at?: string
           id?: string
           language?: string | null
