@@ -168,7 +168,7 @@ export default function Dashboard() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-foreground font-light truncate group-hover:text-primary transition">{a.title}</p>
                     <p className="text-xs text-text-muted mt-0.5">
-                      {(a.sources as any)?.name} · {format(new Date(a.published_at), "MMM d")}
+                      {(a.sources as any)?.name || (a as any).source_name || (a as any).source_domain || "Unknown"} · {format(new Date(a.published_at), "MMM d")}
                     </p>
                   </div>
                   <span className={`sentiment-badge ${a.sentiment === 'positive' ? 'sentiment-positive' : a.sentiment === 'negative' ? 'sentiment-negative' : 'sentiment-neutral'}`}>
