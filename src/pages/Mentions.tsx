@@ -42,8 +42,8 @@ export default function Mentions() {
     },
   });
 
-  const { data: keywords } = useQuery({
-    queryKey: ["keywords"],
+  const { data: keywordTexts } = useQuery({
+    queryKey: ["keywords-texts"],
     queryFn: async () => {
       const { data } = await supabase.from("keywords").select("text").eq("active", true);
       return data?.map(k => k.text) ?? [];
@@ -71,9 +71,9 @@ export default function Mentions() {
   const allKeywords = useMemo(() => {
     const kws = new Set<string>();
     (articles ?? []).forEach(a => a.matched_keywords?.forEach((k: string) => kws.add(k)));
-    if (keywords) keywords.forEach(k => kws.add(k));
+    if (keywordTexts) keywordTexts.forEach(k => kws.add(k));
     return ["all", ...Array.from(kws).sort()];
-  }, [articles, keywords]);
+  }, [articles, keywordTexts]);
 
   const activeFilterCount = [selectedRegion, selectedCountry, selectedKeyword, selectedSource, sentiment, dateRange]
     .filter(v => v !== "all").length;
