@@ -563,9 +563,7 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const maxDomainFeeds = body.max_domains || 50;
-    const deepScanLimit = body.deep_scan_limit || 60;
-    const maxSitemapDomains = body.max_sitemap_domains || 8;
-    const sitemapChildLimit = body.sitemap_child_limit || 3;
+    const deepScanLimit = body.deep_scan_limit || 30;
 
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
     const activeKeywords = keywords || [];
