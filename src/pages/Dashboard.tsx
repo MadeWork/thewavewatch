@@ -63,21 +63,27 @@ export default function Dashboard() {
           onClick={async () => {
             setFetching(true); setFetchResult(null);
             try {
-              // Run fetch-rss first (processes active sources), then discover
+              // Run discover-articles (Google News + domain feeds) as primary discovery
+              const discoverResult = await supabase.functions.invoke("discover-articles", {
+                body: { max_domains: 100 },
+              });
+              const disc = discoverResult.data;
+              const discCount = disc?.discovered ?? 0;
+              const totalCandidates = disc?.totalCandidates ?? 0;
+              const newDomains = disc?.newDomainsFound ?? 0;
+
+              // Then run fetch-rss for active source feeds
               const rssResult = await supabase.functions.invoke("fetch-rss", {
                 body: { max_sources: 50 },
               });
               const rss = rssResult.data;
               const rssCount = rss?.totalInserted ?? 0;
 
-              // Then run discovery on remaining domains  
-              const discoverResult = await supabase.functions.invoke("discover-articles", {
-                body: { max_domains: 50 },
-              });
-              const disc = discoverResult.data;
-              const discCount = disc?.discovered ?? 0;
-              const domainsSearched = disc?.domainsSearched ?? 0;
-              setFetchResult(`Fetched ${rssCount} from sources + discovered ${discCount} from ${domainsSearched} domains`);
+              const parts: string[] = [];
+              if (discCount > 0 || totalCandidates > 0) parts.push(`Discovered ${discCount} articles (${totalCandidates} candidates)`);
+              if (rssCount > 0) parts.push(`${rssCount} from RSS feeds`);
+              if (newDomains > 0) parts.push(`${newDomains} new sources found`);
+              setFetchResult(parts.length > 0 ? parts.join(" · ") : "No new articles found matching your keywords");
               queryClient.invalidateQueries({ queryKey: ["articles"] });
               queryClient.invalidateQueries({ queryKey: ["mentions"] });
               queryClient.invalidateQueries({ queryKey: ["analytics-articles"] });
