@@ -590,7 +590,7 @@ serve(async (req) => {
     for (const term of searchTerms) {
       try {
         const url = buildGoogleNewsUrl(term);
-        const resp = await fetchWithTimeout(url, 15000);
+        const resp = await fetchWithTimeout(url, 8000);
         if (resp.ok) {
           const xml = await resp.text();
           const articles = parseGoogleNewsRSS(xml, term);
