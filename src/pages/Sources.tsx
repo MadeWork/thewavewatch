@@ -172,7 +172,51 @@ export default function Sources() {
         body: { max_domains: 50, region: region === "all" ? null : region },
       });
       if (error) throw error;
-      setDiscoveryStatus(`Found ${data.discovered} new articles across ${data.domainsSearched} domains (${data.candidatesFound} candidates)`);
+
+      const sitemapBatchSize = 5;
+      const sitemapDeepScanLimit = 20;
+      let sitemapCount = 0;
+      let sitemapDomainsScanned = 0;
+
+      const { count: approvedDomainCount, error: approvedDomainCountError } = await supabase
+        .from("approved_domains")
+        .select("id", { count: "exact", head: true })
+        .eq("active", true)
+        .eq("approval_status", "approved");
+
+      if (approvedDomainCountError) throw approvedDomainCountError;
+
+      const sitemapBatches = Math.max(1, Math.ceil((approvedDomainCount ?? 0) / sitemapBatchSize));
+      for (let batchIndex = 0; batchIndex < sitemapBatches; batchIndex += 1) {
+        const sitemapResult = await supabase.functions.invoke("discover-sitemaps", {
+          body: {
+            max_domains: sitemapBatchSize,
+            deep_scan_limit: sitemapDeepScanLimit,
+            offset: batchIndex * sitemapBatchSize,
+          },
+        });
+
+        if (sitemapResult.error) throw sitemapResult.error;
+
+        sitemapCount += sitemapResult.data?.discovered ?? 0;
+        sitemapDomainsScanned += sitemapResult.data?.domainsScanned ?? 0;
+      }
+
+      const { data: rssData, error: rssError } = await supabase.functions.invoke("fetch-rss", {
+        body: { max_sources: 50 },
+      });
+      if (rssError) throw rssError;
+
+      const summaryParts = [
+        `Found ${data.discovered ?? 0} from discovery`,
+        `${sitemapCount} from sitemaps across ${sitemapDomainsScanned} domains`,
+      ];
+
+      if ((rssData?.totalInserted ?? 0) > 0) {
+        summaryParts.push(`${rssData.totalInserted} from RSS`);
+      }
+
+      setDiscoveryStatus(summaryParts.join(" · "));
       queryClient.invalidateQueries({ queryKey: ["articles"] });
       queryClient.invalidateQueries({ queryKey: ["mentions"] });
       queryClient.invalidateQueries({ queryKey: ["keywords"] });
@@ -250,8 +294,11 @@ export default function Sources() {
     return "bg-neutral-sentiment";
   };
 
-  const uniqueCountries = [...new Set((tab === "sources" ? sources : approvedDomains)?.map(s => s.country_code).filter(Boolean) || [])].sort();
-  const uniqueLanguages = [...new Set(approvedDomains?.map(d => d.language).filter(Boolean) || [])].sort();
+  const countryValues = tab === "sources"
+    ? (sources?.map(source => source.country_code) ?? [])
+    : (approvedDomains?.map(domain => domain.country_code) ?? []);
+  const uniqueCountries = [...new Set(countryValues.filter((country): country is string => Boolean(country)))].sort();
+  const uniqueLanguages = [...new Set((approvedDomains?.map(domain => domain.language) ?? []).filter((language): language is string => Boolean(language)))].sort();
 
   if (error) return <ErrorBanner message="Failed to load sources." />;
 
@@ -408,7 +455,7 @@ export default function Sources() {
         ) : Object.keys(groupedSources).length === 0 ? (
           <EmptyState message="No sources found" />
         ) : (
-          Object.entries(groupedSources).map(([reg, list]) => (
+          (Object.entries(groupedSources) as [string, typeof filteredSources][]).map(([reg, list]) => (
             <div key={reg}>
               <p className="section-label mb-2">{reg.toUpperCase().replace("_", " ")}</p>
               <div className="space-y-1.5">
