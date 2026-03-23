@@ -658,7 +658,7 @@ serve(async (req) => {
       .from("sources")
       .select("*")
       .eq("active", true)
-      .limit(100);
+      .limit(30);
 
     if (activeSources && activeSources.length > 0) {
       console.log(`Searching ${activeSources.length} active source feeds...`);
