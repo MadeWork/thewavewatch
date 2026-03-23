@@ -63,17 +63,21 @@ export default function Dashboard() {
           onClick={async () => {
             setFetching(true); setFetchResult(null);
             try {
-              // Run both: direct sources + global domain discovery
-              const [rssResult, discoverResult] = await Promise.allSettled([
-                supabase.functions.invoke("fetch-rss"),
-                supabase.functions.invoke("discover-articles", { body: { max_domains: 500 } }),
-              ]);
-              const rss = rssResult.status === "fulfilled" ? rssResult.value.data : null;
-              const disc = discoverResult.status === "fulfilled" ? discoverResult.value.data : null;
+              // Run fetch-rss first (processes active sources), then discover
+              const rssResult = await supabase.functions.invoke("fetch-rss", {
+                body: { max_sources: 50 },
+              });
+              const rss = rssResult.data;
               const rssCount = rss?.totalInserted ?? 0;
+
+              // Then run discovery on remaining domains  
+              const discoverResult = await supabase.functions.invoke("discover-articles", {
+                body: { max_domains: 50 },
+              });
+              const disc = discoverResult.data;
               const discCount = disc?.discovered ?? 0;
               const domainsSearched = disc?.domainsSearched ?? 0;
-              setFetchResult(`Fetched ${rssCount} from sources + discovered ${discCount} from ${domainsSearched} global domains`);
+              setFetchResult(`Fetched ${rssCount} from sources + discovered ${discCount} from ${domainsSearched} domains`);
               queryClient.invalidateQueries({ queryKey: ["articles"] });
               queryClient.invalidateQueries({ queryKey: ["mentions"] });
               queryClient.invalidateQueries({ queryKey: ["analytics-articles"] });
