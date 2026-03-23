@@ -37,34 +37,8 @@ function buildGoogleNewsUrl(keyword: string, lang = "en"): string {
   return `https://news.google.com/rss/search?q=${q}&hl=${lang}&gl=US&ceid=US:${lang}`;
 }
 
-async function resolveGoogleNewsUrl(gnUrl: string): Promise<string> {
-  // Google News RSS links are redirects — follow them to get the real URL
-  try {
-    const resp = await fetch(gnUrl, {
-      method: "HEAD",
-      redirect: "follow",
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; MediaPulse/1.0)" },
-      signal: AbortSignal.timeout(5000),
-    });
-    // The final URL after redirects is the real article URL
-    if (resp.url && !resp.url.includes("news.google.com")) {
-      return resp.url;
-    }
-    // Try GET if HEAD didn't resolve
-    const resp2 = await fetch(gnUrl, {
-      redirect: "follow",
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; MediaPulse/1.0)" },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (resp2.url && !resp2.url.includes("news.google.com")) {
-      return resp2.url;
-    }
-    return gnUrl;
-  } catch {
-    return gnUrl;
-  }
-}
-
+// Google News redirect URLs cannot be resolved server-side (they use JS redirects)
+// Instead, we extract the real URL from the <source url="..."> tag in the RSS XML
 function parseGoogleNewsRSS(xml: string, keyword: string): DiscoveredArticle[] {
   const articles: DiscoveredArticle[] = [];
   const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
