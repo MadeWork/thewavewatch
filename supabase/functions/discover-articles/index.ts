@@ -698,7 +698,7 @@ serve(async (req) => {
       }
     }
 
-    // Sitemap scanning moved to separate 'discover-sitemaps' function to avoid CPU limits
+    // Sitemap scanning is handled by separate 'discover-sitemaps' function
     const unmatchedToScan = allUnmatchedItems.filter((item) => !existingUrlSet.has(normalizeUrl(item.url)));
     if (unmatchedToScan.length > 0) {
       console.log(`Deep scanning ${Math.min(unmatchedToScan.length, deepScanLimit)} of ${unmatchedToScan.length} unmatched articles for full-text keyword matches...`);
