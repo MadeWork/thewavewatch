@@ -3,10 +3,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 
 type FetchStage =
-  | { step: "discover"; label: "Discovering articles…" }
+  | { step: "discover"; label: string }
   | { step: "sitemaps"; label: string }
-  | { step: "rss"; label: "Fetching RSS feeds…" }
-  | { step: "firecrawl"; label: "AI-powered web search…" }
+  | { step: "rss"; label: string }
+  | { step: "firecrawl"; label: string }
   | { step: "done"; label: string };
 
 interface FetchState {
