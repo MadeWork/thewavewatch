@@ -83,7 +83,7 @@ function parseSitemap(xml: string): ParsedArticle[] {
       items.push({
         title: newsTitle ? newsTitle[1].trim() : url.split("/").filter(Boolean).pop() || url,
         snippet: "", url,
-        published_at: (newsPub || lastmod) ? new Date((newsPub || lastmod)![1]).toISOString() : new Date().toISOString(),
+        published_at: (newsPub || lastmod) ? new Date((newsPub || lastmod)![1]).toISOString() : (extractDateFromUrl(url) || new Date().toISOString()),
       });
     }
   }
