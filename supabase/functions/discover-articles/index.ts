@@ -698,14 +698,8 @@ serve(async (req) => {
       }
     }
 
-    // Sitemap scanning is handled by separate 'discover-sitemaps' function
-    const unmatchedToScan = allUnmatchedItems.filter((item) => !existingUrlSet.has(normalizeUrl(item.url)));
-    if (unmatchedToScan.length > 0) {
-      console.log(`Deep scanning ${Math.min(unmatchedToScan.length, deepScanLimit)} of ${unmatchedToScan.length} unmatched articles for full-text keyword matches...`);
-      const deepMatches = await deepScanForKeywords(unmatchedToScan, searchTerms, deepScanLimit);
-      console.log(`Deep scan found ${deepMatches.length} additional articles with keyword matches in body text`);
-      allDiscovered.push(...deepMatches);
-    }
+    // Deep scanning is handled by the separate 'discover-sitemaps' function
+    // to keep this function fast and within compute limits
 
     console.log(`Total candidates before dedup: ${allDiscovered.length}`);
 
