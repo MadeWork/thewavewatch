@@ -140,45 +140,43 @@ serve(async (req) => {
       const name = dom.name || domain;
       console.log(`Sitemap scanning ${domain}...`);
 
-      // Find sitemaps from robots.txt
+      // Find sitemaps: use configured sitemap_url first, then robots.txt, then fallback
       const sitemapUrls: string[] = [];
+      if (dom.sitemap_url) sitemapUrls.push(dom.sitemap_url);
       try {
-        const robotsResp = await fetchWithTimeout(`https://${domain}/robots.txt`, 5000);
+        const robotsResp = await fetchWithTimeout(`https://${domain}/robots.txt`, 4000);
         if (robotsResp.ok) {
           const robotsTxt = await robotsResp.text();
           for (const line of robotsTxt.split(/\r?\n/)) {
             const match = line.match(/^Sitemap:\s*(.+)$/i);
-            if (match?.[1]) sitemapUrls.push(match[1].trim());
+            if (match?.[1] && !sitemapUrls.includes(match[1].trim())) sitemapUrls.push(match[1].trim());
           }
         }
       } catch {}
-
-      // Also try news-sitemap.xml
       if (!sitemapUrls.some(u => u.includes("news-sitemap"))) {
         sitemapUrls.push(`https://${domain}/news-sitemap.xml`);
       }
 
-      // Process more history for high-priority domains
+      // Process sitemaps - keep limits tight to avoid compute limits
       let allItems: SitemapItem[] = [];
-      for (const sitemapUrl of sitemapUrls.slice(0, 6)) {
+      for (const sitemapUrl of sitemapUrls.slice(0, 3)) {
         try {
-          const resp = await fetchWithTimeout(sitemapUrl, 8000);
+          const resp = await fetchWithTimeout(sitemapUrl, 6000);
           if (!resp.ok) { await resp.text().catch(()=>{}); continue; }
           const xml = await resp.text();
 
           if (/<sitemapindex/i.test(xml)) {
-            // Take more child sitemaps so we don't miss slightly older important stories
-            const children = parseSitemapIndex(xml).slice(-6);
+            const children = parseSitemapIndex(xml).slice(-2);
             for (const childUrl of children) {
               try {
-                const childResp = await fetchWithTimeout(childUrl, 8000);
+                const childResp = await fetchWithTimeout(childUrl, 6000);
                 if (!childResp.ok) { await childResp.text().catch(()=>{}); continue; }
                 const childXml = await childResp.text();
-                allItems.push(...parseSitemapItems(childXml, domain, name).slice(-80));
+                allItems.push(...parseSitemapItems(childXml, domain, name).slice(-30));
               } catch {}
             }
           } else if (/<urlset/i.test(xml)) {
-            allItems.push(...parseSitemapItems(xml, domain, name).slice(-120));
+            allItems.push(...parseSitemapItems(xml, domain, name).slice(-50));
           }
         } catch {}
       }
