@@ -59,7 +59,7 @@ export default function Dashboard() {
 
   const sourceCounts: Record<string, number> = {};
   articles?.forEach(a => {
-    const name = (a.sources as any)?.name || "Unknown";
+    const name = (a.sources as any)?.name || (a as any).source_name || (a as any).source_domain || "Unknown";
     sourceCounts[name] = (sourceCounts[name] || 0) + 1;
   });
   const topSources = Object.entries(sourceCounts).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, count]) => ({ name, count }));
