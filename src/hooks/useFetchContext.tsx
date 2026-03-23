@@ -63,25 +63,27 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       }
       setState(s => ({ ...s, progress: 40 }));
 
-      // Step 2: discover-sitemaps – single call with limited scope (40-70%)
+      // Step 2: discover-sitemaps in 2 small batches (40-70%)
       let sitemapCount = 0;
-      setState(s => ({
-        ...s,
-        progress: 45,
-        stage: { step: "sitemaps", label: "Scanning sitemaps…" },
-      }));
-      try {
-        const sitemapResult = await withTimeout(
-          supabase.functions.invoke("discover-sitemaps", {
-            body: { max_domains: 10, deep_scan_limit: 25 },
-          }),
-          45000
-        );
-        if (sitemapResult && !sitemapResult.error) {
-          sitemapCount = sitemapResult.data?.discovered ?? 0;
+      for (let batch = 0; batch < 2; batch++) {
+        setState(s => ({
+          ...s,
+          progress: 45 + batch * 13,
+          stage: { step: "sitemaps", label: `Scanning sitemaps… (${batch + 1}/2)` },
+        }));
+        try {
+          const sitemapResult = await withTimeout(
+            supabase.functions.invoke("discover-sitemaps", {
+              body: { max_domains: 3, deep_scan_limit: 8, offset: batch * 3 },
+            }),
+            40000
+          );
+          if (sitemapResult && !sitemapResult.error) {
+            sitemapCount += sitemapResult.data?.discovered ?? 0;
+          }
+        } catch {
+          // batch failed, continue
         }
-      } catch {
-        // sitemap scan failed, continue
       }
       setState(s => ({ ...s, progress: 70 }));
 
