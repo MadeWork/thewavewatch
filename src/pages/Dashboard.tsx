@@ -81,14 +81,20 @@ export default function Dashboard() {
           onClick={async () => {
             setFetching(true); setFetchResult(null);
             try {
-              // Run discover-articles (Google News + domain feeds) as primary discovery
+              // Run discover-articles (Google News + domain feeds)
               const discoverResult = await supabase.functions.invoke("discover-articles", {
-                body: { max_domains: 100 },
+                body: { max_domains: 50 },
               });
               const disc = discoverResult.data;
               const discCount = disc?.discovered ?? 0;
               const totalCandidates = disc?.totalCandidates ?? 0;
               const newDomains = disc?.newDomainsFound ?? 0;
+
+              // Run discover-sitemaps (sitemap-based deep discovery)
+              const sitemapResult = await supabase.functions.invoke("discover-sitemaps", {
+                body: { max_domains: 5, deep_scan_limit: 20 },
+              });
+              const sitemapCount = sitemapResult.data?.discovered ?? 0;
 
               // Then run fetch-rss for active source feeds
               const rssResult = await supabase.functions.invoke("fetch-rss", {
@@ -99,6 +105,7 @@ export default function Dashboard() {
 
               const parts: string[] = [];
               if (discCount > 0 || totalCandidates > 0) parts.push(`Discovered ${discCount} articles (${totalCandidates} candidates)`);
+              if (sitemapCount > 0) parts.push(`${sitemapCount} from sitemaps`);
               if (rssCount > 0) parts.push(`${rssCount} from RSS feeds`);
               if (newDomains > 0) parts.push(`${newDomains} new sources found`);
               setFetchResult(parts.length > 0 ? parts.join(" · ") : "No new articles found matching your keywords");

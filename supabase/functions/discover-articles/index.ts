@@ -563,9 +563,7 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const maxDomainFeeds = body.max_domains || 50;
-    const deepScanLimit = body.deep_scan_limit || 60;
-    const maxSitemapDomains = body.max_sitemap_domains || 8;
-    const sitemapChildLimit = body.sitemap_child_limit || 3;
+    const deepScanLimit = body.deep_scan_limit || 30;
 
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
     const activeKeywords = keywords || [];
@@ -700,14 +698,7 @@ serve(async (req) => {
       }
     }
 
-    if (domains && domains.length > 0) {
-      console.log(`Searching approved domain sitemaps for up to ${Math.min(domains.length, maxSitemapDomains)} domains...`);
-      const sitemapCandidates = await collectApprovedDomainCandidates(domains, searchTerms, existingUrlSet, maxSitemapDomains, sitemapChildLimit);
-      console.log(`Approved domain sitemap scan found ${sitemapCandidates.matched.length} title/url matches and ${sitemapCandidates.unmatched.length} body-scan candidates`);
-      allDiscovered.push(...sitemapCandidates.matched);
-      allUnmatchedItems.push(...sitemapCandidates.unmatched);
-    }
-
+    // Sitemap scanning is handled by separate 'discover-sitemaps' function
     const unmatchedToScan = allUnmatchedItems.filter((item) => !existingUrlSet.has(normalizeUrl(item.url)));
     if (unmatchedToScan.length > 0) {
       console.log(`Deep scanning ${Math.min(unmatchedToScan.length, deepScanLimit)} of ${unmatchedToScan.length} unmatched articles for full-text keyword matches...`);
