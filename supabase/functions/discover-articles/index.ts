@@ -139,7 +139,7 @@ function parseRSSItems(xml: string, domain: string, sourceName: string): RSSItem
     const link = getXmlTag(c, "link") || getXmlTag(c, "guid");
     const desc = stripHtml(getXmlTag(c, "description")).slice(0, 500);
     const pubDate = getXmlTag(c, "pubDate") || getXmlTag(c, "dc:date");
-    if (title && link) items.push({ title, url: link, snippet: desc, published_at: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(), source_domain: nd, source_name: sourceName });
+    if (title && link) items.push({ title, url: link, snippet: desc, published_at: pubDate ? new Date(pubDate).toISOString() : (extractDateFromUrl(link) || new Date().toISOString()), source_domain: nd, source_name: sourceName });
   }
 
   // Atom <entry>
