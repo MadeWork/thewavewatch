@@ -85,10 +85,10 @@ export function FetchProvider({ children }: { children: ReactNode }) {
           // batch failed, continue
         }
       }
-      setState(s => ({ ...s, progress: 72 }));
+      setState(s => ({ ...s, progress: 65 }));
 
-      // Step 3: fetch-rss (72-95%)
-      setState(s => ({ ...s, progress: 75, stage: { step: "rss", label: "Fetching RSS feeds…" } }));
+      // Step 3: fetch-rss (65-80%)
+      setState(s => ({ ...s, progress: 67, stage: { step: "rss", label: "Fetching RSS feeds…" } }));
       let rssCount = 0;
       try {
         const rssResult = await withTimeout(
@@ -97,12 +97,25 @@ export function FetchProvider({ children }: { children: ReactNode }) {
         );
         if (rssResult && !rssResult.error) rssCount = rssResult.data?.totalInserted ?? 0;
       } catch {}
+      setState(s => ({ ...s, progress: 80 }));
+
+      // Step 4: Firecrawl AI search (80-95%)
+      setState(s => ({ ...s, progress: 82, stage: { step: "firecrawl", label: "AI-powered web search…" } }));
+      let firecrawlCount = 0;
+      try {
+        const fcResult = await withTimeout(
+          supabase.functions.invoke("firecrawl-search", { body: { max_results: 15 } }),
+          60000
+        );
+        if (fcResult && !fcResult.error) firecrawlCount = fcResult.data?.discovered ?? 0;
+      } catch {}
 
       // Build result
       const parts: string[] = [];
       if (discCount > 0) parts.push(`${discCount} articles discovered`);
       if (sitemapCount > 0) parts.push(`${sitemapCount} from sitemaps`);
       if (rssCount > 0) parts.push(`${rssCount} from RSS`);
+      if (firecrawlCount > 0) parts.push(`${firecrawlCount} from web search`);
       if (newDomains > 0) parts.push(`${newDomains} new sources`);
 
       const resultText = parts.length > 0 ? parts.join(" · ") : "No new articles found";
