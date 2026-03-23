@@ -14,6 +14,60 @@ export type Database = {
   }
   public: {
     Tables: {
+      approved_domains: {
+        Row: {
+          active: boolean | null
+          approval_status: string
+          auto_discovered: boolean | null
+          country_code: string | null
+          created_at: string
+          domain: string
+          feed_url: string | null
+          id: string
+          language: string | null
+          name: string
+          priority: number | null
+          region: string | null
+          sitemap_url: string | null
+          source_type: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean | null
+          approval_status?: string
+          auto_discovered?: boolean | null
+          country_code?: string | null
+          created_at?: string
+          domain: string
+          feed_url?: string | null
+          id?: string
+          language?: string | null
+          name: string
+          priority?: number | null
+          region?: string | null
+          sitemap_url?: string | null
+          source_type?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean | null
+          approval_status?: string
+          auto_discovered?: boolean | null
+          country_code?: string | null
+          created_at?: string
+          domain?: string
+          feed_url?: string | null
+          id?: string
+          language?: string | null
+          name?: string
+          priority?: number | null
+          region?: string | null
+          sitemap_url?: string | null
+          source_type?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       articles: {
         Row: {
           ai_summary: string | null
@@ -136,6 +190,7 @@ export type Database = {
       sources: {
         Row: {
           active: boolean
+          approval_status: string
           consecutive_failures: number
           country_code: string | null
           crawl_delay_ms: number
@@ -143,6 +198,7 @@ export type Database = {
           domain: string | null
           health_status: string
           id: string
+          language: string | null
           last_fetched_at: string | null
           last_success_at: string | null
           name: string
@@ -154,6 +210,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          approval_status?: string
           consecutive_failures?: number
           country_code?: string | null
           crawl_delay_ms?: number
@@ -161,6 +218,7 @@ export type Database = {
           domain?: string | null
           health_status?: string
           id?: string
+          language?: string | null
           last_fetched_at?: string | null
           last_success_at?: string | null
           name: string
@@ -172,6 +230,7 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          approval_status?: string
           consecutive_failures?: number
           country_code?: string | null
           crawl_delay_ms?: number
@@ -179,6 +238,7 @@ export type Database = {
           domain?: string | null
           health_status?: string
           id?: string
+          language?: string | null
           last_fetched_at?: string | null
           last_success_at?: string | null
           name?: string
