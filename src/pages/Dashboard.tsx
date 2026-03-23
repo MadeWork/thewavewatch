@@ -1,12 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import MetricCard from "@/components/MetricCard";
 import SkeletonCard from "@/components/SkeletonCard";
 import EmptyState from "@/components/EmptyState";
 import ErrorBanner from "@/components/ErrorBanner";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { format, subDays, startOfDay, startOfWeek, startOfMonth } from "date-fns";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, RefreshCw, Loader2 } from "lucide-react";
 import WorldMap from "@/components/WorldMap";
 
 const CHART_COLORS = ["hsl(216,90%,66%)", "hsl(160,64%,55%)", "hsl(280,60%,60%)", "hsl(30,90%,60%)", "hsl(0,93%,71%)"];
