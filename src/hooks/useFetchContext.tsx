@@ -6,6 +6,7 @@ type FetchStage =
   | { step: "discover"; label: "Discovering articles…" }
   | { step: "sitemaps"; label: string }
   | { step: "rss"; label: "Fetching RSS feeds…" }
+  | { step: "firecrawl"; label: "AI-powered web search…" }
   | { step: "done"; label: string };
 
 interface FetchState {
