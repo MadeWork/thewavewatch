@@ -562,8 +562,8 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body = await req.json().catch(() => ({}));
-    const maxDomainFeeds = body.max_domains || 50;
-    const deepScanLimit = body.deep_scan_limit || 30;
+    const maxDomainFeeds = body.max_domains || 20;
+    const deepScanLimit = 0; // Deep scan moved to discover-sitemaps for speed
 
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
     const activeKeywords = keywords || [];
