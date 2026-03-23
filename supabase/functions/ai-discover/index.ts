@@ -41,8 +41,8 @@ serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    const maxQueriesPerKeyword = Math.min(Number(body.max_queries || 3), 5);
-    const maxResultsPerQuery = Math.min(Number(body.max_results || 5), 10);
+    const maxQueriesPerKeyword = Math.min(Number(body.max_queries || 6), 10);
+    const maxResultsPerQuery = Math.min(Number(body.max_results || 8), 10);
 
     // Get active keywords
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
