@@ -206,11 +206,15 @@ serve(async (req) => {
           let domain = "";
           try { domain = normalizeDomain(new URL(url).hostname); } catch {}
 
+          // Extract date: URL path → Firecrawl metadata → queue for HTML fetch
+          const urlDate = extractDateFromUrl(url);
+          const metaDate = parseDateValue(result.publishedDate || result.metadata?.publishedDate || result.metadata?.date);
+
           discovered.push({
             title: (result.title || "").slice(0, 220),
             snippet: (result.description || (result.markdown || "").slice(0, 300)).slice(0, 500),
             url,
-            published_at: extractDateFromUrl(url) || new Date().toISOString(),
+            published_at: urlDate || metaDate || null, // null = needs HTML fetch
             source_domain: domain,
             source_name: domain,
             matched_keywords: matched,
