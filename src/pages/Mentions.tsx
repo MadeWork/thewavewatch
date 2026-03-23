@@ -1,13 +1,21 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { format } from "date-fns";
-import { Search, Download, ExternalLink, ChevronLeft, ChevronRight, X, Filter } from "lucide-react";
+import { format, subMonths } from "date-fns";
+import { Search, Download, ExternalLink, ChevronLeft, ChevronRight, X, Filter, Calendar } from "lucide-react";
 import ErrorBanner from "@/components/ErrorBanner";
 import EmptyState from "@/components/EmptyState";
 
 const PAGE_SIZE = 20;
 const SENTIMENTS = ["all", "positive", "neutral", "negative"];
+const DATE_RANGES = [
+  { label: "All time", value: "all" },
+  { label: "Last 24h", value: "1d" },
+  { label: "Last 7 days", value: "7d" },
+  { label: "Last 30 days", value: "30d" },
+  { label: "Last 3 months", value: "3m" },
+  { label: "Last 6 months", value: "6m" },
+];
 
 export default function Mentions() {
   const [page, setPage] = useState(0);
@@ -17,6 +25,7 @@ export default function Mentions() {
   const [selectedKeyword, setSelectedKeyword] = useState("all");
   const [selectedSource, setSelectedSource] = useState("all");
   const [sentiment, setSentiment] = useState("all");
+  const [dateRange, setDateRange] = useState("all");
   const [sortBy, setSortBy] = useState<"newest" | "oldest">("newest");
   const [showFilters, setShowFilters] = useState(true);
 
@@ -66,7 +75,7 @@ export default function Mentions() {
     return ["all", ...Array.from(kws).sort()];
   }, [articles, keywords]);
 
-  const activeFilterCount = [selectedRegion, selectedCountry, selectedKeyword, selectedSource, sentiment]
+  const activeFilterCount = [selectedRegion, selectedCountry, selectedKeyword, selectedSource, sentiment, dateRange]
     .filter(v => v !== "all").length;
 
   const filtered = useMemo(() => {
@@ -75,6 +84,19 @@ export default function Mentions() {
       const q = search.toLowerCase();
       result = result.filter(a => a.title.toLowerCase().includes(q) || a.snippet?.toLowerCase().includes(q));
     }
+    if (dateRange !== "all") {
+      const now = new Date();
+      let cutoff: Date;
+      switch (dateRange) {
+        case "1d": cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000); break;
+        case "7d": cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
+        case "30d": cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
+        case "3m": cutoff = subMonths(now, 3); break;
+        case "6m": cutoff = subMonths(now, 6); break;
+        default: cutoff = new Date(0);
+      }
+      result = result.filter(a => new Date(a.published_at) >= cutoff);
+    }
     if (selectedRegion !== "all") result = result.filter(a => (a.sources as any)?.region === selectedRegion);
     if (selectedCountry !== "all") result = result.filter(a => (a.sources as any)?.country_code === selectedCountry);
     if (selectedSource !== "all") result = result.filter(a => (a.sources as any)?.name === selectedSource);
@@ -82,7 +104,7 @@ export default function Mentions() {
     if (sentiment !== "all") result = result.filter(a => a.sentiment === sentiment);
     if (sortBy === "oldest") result = [...result].reverse();
     return result;
-  }, [articles, search, selectedRegion, selectedCountry, selectedSource, selectedKeyword, sentiment, sortBy]);
+  }, [articles, search, dateRange, selectedRegion, selectedCountry, selectedSource, selectedKeyword, sentiment, sortBy]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -90,7 +112,7 @@ export default function Mentions() {
   const clearFilters = () => {
     setSelectedRegion("all"); setSelectedCountry("all");
     setSelectedKeyword("all"); setSelectedSource("all");
-    setSentiment("all"); setSearch(""); setPage(0);
+    setSentiment("all"); setDateRange("all"); setSearch(""); setPage(0);
   };
 
   const exportCSV = () => {
@@ -156,7 +178,17 @@ export default function Mentions() {
               </button>
             )}
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {/* Date Range */}
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5">Date Range</p>
+              <select value={dateRange} onChange={e => { setDateRange(e.target.value); setPage(0); }}
+                className="w-full px-3 py-2 rounded-xl bg-bg-elevated border border-bg-subtle text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-primary/50">
+                {DATE_RANGES.map(d => (
+                  <option key={d.value} value={d.value}>{d.label}</option>
+                ))}
+              </select>
+            </div>
             {/* Region */}
             <div>
               <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5">Region</p>
@@ -222,6 +254,7 @@ export default function Mentions() {
       {/* Active filter pills */}
       {activeFilterCount > 0 && !showFilters && (
         <div className="flex items-center gap-2 flex-wrap">
+          {dateRange !== "all" && <span className="px-2.5 py-1 rounded-full bg-primary/10 text-primary text-[11px] flex items-center gap-1">{DATE_RANGES.find(d => d.value === dateRange)?.label} <X className="w-3 h-3 cursor-pointer" onClick={() => setDateRange("all")} /></span>}
           {selectedRegion !== "all" && <span className="px-2.5 py-1 rounded-full bg-primary/10 text-primary text-[11px] flex items-center gap-1">{selectedRegion} <X className="w-3 h-3 cursor-pointer" onClick={() => setSelectedRegion("all")} /></span>}
           {selectedCountry !== "all" && <span className="px-2.5 py-1 rounded-full bg-primary/10 text-primary text-[11px] flex items-center gap-1">{COUNTRY_NAMES[selectedCountry] || selectedCountry} <X className="w-3 h-3 cursor-pointer" onClick={() => setSelectedCountry("all")} /></span>}
           {selectedKeyword !== "all" && <span className="px-2.5 py-1 rounded-full bg-primary/10 text-primary text-[11px] flex items-center gap-1">{selectedKeyword} <X className="w-3 h-3 cursor-pointer" onClick={() => setSelectedKeyword("all")} /></span>}
