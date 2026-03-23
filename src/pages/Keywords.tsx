@@ -1,17 +1,25 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Trash2, Star } from "lucide-react";
+import { Plus, Trash2, Star, Sparkles, Loader2, X } from "lucide-react";
 import ErrorBanner from "@/components/ErrorBanner";
 import EmptyState from "@/components/EmptyState";
 import { LineChart, Line, ResponsiveContainer } from "recharts";
+import { toast } from "sonner";
 
 const TAG_COLORS = ["#5b9cf6", "#34d399", "#f87171", "#fbbf24", "#a78bfa", "#f472b6"];
+
+interface Suggestion {
+  keyword: string;
+  reason: string;
+}
 
 export default function Keywords() {
   const queryClient = useQueryClient();
   const [newKeyword, setNewKeyword] = useState("");
   const [newLogic, setNewLogic] = useState("OR");
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   const { data: keywords, isLoading, error } = useQuery({
     queryKey: ["keywords"],
@@ -23,9 +31,10 @@ export default function Keywords() {
   });
 
   const addMutation = useMutation({
-    mutationFn: async () => {
-      if (!newKeyword.trim()) return;
-      const { error } = await supabase.from("keywords").insert({ text: newKeyword.trim(), logic_operator: newLogic, color_tag: TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)] });
+    mutationFn: async (text?: string) => {
+      const keyword = text || newKeyword.trim();
+      if (!keyword) return;
+      const { error } = await supabase.from("keywords").insert({ text: keyword, logic_operator: newLogic, color_tag: TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)] });
       if (error) throw error;
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["keywords"] }); setNewKeyword(""); },
@@ -55,6 +64,29 @@ export default function Keywords() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["keywords"] }),
   });
 
+  const suggestMutation = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke("suggest-keywords");
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data.suggestions as Suggestion[];
+    },
+    onSuccess: (data) => {
+      setSuggestions(data || []);
+      setShowSuggestions(true);
+      if (!data?.length) toast.info("No new suggestions — your keywords look comprehensive!");
+    },
+    onError: (e: any) => {
+      toast.error(e.message || "Failed to get suggestions");
+    },
+  });
+
+  const handleAddSuggestion = (keyword: string) => {
+    addMutation.mutate(keyword);
+    setSuggestions(prev => prev.filter(s => s.keyword !== keyword));
+    toast.success(`Added "${keyword}"`);
+  };
+
   // Fake sparkline data
   const sparkline = () => Array.from({ length: 7 }, () => ({ v: Math.floor(Math.random() * 20) }));
 
@@ -62,7 +94,50 @@ export default function Keywords() {
 
   return (
     <div className="space-y-5 animate-fade-in">
-      <h1 className="text-xl font-light tracking-tight text-foreground">Keyword Manager</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-light tracking-tight text-foreground">Keyword Manager</h1>
+        <button
+          onClick={() => suggestMutation.mutate()}
+          disabled={suggestMutation.isPending || !keywords?.length}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-accent/15 text-accent text-sm font-medium hover:bg-accent/25 transition disabled:opacity-50"
+        >
+          {suggestMutation.isPending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Sparkles className="w-4 h-4" />
+          )}
+          AI Suggest
+        </button>
+      </div>
+
+      {/* AI Suggestions panel */}
+      {showSuggestions && suggestions.length > 0 && (
+        <div className="monitor-card border border-accent/20 bg-accent/5">
+          <div className="flex items-center justify-between mb-3">
+            <p className="section-label flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-accent" />
+              AI Suggestions
+            </p>
+            <button onClick={() => setShowSuggestions(false)} className="p-1 rounded-lg hover:bg-bg-subtle transition">
+              <X className="w-3.5 h-3.5 text-text-muted" />
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {suggestions.map(s => (
+              <button
+                key={s.keyword}
+                onClick={() => handleAddSuggestion(s.keyword)}
+                className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bg-elevated border border-bg-subtle text-sm text-foreground hover:border-accent/40 hover:bg-accent/10 transition"
+                title={s.reason}
+              >
+                <Plus className="w-3 h-3 text-text-muted group-hover:text-accent transition" />
+                {s.keyword}
+                <span className="text-[10px] text-text-muted ml-1 max-w-[120px] truncate">{s.reason}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Add keyword */}
       <div className="monitor-card">
