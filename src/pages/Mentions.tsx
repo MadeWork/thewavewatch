@@ -120,7 +120,7 @@ export default function Mentions() {
     const rows = [["Title", "Source", "Region", "Country", "Date", "Sentiment", "Keywords", "URL"]];
     filtered.forEach(a => {
       const s = a.sources as any;
-      rows.push([a.title, s?.name || "", s?.region || "", s?.country_code || "", format(new Date(a.published_at), "yyyy-MM-dd"), a.sentiment || "", (a.matched_keywords || []).join("; "), a.url]);
+      rows.push([a.title, s?.name || a.source_name || a.source_domain || "", s?.region || "", s?.country_code || "", format(new Date(a.published_at), "yyyy-MM-dd"), a.sentiment || "", (a.matched_keywords || []).join("; "), a.url]);
     });
     const csv = rows.map(r => r.map(c => `"${(c || "").replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
