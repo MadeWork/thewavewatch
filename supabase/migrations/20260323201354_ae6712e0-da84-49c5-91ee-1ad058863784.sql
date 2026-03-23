@@ -1,0 +1,2 @@
+UPDATE approved_domains SET approval_status = 'approved', active = true WHERE approval_status = 'pending';
+UPDATE sources SET approval_status = 'approved', active = true WHERE approval_status = 'pending';
