@@ -134,12 +134,24 @@ export function FetchProvider({ children }: { children: ReactNode }) {
         if (fcResult && !fcResult.error) firecrawlCount = fcResult.data?.discovered ?? 0;
       } catch {}
 
+      // Step 5: AI-powered discovery - Lovable AI generates smart queries → Firecrawl (95-99%)
+      setState(s => ({ ...s, progress: 95, stage: { step: "firecrawl", label: "AI-powered smart discovery…" } }));
+      let aiDiscoverCount = 0;
+      try {
+        const aiResult = await withTimeout(
+          supabase.functions.invoke("ai-discover", { body: { max_queries: 3, max_results: 5 } }),
+          90000
+        );
+        if (aiResult && !aiResult.error) aiDiscoverCount = aiResult.data?.discovered ?? 0;
+      } catch {}
+
       // Build result
       const parts: string[] = [];
       if (discCount > 0) parts.push(`${discCount} articles discovered`);
       if (sitemapCount > 0) parts.push(`${sitemapCount} from sitemaps`);
       if (rssCount > 0) parts.push(`${rssCount} from RSS`);
       if (firecrawlCount > 0) parts.push(`${firecrawlCount} from web search`);
+      if (aiDiscoverCount > 0) parts.push(`${aiDiscoverCount} from AI discovery`);
       if (newDomains > 0) parts.push(`${newDomains} new sources`);
 
       const resultText = parts.length > 0 ? parts.join(" · ") : "No new articles found";
