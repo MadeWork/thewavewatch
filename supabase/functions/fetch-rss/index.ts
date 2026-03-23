@@ -196,11 +196,14 @@ async function analyzeSentimentBatch(
       return items.map(() => ({ sentiment: "neutral", score: 0.5 }));
     }
     if (!response.ok) {
-      console.error("AI error:", response.status, await response.text());
+      const errText = await response.text().catch(() => "");
+      console.error("AI error:", response.status, errText);
       return items.map(() => ({ sentiment: "neutral", score: 0.5 }));
     }
 
-    const data = await response.json();
+    const text = await response.text();
+    if (!text) return items.map(() => ({ sentiment: "neutral", score: 0.5 }));
+    const data = JSON.parse(text);
     const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
     if (toolCall?.function?.arguments) {
       const parsed = JSON.parse(toolCall.function.arguments);
@@ -244,8 +247,11 @@ serve(async (req) => {
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    const body = await req.json().catch(() => ({}));
+    const maxSources = body.max_sources || 50;
+
     const { data: sources, error: srcErr } = await supabase
-      .from("sources").select("*").eq("active", true);
+      .from("sources").select("*").eq("active", true).limit(maxSources);
     if (srcErr) throw srcErr;
 
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
@@ -363,29 +369,46 @@ serve(async (req) => {
           };
         });
 
-        const BATCH_SIZE = 10;
-        for (let b = 0; b < articlesToInsert.length; b += BATCH_SIZE) {
-          const articleBatch = articlesToInsert.slice(b, b + BATCH_SIZE);
-          const sentiments = await analyzeSentimentBatch(
-            articleBatch.map((a) => ({ title: a.title, snippet: a.snippet || "" })),
-            lovableApiKey
-          );
-          const withSentiment = articleBatch.map((a, idx) => ({
-            ...a,
-            sentiment: sentiments[idx].sentiment,
-            sentiment_score: sentiments[idx].score,
-          }));
+        // Only run sentiment on articles that matched keywords (saves API calls)
+        const withKeywords = articlesToInsert.filter(a => a.matched_keywords.length > 0);
+        const withoutKeywords = articlesToInsert.filter(a => a.matched_keywords.length === 0);
+
+        // Insert non-matching articles with neutral sentiment directly
+        if (withoutKeywords.length > 0) {
+          const neutral = withoutKeywords.map(a => ({ ...a, sentiment: "neutral", sentiment_score: 0.5 }));
           const { data: inserted, error: insertErr } = await supabase
             .from("articles")
-            .upsert(withSentiment, { onConflict: "url", ignoreDuplicates: false })
+            .upsert(neutral, { onConflict: "url", ignoreDuplicates: true })
             .select("id");
-          if (insertErr) {
-            console.error("Insert error:", insertErr);
-            totalErrors++;
-          } else {
-            totalInserted += (inserted?.length || 0);
+          if (!insertErr) totalInserted += (inserted?.length || 0);
+          else console.error("Insert error:", insertErr);
+        }
+
+        // Analyze sentiment only for keyword-matched articles
+        if (withKeywords.length > 0) {
+          const BATCH_SIZE = 10;
+          for (let b = 0; b < withKeywords.length; b += BATCH_SIZE) {
+            const articleBatch = withKeywords.slice(b, b + BATCH_SIZE);
+            const sentiments = await analyzeSentimentBatch(
+              articleBatch.map((a) => ({ title: a.title, snippet: a.snippet || "" })),
+              lovableApiKey
+            );
+            const withSentiment = articleBatch.map((a, idx) => ({
+              ...a,
+              sentiment: sentiments[idx].sentiment,
+              sentiment_score: sentiments[idx].score,
+            }));
+            const { data: inserted, error: insertErr } = await supabase
+              .from("articles")
+              .upsert(withSentiment, { onConflict: "url", ignoreDuplicates: false })
+              .select("id");
+            if (insertErr) {
+              console.error("Insert error:", insertErr);
+              totalErrors++;
+            } else {
+              totalInserted += (inserted?.length || 0);
+            }
           }
-          await new Promise((r) => setTimeout(r, 200));
         }
       }
     }
