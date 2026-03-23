@@ -363,8 +363,8 @@ async function collectApprovedDomainCandidates(
   approvedDomains: Array<{ domain: string; name: string; sitemap_url?: string | null }>,
   keywords: string[],
   existingUrlSet: Set<string>,
-  maxDomains = 20,
-  childSitemapLimit = 6,
+  maxDomains = 8,
+  childSitemapLimit = 3,
 ): Promise<{ matched: DiscoveredArticle[]; unmatched: RSSItem[] }> {
   const matched: DiscoveredArticle[] = [];
   const unmatched: RSSItem[] = [];
