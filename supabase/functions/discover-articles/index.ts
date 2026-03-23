@@ -402,7 +402,7 @@ async function collectApprovedDomainCandidates(
 
           for (const xmlText of xmlDocuments) {
             if (!xmlText || !/<urlset/i.test(xmlText)) continue;
-            const parsedItems = parseSitemapItems(xmlText, domain, sourceName).slice(-80);
+            const parsedItems = parseSitemapItems(xmlText, domain, sourceName).slice(-30);
             for (const item of parsedItems) {
               const normalizedItemUrl = normalizeUrl(item.url);
               if (existingUrlSet.has(normalizedItemUrl)) continue;
