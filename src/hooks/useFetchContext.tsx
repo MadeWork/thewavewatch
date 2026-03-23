@@ -139,7 +139,7 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       let aiDiscoverCount = 0;
       try {
         const aiResult = await withTimeout(
-          supabase.functions.invoke("ai-discover", { body: { max_queries: 3, max_results: 5 } }),
+          supabase.functions.invoke("ai-discover", { body: { max_queries: 6, max_results: 8 } }),
           90000
         );
         if (aiResult && !aiResult.error) aiDiscoverCount = aiResult.data?.discovered ?? 0;

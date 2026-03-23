@@ -155,7 +155,7 @@ Rules:
     let searchesDone = 0;
 
     for (const q of queries) {
-      if (searchesDone >= 15) break; // cap total searches to control credits
+      if (searchesDone >= 30) break; // cap total searches
       try {
         console.log(`Firecrawl AI query: "${q.query}" (keyword: ${q.source_keyword})`);
         const response = await fetch("https://api.firecrawl.dev/v1/search", {
