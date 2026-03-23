@@ -205,7 +205,7 @@ export default function Dashboard() {
                     <p className="text-sm text-foreground font-light truncate group-hover:text-primary transition">{a.title}</p>
                     <div className="flex items-center gap-2 mt-0.5">
                       <p className="text-xs text-text-muted">
-                        {(a.sources as any)?.name} · {format(new Date(a.published_at), "MMM d")}
+                        {(a.sources as any)?.name || (a as any).source_name || (a as any).source_domain || "Unknown"} · {format(new Date(a.published_at), "MMM d")}
                       </p>
                       {a.matched_keywords?.map((kw: string) => (
                         <span key={kw} className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px]">{kw}</span>

@@ -280,6 +280,7 @@ export default function Mentions() {
         <div className="space-y-2">
           {paged.map(a => {
             const src = a.sources as any;
+            const displayName = src?.name || a.source_name || a.source_domain || "Unknown";
             return (
               <a key={a.id} href={a.url} target="_blank" rel="noopener noreferrer"
                 className="monitor-card flex items-start gap-4 hover:bg-bg-elevated/80 transition group cursor-pointer">
@@ -288,7 +289,7 @@ export default function Mentions() {
                   {a.snippet && <p className="text-xs text-text-muted mt-1 line-clamp-2">{a.snippet}</p>}
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
                     {src?.country_code && <span className="text-xs">{src.country_code}</span>}
-                    <span className="text-xs text-text-secondary">{src?.name}</span>
+                    <span className="text-xs text-text-secondary">{displayName}</span>
                     <span className="text-xs text-text-muted">·</span>
                     <span className="text-xs text-text-muted">{format(new Date(a.published_at), "MMM d, yyyy")}</span>
                     {src?.region && <span className="px-1.5 py-0.5 rounded bg-bg-subtle text-text-muted text-[10px]">{src.region}</span>}
