@@ -92,14 +92,21 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       let rssCount = 0;
       let rssPendingInBackground = false;
       try {
-        const rssResult = await withTimeout(
-          supabase.functions.invoke("fetch-rss"),
-          60000
+        // Batch 1: first 120 sources
+        const rss1 = await withTimeout(
+          supabase.functions.invoke("fetch-rss", { body: { max_sources: 120 } }),
+          50000
         );
-        if (rssResult === null) {
-          rssPendingInBackground = true;
-        } else if (!rssResult.error) {
-          rssCount = rssResult.data?.totalInserted ?? 0;
+        if (rss1 && !rss1.error) rssCount += rss1.data?.totalInserted ?? 0;
+        setState(s => ({ ...s, progress: 74 }));
+
+        // Batch 2: next 120 (offset handled by slicing stored+hydrated)
+        const rss2 = await withTimeout(
+          supabase.functions.invoke("fetch-rss", { body: { max_sources: 200 } }),
+          50000
+        );
+        if (rss2 && !rss2.error) {
+          rssCount += rss2.data?.totalInserted ?? 0;
         }
       } catch {}
       setState(s => ({ ...s, progress: 80 }));
@@ -129,7 +136,6 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       if (rssCount > 0) parts.push(`${rssCount} from RSS`);
       if (firecrawlCount > 0) parts.push(`${firecrawlCount} from web search`);
       if (newDomains > 0) parts.push(`${newDomains} new sources`);
-      if (rssPendingInBackground) parts.push("source scan still running in background");
 
       const resultText = parts.length > 0 ? parts.join(" · ") : "No new articles found";
 
@@ -137,15 +143,6 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       queryClient.invalidateQueries({ queryKey: ["mentions"] });
       queryClient.invalidateQueries({ queryKey: ["analytics-articles"] });
       queryClient.invalidateQueries({ queryKey: ["keywords"] });
-
-      if (rssPendingInBackground) {
-        setTimeout(() => {
-          queryClient.invalidateQueries({ queryKey: ["articles"] });
-          queryClient.invalidateQueries({ queryKey: ["mentions"] });
-          queryClient.invalidateQueries({ queryKey: ["analytics-articles"] });
-          queryClient.invalidateQueries({ queryKey: ["keywords"] });
-        }, 25000);
-      }
 
       setState({ fetching: false, progress: 100, stage: { step: "done", label: resultText }, result: resultText });
       setTimeout(() => setState(s => ({ ...s, progress: 0, stage: null })), 4000);
