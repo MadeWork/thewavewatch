@@ -1,6 +1,7 @@
-import { useState, useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useFetch } from "@/hooks/useFetchContext";
 import MetricCard from "@/components/MetricCard";
 import SkeletonCard from "@/components/SkeletonCard";
 import EmptyState from "@/components/EmptyState";
@@ -13,9 +14,7 @@ import WorldMap from "@/components/WorldMap";
 const CHART_COLORS = ["hsl(216,90%,66%)", "hsl(160,64%,55%)", "hsl(280,60%,60%)", "hsl(30,90%,60%)", "hsl(0,93%,71%)"];
 
 export default function Dashboard() {
-  const queryClient = useQueryClient();
-  const [fetching, setFetching] = useState(false);
-  const [fetchResult, setFetchResult] = useState<string | null>(null);
+  const { fetching, result, startFetch } = useFetch();
   const { data: articles, isLoading, error } = useQuery({
     queryKey: ["articles"],
     queryFn: async () => {
@@ -25,7 +24,6 @@ export default function Dashboard() {
     },
   });
 
-  // Favorite keywords + their articles
   const { data: favKeywords } = useQuery({
     queryKey: ["keywords-favorites"],
     queryFn: async () => {
@@ -52,7 +50,6 @@ export default function Dashboard() {
   const weekCount = articles?.filter(a => new Date(a.published_at) >= weekStart).length ?? 0;
   const monthCount = articles?.filter(a => new Date(a.published_at) >= monthStart).length ?? 0;
 
-  // Line chart: last 30 days
   const lineData = Array.from({ length: 30 }, (_, i) => {
     const date = subDays(now, 29 - i);
     const dayStr = format(date, "yyyy-MM-dd");
@@ -60,7 +57,6 @@ export default function Dashboard() {
     return { date: format(date, "MMM d"), count };
   });
 
-  // Top sources
   const sourceCounts: Record<string, number> = {};
   articles?.forEach(a => {
     const name = (a.sources as any)?.name || "Unknown";
@@ -78,72 +74,7 @@ export default function Dashboard() {
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-light tracking-tight text-foreground">Dashboard</h1>
         <button
-          onClick={async () => {
-            setFetching(true); setFetchResult(null);
-            try {
-              // Run discover-articles (Google News + domain feeds)
-              const discoverResult = await supabase.functions.invoke("discover-articles", {
-                body: { max_domains: 50 },
-              });
-              if (discoverResult.error) throw discoverResult.error;
-              const disc = discoverResult.data;
-              const discCount = disc?.discovered ?? 0;
-              const totalCandidates = disc?.totalCandidates ?? 0;
-              const newDomains = disc?.newDomainsFound ?? 0;
-
-              // Run discover-sitemaps in batches so lower-priority domains also get scanned
-              const sitemapBatchSize = 5;
-              const sitemapDeepScanLimit = 20;
-              let sitemapCount = 0;
-              let sitemapDomainsScanned = 0;
-
-              const { count: approvedDomainCount, error: approvedDomainCountError } = await supabase
-                .from("approved_domains")
-                .select("id", { count: "exact", head: true })
-                .eq("active", true)
-                .eq("approval_status", "approved");
-
-              if (approvedDomainCountError) throw approvedDomainCountError;
-
-              const sitemapBatches = Math.max(1, Math.ceil((approvedDomainCount ?? 0) / sitemapBatchSize));
-              for (let batchIndex = 0; batchIndex < sitemapBatches; batchIndex += 1) {
-                const sitemapResult = await supabase.functions.invoke("discover-sitemaps", {
-                  body: {
-                    max_domains: sitemapBatchSize,
-                    deep_scan_limit: sitemapDeepScanLimit,
-                    offset: batchIndex * sitemapBatchSize,
-                  },
-                });
-
-                if (sitemapResult.error) throw sitemapResult.error;
-
-                sitemapCount += sitemapResult.data?.discovered ?? 0;
-                sitemapDomainsScanned += sitemapResult.data?.domainsScanned ?? 0;
-              }
-
-              // Then run fetch-rss for active source feeds
-              const rssResult = await supabase.functions.invoke("fetch-rss", {
-                body: { max_sources: 50 },
-              });
-              if (rssResult.error) throw rssResult.error;
-              const rss = rssResult.data;
-              const rssCount = rss?.totalInserted ?? 0;
-
-              const parts: string[] = [];
-              if (discCount > 0 || totalCandidates > 0) parts.push(`Discovered ${discCount} articles (${totalCandidates} candidates)`);
-              if (sitemapDomainsScanned > 0) parts.push(`${sitemapCount} from sitemaps across ${sitemapDomainsScanned} domains`);
-              if (rssCount > 0) parts.push(`${rssCount} from RSS feeds`);
-              if (newDomains > 0) parts.push(`${newDomains} new sources found`);
-              setFetchResult(parts.length > 0 ? parts.join(" · ") : "No new articles found matching your keywords");
-              queryClient.invalidateQueries({ queryKey: ["articles"] });
-              queryClient.invalidateQueries({ queryKey: ["mentions"] });
-              queryClient.invalidateQueries({ queryKey: ["analytics-articles"] });
-              queryClient.invalidateQueries({ queryKey: ["keywords"] });
-            } catch (e: any) {
-              setFetchResult(`Error: ${e.message}`);
-            }
-            setFetching(false);
-          }}
+          onClick={startFetch}
           disabled={fetching}
           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition disabled:opacity-50"
         >
@@ -151,9 +82,9 @@ export default function Dashboard() {
           {fetching ? "Fetching…" : "Fetch Now"}
         </button>
       </div>
-      {fetchResult && (
-        <div className={`px-4 py-2.5 rounded-xl text-xs ${fetchResult.startsWith("Error") ? "bg-negative/10 text-negative" : "bg-positive/10 text-positive"}`}>
-          {fetchResult}
+      {result && !fetching && (
+        <div className={`px-4 py-2.5 rounded-xl text-xs ${result.startsWith("Error") ? "bg-negative/10 text-negative" : "bg-positive/10 text-positive"}`}>
+          {result}
         </div>
       )}
 
