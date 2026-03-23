@@ -32,6 +32,52 @@ function extractDateFromUrl(url: string): string | null {
   return null;
 }
 
+function parseDateValue(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function extractPublishedAtFromHtml(html: string): string | null {
+  const metaPatterns = [
+    /<meta[^>]+property=["']article:published_time["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']article:published_time["']/i,
+    /<meta[^>]+property=["']og:published_time["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:published_time["']/i,
+    /<meta[^>]+name=["']parsely-pub-date["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']parsely-pub-date["']/i,
+    /<meta[^>]+itemprop=["']datePublished["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+itemprop=["']datePublished["']/i,
+  ];
+  for (const pattern of metaPatterns) {
+    const match = html.match(pattern);
+    const parsed = parseDateValue(match?.[1]);
+    if (parsed) return parsed;
+  }
+  const jsonLdMatches = html.matchAll(/"datePublished"\s*:\s*"([^"]+)"/gi);
+  for (const match of jsonLdMatches) {
+    const parsed = parseDateValue(match[1]);
+    if (parsed) return parsed;
+  }
+  const timeMatch = html.match(/<time[^>]+datetime=["']([^"']+)["']/i);
+  const timeParsed = parseDateValue(timeMatch?.[1]);
+  if (timeParsed) return timeParsed;
+  return null;
+}
+
+async function fetchArticleDate(url: string): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    try {
+      const resp = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "Mozilla/5.0 (compatible; MediaPulse/1.0)" } });
+      if (!resp.ok) return null;
+      const html = await resp.text();
+      return extractPublishedAtFromHtml(html);
+    } finally { clearTimeout(timeout); }
+  } catch { return null; }
+}
+
 function normalizeText(t: string): string {
   return t.toLowerCase().replace(/[_\-–—]+/gu, " ").replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/g, " ").trim();
 }
@@ -160,11 +206,15 @@ serve(async (req) => {
           let domain = "";
           try { domain = normalizeDomain(new URL(url).hostname); } catch {}
 
+          // Extract date: URL path → Firecrawl metadata → queue for HTML fetch
+          const urlDate = extractDateFromUrl(url);
+          const metaDate = parseDateValue(result.publishedDate || result.metadata?.publishedDate || result.metadata?.date);
+
           discovered.push({
             title: (result.title || "").slice(0, 220),
             snippet: (result.description || (result.markdown || "").slice(0, 300)).slice(0, 500),
             url,
-            published_at: extractDateFromUrl(url) || new Date().toISOString(),
+            published_at: urlDate || metaDate || null, // null = needs HTML fetch
             source_domain: domain,
             source_name: domain,
             matched_keywords: matched,
@@ -180,6 +230,21 @@ serve(async (req) => {
     }
 
     console.log(`Firecrawl total unique articles: ${discovered.length}`);
+
+    // Resolve dates from HTML for articles still missing published_at
+    const needDates = discovered.filter(a => !a.published_at);
+    if (needDates.length > 0) {
+      console.log(`Fetching HTML dates for ${needDates.length} articles`);
+      for (let i = 0; i < needDates.length; i += 3) {
+        const batch = needDates.slice(i, i + 3);
+        await Promise.allSettled(batch.map(async (a) => {
+          const date = await fetchArticleDate(a.url);
+          if (date) a.published_at = date;
+        }));
+      }
+    }
+    // Final fallback: use current time for any still missing
+    discovered.forEach(a => { if (!a.published_at) a.published_at = new Date().toISOString(); });
 
     // Insert with sentiment
     let totalInserted = 0;
