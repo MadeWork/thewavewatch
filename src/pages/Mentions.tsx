@@ -59,7 +59,8 @@ export default function Mentions() {
       const s = a.sources as any;
       if (s?.region) regions.add(s.region);
       if (s?.country_code) countries.add(s.country_code);
-      if (s?.name) sources.add(s.name);
+      const sourceName = s?.name || a.source_name;
+      if (sourceName) sources.add(sourceName);
     });
     return {
       regions: ["all", ...Array.from(regions).sort()],
