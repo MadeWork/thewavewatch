@@ -336,6 +336,15 @@ serve(async (req) => {
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
     const activeKeywords = keywords || [];
 
+    // Build expanded term map for semantic matching
+    const expandedTermMap = new Map<string, string>();
+    for (const kw of activeKeywords) {
+      const expandedTerms = (kw as any).expanded_terms || [];
+      for (const et of expandedTerms) {
+        expandedTermMap.set(et.toLowerCase(), kw.text);
+      }
+    }
+
     let totalInserted = 0;
     let totalErrors = 0;
     const keywordMatchUpdates: Record<string, number> = {};
@@ -400,14 +409,26 @@ serve(async (req) => {
         if (error) { totalErrors++; console.log(`Source ${sourceName}: ${error}`); continue; }
 
         const articlesToInsert = items.map((item: ParsedArticle) => {
-          const matchedKws: string[] = [];
+          const matchedKws = new Set<string>();
+          const nTitle = normalizeText(item.title);
+          const nSnippet = normalizeText(item.snippet);
+          // Check original keywords
           for (const kw of activeKeywords) {
-            const nTitle = normalizeText(item.title);
-            const nSnippet = normalizeText(item.snippet);
             const nKw = normalizeText(kw.text);
             if (nTitle.includes(nKw) || nSnippet.includes(nKw)) {
-              matchedKws.push(kw.text);
+              matchedKws.add(kw.text);
               keywordMatchUpdates[kw.id] = (keywordMatchUpdates[kw.id] || 0) + 1;
+            }
+          }
+          // Check expanded terms
+          for (const [term, originalKw] of expandedTermMap) {
+            const nTerm = normalizeText(term);
+            if (nTitle.includes(nTerm) || nSnippet.includes(nTerm)) {
+              if (!matchedKws.has(originalKw)) {
+                matchedKws.add(originalKw);
+                const kw = activeKeywords.find((k: any) => k.text === originalKw);
+                if (kw) keywordMatchUpdates[kw.id] = (keywordMatchUpdates[kw.id] || 0) + 1;
+              }
             }
           }
           return {
@@ -416,7 +437,7 @@ serve(async (req) => {
             source_name: sourceName || null,
             source_domain: domain ? normalizeDomain(domain) : null,
             published_at: item.published_at, fetched_at: new Date().toISOString(),
-            matched_keywords: matchedKws, language: item.language || null,
+            matched_keywords: Array.from(matchedKws), language: item.language || null,
           };
         });
 
