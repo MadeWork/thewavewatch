@@ -4,48 +4,85 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import ErrorBanner from "@/components/ErrorBanner";
 
+const CLEAR_OPTIONS = [
+  { key: "mentions", label: "Mentions", tables: ["article_enrichments", "article_bookmarks", "article_tags", "article_notes", "articles"] as const },
+  { key: "keywords", label: "Keywords", tables: ["keyword_groups", "keywords"] as const },
+  { key: "sources", label: "Sources", tables: ["sources"] as const },
+  { key: "domains", label: "Domain Registry", tables: ["approved_domains"] as const },
+  { key: "alerts", label: "Alert Rules", tables: ["alert_rules"] as const },
+  { key: "reports", label: "Report Templates", tables: ["report_templates"] as const },
+  { key: "searches", label: "Saved Searches", tables: ["saved_searches"] as const },
+];
+
 function ClearDataButton() {
-  const [confirming, setConfirming] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [clearing, setClearing] = useState(false);
   const queryClient = useQueryClient();
+
+  const toggle = (key: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
 
   const handleClear = async () => {
     setClearing(true);
     try {
-      await supabase.from("article_enrichments").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-      await supabase.from("articles").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-      await supabase.from("sources").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      const tables = CLEAR_OPTIONS
+        .filter(o => selected.has(o.key))
+        .flatMap(o => o.tables);
+      for (const table of tables) {
+        await supabase.from(table).delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      }
       queryClient.invalidateQueries();
-      toast.success("All data cleared successfully");
+      toast.success(`Cleared: ${CLEAR_OPTIONS.filter(o => selected.has(o.key)).map(o => o.label).join(", ")}`);
+      setSelected(new Set());
+      setOpen(false);
     } catch {
       toast.error("Failed to clear data");
     } finally {
       setClearing(false);
-      setConfirming(false);
     }
   };
 
-  if (confirming) {
+  if (!open) {
     return (
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground">Are you sure?</span>
-        <button onClick={handleClear} disabled={clearing}
-          className="px-4 py-2 rounded-xl bg-destructive text-destructive-foreground text-sm font-medium hover:opacity-90 transition disabled:opacity-50">
-          {clearing ? "Clearing…" : "Yes, delete all"}
-        </button>
-        <button onClick={() => setConfirming(false)}
-          className="px-4 py-2 rounded-xl bg-muted text-muted-foreground text-sm hover:opacity-90 transition">
-          Cancel
-        </button>
-      </div>
+      <button onClick={() => setOpen(true)}
+        className="px-4 py-2 rounded-xl border border-destructive text-destructive text-sm font-medium hover:bg-destructive/10 transition">
+        Clear Data…
+      </button>
     );
   }
 
   return (
-    <button onClick={() => setConfirming(true)}
-      className="px-4 py-2 rounded-xl border border-destructive text-destructive text-sm font-medium hover:bg-destructive/10 transition">
-      Clear All Data
-    </button>
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">Select what to clear:</p>
+      <div className="flex flex-wrap gap-2">
+        {CLEAR_OPTIONS.map(o => (
+          <button key={o.key} onClick={() => toggle(o.key)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+              selected.has(o.key)
+                ? "bg-destructive text-destructive-foreground border-destructive"
+                : "bg-muted text-muted-foreground border-border hover:border-destructive/50"
+            }`}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <button onClick={handleClear} disabled={clearing || selected.size === 0}
+          className="px-4 py-2 rounded-xl bg-destructive text-destructive-foreground text-sm font-medium hover:opacity-90 transition disabled:opacity-50">
+          {clearing ? "Clearing…" : `Delete ${selected.size} selected`}
+        </button>
+        <button onClick={() => { setOpen(false); setSelected(new Set()); }}
+          className="px-4 py-2 rounded-xl bg-muted text-muted-foreground text-sm hover:opacity-90 transition">
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }
 
