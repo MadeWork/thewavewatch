@@ -159,6 +159,7 @@ export default function Mentions() {
     CA: "Canada", MX: "Mexico", AR: "Argentina", RU: "Russia", IT: "Italy",
     NO: "Norway", DK: "Denmark", FI: "Finland", ES: "Spain", NL: "Netherlands",
     BE: "Belgium", CH: "Switzerland", AT: "Austria", IE: "Ireland", SG: "Singapore",
+    NZ: "New Zealand", PL: "Poland", CZ: "Czech Republic", GR: "Greece",
   };
 
   if (error) return <ErrorBanner message="Failed to load mentions." />;
