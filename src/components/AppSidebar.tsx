@@ -20,7 +20,7 @@ export default function AppSidebar() {
         <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
           <Radio className="w-4 h-4 text-primary" />
         </div>
-        <span className="text-sm font-light text-foreground tracking-tight">MediaPulse</span>
+        <span className="text-sm font-light text-foreground tracking-tight">WaveWatch</span>
       </div>
       <nav className="flex-1 px-3 py-2 space-y-0.5">
         {links.map(l => (
