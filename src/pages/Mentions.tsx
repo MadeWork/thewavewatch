@@ -167,12 +167,12 @@ export default function Mentions() {
   return (
     <div className="space-y-4 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-light tracking-tight text-foreground">Mentions</h1>
           <span className="text-xs text-text-muted">({filtered.length})</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* View toggle */}
           <div className="segment-control" style={{ maxWidth: 100 }}>
             <button className={`segment-btn ${viewMode === "list" ? "active" : ""}`} onClick={() => setViewMode("list")} style={{ padding: "4px 8px" }}>
@@ -184,14 +184,14 @@ export default function Mentions() {
           </div>
           <button onClick={() => setShowBookmarksOnly(!showBookmarksOnly)}
             className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition ${showBookmarksOnly ? "bg-primary/20 text-primary" : "bg-bg-elevated text-text-secondary hover:bg-bg-subtle"}`}>
-            <Bookmark className="w-3.5 h-3.5" /> Saved
+            <Bookmark className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Saved</span>
           </button>
           <button onClick={() => setShowSearch(!showSearch)}
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-bg-elevated text-text-secondary text-xs hover:bg-bg-subtle transition">
-            <Filter className="w-3.5 h-3.5" /> Advanced
+            <Filter className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Advanced</span>
           </button>
           <button onClick={exportCSV} className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-bg-elevated text-text-secondary text-xs hover:bg-bg-subtle transition">
-            <Download className="w-3.5 h-3.5" /> Export{selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}
+            <Download className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Export{selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}</span>
           </button>
         </div>
       </div>

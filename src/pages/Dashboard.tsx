@@ -71,12 +71,12 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h1 className="text-xl font-light tracking-tight text-foreground">Dashboard</h1>
         <button
           onClick={startFetch}
           disabled={fetching}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition disabled:opacity-50"
+          className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition disabled:opacity-50 w-full sm:w-auto"
         >
           {fetching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
           {fetching ? "Fetching…" : "Fetch Now"}
@@ -89,7 +89,7 @@ export default function Dashboard() {
       )}
 
       {/* Metrics */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
         {isLoading ? (
           <>
             <SkeletonCard />
@@ -106,7 +106,7 @@ export default function Dashboard() {
       </div>
 
       {/* Charts row */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
         <div className="monitor-card">
           <p className="section-label mb-4">Mentions — Last 30 Days</p>
           {isLoading ? (
@@ -149,7 +149,7 @@ export default function Dashboard() {
       </div>
 
       {/* World Map + Latest */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
         <WorldMap articles={articles ?? []} />
 
         <div className="monitor-card">
@@ -185,10 +185,10 @@ export default function Dashboard() {
       {/* Favorite Keywords Mentions */}
       {favKeywords && favKeywords.length > 0 && (
         <div className="monitor-card">
-          <div className="flex items-center gap-2 mb-4">
+          <div className="flex items-center gap-2 mb-4 flex-wrap">
             <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
             <p className="section-label">Favorite Keyword Mentions</p>
-            <div className="flex items-center gap-1.5 ml-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
               {favKeywords.map(k => (
                 <span key={k.text} className="px-2 py-0.5 rounded-full text-[10px] text-primary bg-primary/10">{k.text}</span>
               ))}
