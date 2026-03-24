@@ -35,7 +35,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   ]);
 }
 
-async function invokeStage(stage: string, extra: Record<string, any> = {}, timeoutMs = 60000) {
+async function invokeStage(stage: string, extra: Record<string, any> = {}, timeoutMs = 90000) {
   const result = await withTimeout(
     supabase.functions.invoke("discover-articles", { body: { stage, ...extra } }),
     timeoutMs,
@@ -66,19 +66,19 @@ export function FetchProvider({ children }: { children: ReactNode }) {
 
       let totalDiscovered = 0;
 
-      // Step 1: Tier 1 domains in batches of 10
+      // Step 1: Tier 1 domains — no batch limit, iterate until exhausted
       setState(s => ({ ...s, progress: 5, stage: { step: "discover", label: "Scanning major outlets…" } }));
       const TIER1_BATCH = 10;
       let tier1Offset = 0;
       let tier1HasMore = true;
       let tier1BatchNum = 0;
-      while (tier1HasMore && tier1BatchNum < 20) {
+      while (tier1HasMore) {
         setState(s => ({
           ...s,
-          progress: 5 + Math.min(tier1BatchNum * 3, 25),
+          progress: 5 + Math.min(tier1BatchNum * 2, 20),
           stage: { step: "discover", label: `Scanning major outlets (batch ${tier1BatchNum + 1})…` },
         }));
-        const data = await invokeStage("tier1", { offset: tier1Offset, limit: TIER1_BATCH }, 60000);
+        const data = await invokeStage("tier1", { offset: tier1Offset, limit: TIER1_BATCH, body_scan_budget: 15 }, 90000);
         if (data) {
           totalDiscovered += data.discovered || 0;
           tier1HasMore = data.hasMore === true;
@@ -89,24 +89,24 @@ export function FetchProvider({ children }: { children: ReactNode }) {
         tier1BatchNum++;
       }
 
-      // Step 2: Google News
-      setState(s => ({ ...s, progress: 35, stage: { step: "discover", label: "Searching Google News…" } }));
-      const gnData = await invokeStage("google_news", {}, 60000);
+      // Step 2: Google News (expanded regions)
+      setState(s => ({ ...s, progress: 28, stage: { step: "discover", label: "Searching Google News (global)…" } }));
+      const gnData = await invokeStage("google_news", {}, 90000);
       if (gnData) totalDiscovered += gnData.discovered || 0;
 
-      // Step 3: Source feeds in batches of 20
-      setState(s => ({ ...s, progress: 45, stage: { step: "rss", label: "Fetching RSS feeds…" } }));
+      // Step 3: Source feeds — no batch limit, iterate until exhausted
+      setState(s => ({ ...s, progress: 38, stage: { step: "rss", label: "Fetching RSS feeds…" } }));
       const SRC_BATCH = 20;
       let srcOffset = 0;
       let srcHasMore = true;
       let srcBatchNum = 0;
-      while (srcHasMore && srcBatchNum < 25) {
+      while (srcHasMore) {
         setState(s => ({
           ...s,
-          progress: 45 + Math.min(srcBatchNum * 2, 15),
+          progress: 38 + Math.min(srcBatchNum * 1.5, 12),
           stage: { step: "rss", label: `Fetching RSS feeds (batch ${srcBatchNum + 1})…` },
         }));
-        const data = await invokeStage("sources", { offset: srcOffset, limit: SRC_BATCH }, 60000);
+        const data = await invokeStage("sources", { offset: srcOffset, limit: SRC_BATCH, body_scan_budget: 10 }, 90000);
         if (data) {
           totalDiscovered += data.discovered || 0;
           srcHasMore = data.hasMore === true;
@@ -117,48 +117,85 @@ export function FetchProvider({ children }: { children: ReactNode }) {
         srcBatchNum++;
       }
 
-      // Step 4: Discover sitemaps in batches
-      setState(s => ({ ...s, progress: 62, stage: { step: "sitemaps", label: "Scanning sitemaps…" } }));
-      const SITEMAP_BATCH = 20;
-      const SITEMAP_BATCHES = 5;
-      let sitemapCount = 0;
-      for (let batch = 0; batch < SITEMAP_BATCHES; batch++) {
+      // Step 4: Tier 2 domains — no batch limit
+      setState(s => ({ ...s, progress: 52, stage: { step: "discover", label: "Scanning Tier 2 domains…" } }));
+      const T2_BATCH = 15;
+      let t2Offset = 0;
+      let t2HasMore = true;
+      let t2BatchNum = 0;
+      while (t2HasMore) {
         setState(s => ({
           ...s,
-          progress: 62 + batch * 3,
-          stage: { step: "sitemaps", label: `Scanning sitemaps (${batch + 1}/${SITEMAP_BATCHES})…` },
+          progress: 52 + Math.min(t2BatchNum * 1, 8),
+          stage: { step: "discover", label: `Scanning Tier 2 domains (batch ${t2BatchNum + 1})…` },
+        }));
+        const data = await invokeStage("tier2", { offset: t2Offset, limit: T2_BATCH, body_scan_budget: 8 }, 90000);
+        if (data) {
+          totalDiscovered += data.discovered || 0;
+          t2HasMore = data.hasMore === true;
+          t2Offset += T2_BATCH;
+        } else {
+          t2HasMore = false;
+        }
+        t2BatchNum++;
+      }
+
+      // Step 5: Discover sitemaps in batches — no fixed limit
+      setState(s => ({ ...s, progress: 62, stage: { step: "sitemaps", label: "Scanning sitemaps…" } }));
+      const SITEMAP_BATCH = 20;
+      let sitemapOffset = 0;
+      let sitemapCount = 0;
+      let sitemapBatchNum = 0;
+      let sitemapHasMore = true;
+      while (sitemapHasMore) {
+        setState(s => ({
+          ...s,
+          progress: 62 + Math.min(sitemapBatchNum * 1, 8),
+          stage: { step: "sitemaps", label: `Scanning sitemaps (batch ${sitemapBatchNum + 1})…` },
         }));
         try {
           const sitemapResult = await withTimeout(
             supabase.functions.invoke("discover-sitemaps", {
-              body: { max_domains: SITEMAP_BATCH, deep_scan_limit: 10, offset: batch * SITEMAP_BATCH },
+              body: { max_domains: SITEMAP_BATCH, deep_scan_limit: 20, offset: sitemapOffset },
             }),
-            60000,
+            90000,
           );
           if (sitemapResult && !sitemapResult.error) {
             sitemapCount += sitemapResult.data?.discovered ?? 0;
+            const domainsScanned = sitemapResult.data?.domainsScanned ?? 0;
+            sitemapHasMore = domainsScanned >= SITEMAP_BATCH;
+            sitemapOffset += SITEMAP_BATCH;
+          } else {
+            sitemapHasMore = false;
           }
-        } catch {}
+        } catch {
+          sitemapHasMore = false;
+        }
+        sitemapBatchNum++;
       }
 
-      // Step 5: Firecrawl search
-      setState(s => ({ ...s, progress: 80, stage: { step: "firecrawl", label: "Firecrawl search + AI filtering…" } }));
+      // Step 6: Firecrawl search (global, all keywords, multi-angle)
+      setState(s => ({ ...s, progress: 72, stage: { step: "firecrawl", label: "Firecrawl global search…" } }));
       let firecrawlCount = 0;
       try {
         const fcResult = await withTimeout(
-          supabase.functions.invoke("firecrawl-search", { body: { max_results: 5, min_threshold: 3, enable_scrape: true, enable_ai_classify: true } }),
-          90000,
+          supabase.functions.invoke("firecrawl-search", {
+            body: { max_results: 5, max_queries: 50, enable_scrape: true, enable_ai_classify: true },
+          }),
+          120000,
         );
         if (fcResult && !fcResult.error) firecrawlCount = fcResult.data?.discovered ?? 0;
       } catch {}
 
-      // Step 6: AI discovery
-      setState(s => ({ ...s, progress: 90, stage: { step: "firecrawl", label: "AI smart discovery…" } }));
+      // Step 7: AI discovery (smart multi-angle queries)
+      setState(s => ({ ...s, progress: 88, stage: { step: "firecrawl", label: "AI smart discovery…" } }));
       let aiDiscoverCount = 0;
       try {
         const aiResult = await withTimeout(
-          supabase.functions.invoke("ai-discover", { body: { max_queries: 6, max_results: 8, relevance_threshold: 0.4 } }),
-          90000,
+          supabase.functions.invoke("ai-discover", {
+            body: { max_queries: 8, max_results: 10, relevance_threshold: 0.35 },
+          }),
+          120000,
         );
         if (aiResult && !aiResult.error) aiDiscoverCount = aiResult.data?.discovered ?? 0;
       } catch {}
@@ -178,7 +215,7 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       queryClient.invalidateQueries({ queryKey: ["keywords"] });
 
       setState({ fetching: false, progress: 100, stage: { step: "done", label: resultText }, result: resultText });
-      setTimeout(() => setState(s => ({ ...s, progress: 0, stage: null })), 4000);
+      setTimeout(() => setState(s => ({ ...s, progress: 0, stage: null })), 5000);
     } catch (e: any) {
       const msg = `Error: ${e.message}`;
       setState({ fetching: false, progress: 0, stage: null, result: msg });
