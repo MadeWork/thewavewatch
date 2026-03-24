@@ -390,29 +390,29 @@ serve(async (req) => {
 
             if (sourceType === "rss" || sourceType === "atom") {
               const resp = await rateLimitedFetch(source.rss_url, crawlDelay);
-              if (!resp.ok) {
+              if (!resp || !resp.ok) {
                 if (source.id) {
                   await supabase.from("sources").update({ health_status: "error", consecutive_failures: (source.consecutive_failures || 0) + 1 }).eq("id", source.id);
                 }
-                return { sourceId: source.id, sourceName: source.name, domain: source.domain, items: [], error: `HTTP ${resp.status}` };
+                return { sourceId: source.id, sourceName: source.name, domain: source.domain, items: [], error: resp ? `HTTP ${resp.status}` : "fetch failed" };
               }
               articles = parseRSSAtom(await resp.text());
             } else if (sourceType === "sitemap" || sourceType === "news_sitemap") {
               const resp = await rateLimitedFetch(source.rss_url, crawlDelay);
-              if (!resp.ok) {
+              if (!resp || !resp.ok) {
                 if (source.id) {
                   await supabase.from("sources").update({ health_status: "error", consecutive_failures: (source.consecutive_failures || 0) + 1 }).eq("id", source.id);
                 }
-                return { sourceId: source.id, sourceName: source.name, domain: source.domain, items: [], error: `HTTP ${resp.status}` };
+                return { sourceId: source.id, sourceName: source.name, domain: source.domain, items: [], error: resp ? `HTTP ${resp.status}` : "fetch failed" };
               }
               articles = parseSitemap(await resp.text()).slice(0, 50);
             } else if (sourceType === "html") {
               const resp = await rateLimitedFetch(source.rss_url, crawlDelay);
-              if (!resp.ok) {
+              if (!resp || !resp.ok) {
                 if (source.id) {
                   await supabase.from("sources").update({ health_status: "error", consecutive_failures: (source.consecutive_failures || 0) + 1 }).eq("id", source.id);
                 }
-                return { sourceId: source.id, sourceName: source.name, domain: source.domain, items: [], error: `HTTP ${resp.status}` };
+                return { sourceId: source.id, sourceName: source.name, domain: source.domain, items: [], error: resp ? `HTTP ${resp.status}` : "fetch failed" };
               }
               articles = parseHTMLArticles(await resp.text(), new URL(source.rss_url).origin);
             }
