@@ -262,11 +262,15 @@ export type Database = {
           author_email: string | null
           author_name: string | null
           author_url: string | null
+          discovery_method: string | null
           fetched_at: string
           id: string
           language: string | null
           matched_keywords: string[] | null
+          matched_via: string | null
+          primary_entity: string | null
           published_at: string
+          relevance_score: number | null
           sentiment: string | null
           sentiment_score: number | null
           snippet: string | null
@@ -281,11 +285,15 @@ export type Database = {
           author_email?: string | null
           author_name?: string | null
           author_url?: string | null
+          discovery_method?: string | null
           fetched_at?: string
           id?: string
           language?: string | null
           matched_keywords?: string[] | null
+          matched_via?: string | null
+          primary_entity?: string | null
           published_at?: string
+          relevance_score?: number | null
           sentiment?: string | null
           sentiment_score?: number | null
           snippet?: string | null
@@ -300,11 +308,15 @@ export type Database = {
           author_email?: string | null
           author_name?: string | null
           author_url?: string | null
+          discovery_method?: string | null
           fetched_at?: string
           id?: string
           language?: string | null
           matched_keywords?: string[] | null
+          matched_via?: string | null
+          primary_entity?: string | null
           published_at?: string
+          relevance_score?: number | null
           sentiment?: string | null
           sentiment_score?: number | null
           snippet?: string | null
