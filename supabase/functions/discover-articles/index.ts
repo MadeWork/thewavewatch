@@ -399,11 +399,12 @@ async function fetchListingPageItems(domain: string, name: string): Promise<Site
   for (const path of paths) {
     if (items.length >= 30) break;
     try {
-      const resp = await fetchWithTimeout(`https://${domain}${path}`, 5000);
-      if (!resp.ok) continue;
+      const { response: resp, elapsed } = await fetchWithRetry(`https://${domain}${path}`, { type: "listing", maxRetries: 1, label: `listing ${domain}${path}` });
+      if (!resp?.ok) continue;
       const ct = resp.headers.get("content-type") || "";
       if (!ct.includes("text/html")) { await resp.text(); continue; }
       const html = await resp.text();
+      console.log(`[listing] ${domain}${path} fetched in ${elapsed}ms, found links`);
       items.push(...extractListingPageLinks(html, domain, name));
     } catch {}
   }
