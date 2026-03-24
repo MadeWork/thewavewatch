@@ -24,6 +24,52 @@ function normalizeText(t: string): string {
   return t.toLowerCase().replace(/[_\-–—]+/gu, " ").replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/g, " ").trim();
 }
 
+function parseDateValue(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function extractPublishedAtFromHtml(html: string): string | null {
+  const metaPatterns = [
+    /<meta[^>]+property=["']article:published_time["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']article:published_time["']/i,
+    /<meta[^>]+property=["']og:published_time["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:published_time["']/i,
+    /<meta[^>]+name=["']parsely-pub-date["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']parsely-pub-date["']/i,
+    /<meta[^>]+itemprop=["']datePublished["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+itemprop=["']datePublished["']/i,
+  ];
+  for (const pattern of metaPatterns) {
+    const match = html.match(pattern);
+    const parsed = parseDateValue(match?.[1]);
+    if (parsed) return parsed;
+  }
+  const jsonLdMatches = html.matchAll(/"datePublished"\s*:\s*"([^"]+)"/gi);
+  for (const match of jsonLdMatches) {
+    const parsed = parseDateValue(match[1]);
+    if (parsed) return parsed;
+  }
+  const timeMatch = html.match(/<time[^>]+datetime=["']([^"']+)["']/i);
+  const timeParsed = parseDateValue(timeMatch?.[1]);
+  if (timeParsed) return timeParsed;
+  return null;
+}
+
+async function fetchArticleDate(url: string): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    try {
+      const resp = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "Mozilla/5.0 (compatible; MediaPulse/1.0)" } });
+      if (!resp.ok) return null;
+      const html = await resp.text();
+      return extractPublishedAtFromHtml(html);
+    } finally { clearTimeout(timeout); }
+  } catch { return null; }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -223,7 +269,7 @@ Rules:
             title: (result.title || "").slice(0, 220),
             snippet: (result.description || "").slice(0, 500),
             url,
-            published_at: publishedAt || new Date().toISOString(),
+            published_at: publishedAt || null,
             source_domain: domain,
             source_name: domain,
             matched_keywords: Array.from(matched),
@@ -240,7 +286,22 @@ Rules:
 
     console.log(`AI-discover total unique articles: ${discovered.length}`);
 
-    // Step 3: Sentiment analysis + insert
+    // Step 3: Resolve dates from HTML for articles still missing published_at
+    const needDates = discovered.filter(a => !a.published_at);
+    if (needDates.length > 0) {
+      console.log(`Fetching HTML dates for ${needDates.length} articles`);
+      for (let i = 0; i < needDates.length; i += 3) {
+        const batch = needDates.slice(i, i + 3);
+        await Promise.allSettled(batch.map(async (a) => {
+          const date = await fetchArticleDate(a.url);
+          if (date) a.published_at = date;
+        }));
+      }
+    }
+    // Final fallback: use current time for any still missing
+    discovered.forEach(a => { if (!a.published_at) a.published_at = new Date().toISOString(); });
+
+    // Step 4: Sentiment analysis + insert
     let totalInserted = 0;
     for (let b = 0; b < discovered.length; b += 10) {
       const batch = discovered.slice(b, b + 10);
