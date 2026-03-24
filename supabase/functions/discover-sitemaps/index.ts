@@ -8,12 +8,37 @@ const corsHeaders = {
 
 // ── Utilities ────────────────────────────────────────────
 
-async function fetchWithTimeout(url: string, timeoutMs = 6000): Promise<Response> {
+async function fetchWithTimeout(url: string, timeoutMs = 15000): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, { signal: controller.signal, headers: { "User-Agent": "Mozilla/5.0 (compatible; MediaPulse/1.0)" } });
   } finally { clearTimeout(timeout); }
+}
+
+async function fetchWithRetry(url: string, timeoutMs = 15000, maxRetries = 2, label = ""): Promise<Response | null> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
+    const start = Date.now();
+    try {
+      const resp = await fetchWithTimeout(url, timeoutMs);
+      if (resp.status >= 500 && attempt < maxRetries) {
+        await resp.text().catch(() => {});
+        console.log(`[retry] ${label || url.slice(0, 60)}: HTTP ${resp.status}, attempt ${attempt + 1} (${Date.now() - start}ms)`);
+        continue;
+      }
+      return resp;
+    } catch (e: any) {
+      const elapsed = Date.now() - start;
+      if (attempt < maxRetries) {
+        console.log(`[retry] ${label || url.slice(0, 60)}: ${e.name === "AbortError" ? `timeout (${timeoutMs}ms)` : e.message}, attempt ${attempt + 1} (${elapsed}ms)`);
+        continue;
+      }
+      console.log(`[failed] ${label || url.slice(0, 60)}: ${e.message} after ${attempt + 1} attempts (${elapsed}ms)`);
+      return null;
+    }
+  }
+  return null;
 }
 
 function normalizeUrl(url: string): string {
