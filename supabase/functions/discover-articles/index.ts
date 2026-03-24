@@ -470,11 +470,15 @@ function parseGoogleNewsRSS(xml: string, keyword: string): DiscoveredArticle[] {
 
 async function fetchArticleDetails(url: string, includeText = true): Promise<{ text: string; lang: string | null; publishedAt: string | null } | null> {
   try {
-    const resp = await fetchWithTimeout(url, 6000);
-    if (!resp.ok) return null;
+    const { response: resp, elapsed, attempts, error } = await fetchWithRetry(url, { type: "article", maxRetries: 2, label: `article ${normalizeDomain(new URL(url).hostname)}` });
+    if (!resp?.ok) {
+      if (error) console.log(`[article] ${url.slice(0, 60)}: failed after ${attempts} attempts: ${error}`);
+      return null;
+    }
     const ct = resp.headers.get("content-type") || "";
     if (!ct.includes("text/html") && !ct.includes("application/xhtml")) { await resp.text(); return null; }
     const html = await resp.text();
+    if (attempts > 1) console.log(`[article] ${url.slice(0, 60)}: succeeded on attempt ${attempts} (${elapsed}ms)`);
     const lang = detectLanguage(html);
     const publishedAt = extractPublishedAtFromHtml(html) || extractDateFromUrl(url);
     const text = includeText ? extractReadableText(html).slice(0, 12000) : "";
