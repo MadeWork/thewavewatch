@@ -106,7 +106,7 @@ export default function Dashboard() {
       </div>
 
       {/* Charts row */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
         <div className="monitor-card">
           <p className="section-label mb-4">Mentions — Last 30 Days</p>
           {isLoading ? (
