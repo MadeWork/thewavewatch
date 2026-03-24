@@ -29,9 +29,20 @@ interface RSSItem {
   source_name: string;
 }
 
-// ── Timeout presets per request type ─────────────────────
+// ── Tier-aware timeout presets ───────────────────────────
 
-const TIMEOUTS = {
+const TIMEOUTS_TIER1 = {
+  rss: 20000,
+  sitemap: 20000,
+  listing: 25000,
+  article: 30000,
+  robots: 8000,
+  google_news: 12000,
+  resolve: 12000,
+  default: 20000,
+} as const;
+
+const TIMEOUTS_DEFAULT = {
   rss: 15000,
   sitemap: 15000,
   listing: 20000,
@@ -42,7 +53,20 @@ const TIMEOUTS = {
   default: 15000,
 } as const;
 
-type TimeoutType = keyof typeof TIMEOUTS;
+type TimeoutType = keyof typeof TIMEOUTS_DEFAULT;
+
+// ── Tier config ─────────────────────────────────────────
+
+const TIER1_PRIORITY_THRESHOLD = 70; // approved_domains with priority >= 70 are Tier 1
+const TIER1_MAX_SITEMAP_ITEMS = 200;
+const TIER1_MAX_SITEMAPS = 6;
+const TIER1_MAX_CHILD_SITEMAPS = 5;
+const TIER1_MAX_RETRIES = 3;
+
+const DEFAULT_MAX_SITEMAP_ITEMS = 100;
+const DEFAULT_MAX_SITEMAPS = 4;
+const DEFAULT_MAX_CHILD_SITEMAPS = 3;
+const DEFAULT_MAX_RETRIES = 2;
 
 // ── Utilities ────────────────────────────────────────────
 
@@ -60,13 +84,13 @@ async function fetchWithTimeout(url: string, timeoutMs = 15000): Promise<Respons
   }
 }
 
-/** Fetch with retry + exponential backoff. Retries on timeout, network error, 5xx. */
 async function fetchWithRetry(
   url: string,
-  opts: { timeout?: number; type?: TimeoutType; maxRetries?: number; label?: string } = {}
+  opts: { timeout?: number; type?: TimeoutType; maxRetries?: number; label?: string; tier1?: boolean } = {}
 ): Promise<{ response: Response | null; elapsed: number; attempts: number; error?: string }> {
-  const timeoutMs = opts.timeout ?? TIMEOUTS[opts.type ?? "default"];
-  const maxRetries = opts.maxRetries ?? 2;
+  const timeouts = opts.tier1 ? TIMEOUTS_TIER1 : TIMEOUTS_DEFAULT;
+  const timeoutMs = opts.timeout ?? timeouts[opts.type ?? "default"];
+  const maxRetries = opts.maxRetries ?? (opts.tier1 ? TIER1_MAX_RETRIES : DEFAULT_MAX_RETRIES);
   const label = opts.label ?? url.slice(0, 80);
   let lastError = "";
 
@@ -262,7 +286,7 @@ async function resolveGoogleNewsUrl(gnUrl: string): Promise<string> {
   }
 }
 
-// ── Sitemap helpers ──────────────────────────────────────
+// ── Sitemap helpers (tier-aware) ─────────────────────────
 
 interface SitemapItem {
   title: string;
@@ -304,7 +328,6 @@ function parseSitemapItems(xml: string, domain: string, name: string): SitemapIt
   return items;
 }
 
-/** Extract article-like links from an HTML listing page */
 function extractListingPageLinks(html: string, domain: string, name: string): SitemapItem[] {
   const items: SitemapItem[] = [];
   const linkRe = /<a[^>]+href=["'](https?:\/\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
@@ -316,7 +339,6 @@ function extractListingPageLinks(html: string, domain: string, name: string): Si
     try {
       const u = new URL(href);
       if (normalizeDomain(u.hostname) !== nd) continue;
-      // Must look like an article path
       const path = u.pathname.toLowerCase();
       const last = path.split("/").filter(Boolean).pop() || "";
       const isArticle = /\/\d{4}\/\d{2}\//.test(path) || /\d{5,}/.test(last) || last.split(/[-_]+/).length >= 4;
@@ -332,13 +354,12 @@ function extractListingPageLinks(html: string, domain: string, name: string): Si
   return items;
 }
 
-async function discoverSitemapUrlsForDomain(domain: string, sitemapUrl?: string | null): Promise<string[]> {
+async function discoverSitemapUrlsForDomain(domain: string, sitemapUrl?: string | null, isTier1 = false): Promise<string[]> {
   const urls: string[] = [];
   if (sitemapUrl) urls.push(sitemapUrl);
 
-  // robots.txt
   try {
-    const { response: resp } = await fetchWithRetry(`https://${domain}/robots.txt`, { type: "robots", maxRetries: 1, label: `robots.txt ${domain}` });
+    const { response: resp } = await fetchWithRetry(`https://${domain}/robots.txt`, { type: "robots", tier1: isTier1, maxRetries: isTier1 ? 2 : 1, label: `robots.txt ${domain}` });
     if (resp?.ok) {
       const txt = await resp.text();
       for (const line of txt.split(/\r?\n/)) {
@@ -348,11 +369,11 @@ async function discoverSitemapUrlsForDomain(domain: string, sitemapUrl?: string 
     }
   } catch {}
 
-  // Standard guesses
   for (const guess of [
     `https://${domain}/sitemap.xml`,
     `https://${domain}/news-sitemap.xml`,
     `https://${domain}/sitemap_index.xml`,
+    `https://${domain}/sitemap-news.xml`,
   ]) {
     if (!urls.includes(guess)) urls.push(guess);
   }
@@ -360,58 +381,67 @@ async function discoverSitemapUrlsForDomain(domain: string, sitemapUrl?: string 
   return urls;
 }
 
-async function fetchSitemapItemsForDomain(domain: string, name: string, sitemapUrl?: string | null): Promise<SitemapItem[]> {
-  const sitemapUrls = await discoverSitemapUrlsForDomain(domain, sitemapUrl);
+async function fetchSitemapItemsForDomain(
+  domain: string, name: string, sitemapUrl?: string | null, isTier1 = false
+): Promise<SitemapItem[]> {
+  const sitemapUrls = await discoverSitemapUrlsForDomain(domain, sitemapUrl, isTier1);
+  const maxSitemaps = isTier1 ? TIER1_MAX_SITEMAPS : DEFAULT_MAX_SITEMAPS;
+  const maxChildren = isTier1 ? TIER1_MAX_CHILD_SITEMAPS : DEFAULT_MAX_CHILD_SITEMAPS;
+  const maxItems = isTier1 ? TIER1_MAX_SITEMAP_ITEMS : DEFAULT_MAX_SITEMAP_ITEMS;
   let allItems: SitemapItem[] = [];
 
-  for (const smUrl of sitemapUrls.slice(0, 4)) {
-    if (allItems.length >= 80) break;
+  for (const smUrl of sitemapUrls.slice(0, maxSitemaps)) {
+    if (allItems.length >= maxItems) break;
     try {
-      const { response: resp, elapsed } = await fetchWithRetry(smUrl, { type: "sitemap", maxRetries: 1, label: `sitemap ${domain}` });
+      const { response: resp, elapsed } = await fetchWithRetry(smUrl, { type: "sitemap", tier1: isTier1, label: `sitemap ${domain}` });
       if (!resp?.ok) { if (resp) await resp.text().catch(() => {}); continue; }
       const xml = await resp.text();
       console.log(`[sitemap] ${domain} ${smUrl.split("/").pop()} fetched in ${elapsed}ms`);
 
       if (/<sitemapindex/i.test(xml)) {
-        const children = parseSitemapIndex(xml).slice(-3);
+        const children = parseSitemapIndex(xml).slice(-maxChildren);
         for (const childUrl of children) {
-          if (allItems.length >= 80) break;
+          if (allItems.length >= maxItems) break;
           try {
-            const { response: childResp } = await fetchWithRetry(childUrl, { type: "sitemap", maxRetries: 1, label: `child sitemap ${domain}` });
+            const { response: childResp } = await fetchWithRetry(childUrl, { type: "sitemap", tier1: isTier1, label: `child sitemap ${domain}` });
             if (!childResp?.ok) { if (childResp) await childResp.text().catch(() => {}); continue; }
             const childXml = await childResp.text();
-            allItems.push(...parseSitemapItems(childXml, domain, name).slice(-30));
+            const perChild = isTier1 ? 50 : 30;
+            allItems.push(...parseSitemapItems(childXml, domain, name).slice(-perChild));
           } catch {}
         }
       } else if (/<urlset/i.test(xml)) {
-        allItems.push(...parseSitemapItems(xml, domain, name).slice(-40));
+        const perSitemap = isTier1 ? 60 : 40;
+        allItems.push(...parseSitemapItems(xml, domain, name).slice(-perSitemap));
       }
     } catch {}
   }
 
-  return allItems.slice(0, 80);
+  return allItems.slice(0, maxItems);
 }
 
-/** Try to scrape a listing/section page for article links */
-async function fetchListingPageItems(domain: string, name: string): Promise<SitemapItem[]> {
-  const paths = ["/", "/news", "/latest", "/articles"];
+async function fetchListingPageItems(domain: string, name: string, isTier1 = false): Promise<SitemapItem[]> {
+  const paths = isTier1
+    ? ["/", "/news", "/latest", "/articles", "/press", "/media", "/press-releases"]
+    : ["/", "/news", "/latest", "/articles"];
   let items: SitemapItem[] = [];
+  const maxItems = isTier1 ? 50 : 30;
   for (const path of paths) {
-    if (items.length >= 30) break;
+    if (items.length >= maxItems) break;
     try {
-      const { response: resp, elapsed } = await fetchWithRetry(`https://${domain}${path}`, { type: "listing", maxRetries: 1, label: `listing ${domain}${path}` });
+      const { response: resp, elapsed } = await fetchWithRetry(`https://${domain}${path}`, { type: "listing", tier1: isTier1, label: `listing ${domain}${path}` });
       if (!resp?.ok) continue;
       const ct = resp.headers.get("content-type") || "";
       if (!ct.includes("text/html")) { await resp.text(); continue; }
       const html = await resp.text();
-      console.log(`[listing] ${domain}${path} fetched in ${elapsed}ms, found links`);
+      console.log(`[listing] ${domain}${path} fetched in ${elapsed}ms`);
       items.push(...extractListingPageLinks(html, domain, name));
     } catch {}
   }
-  return items.slice(0, 30);
+  return items.slice(0, maxItems);
 }
 
-// ── Parsers ──────────────────────────────────────────────
+// ── RSS Parsers ──────────────────────────────────────────
 
 function parseRSSItems(xml: string, domain: string, sourceName: string): RSSItem[] {
   const items: RSSItem[] = [];
@@ -468,9 +498,9 @@ function parseGoogleNewsRSS(xml: string, keyword: string): DiscoveredArticle[] {
   return articles;
 }
 
-async function fetchArticleDetails(url: string, includeText = true): Promise<{ text: string; lang: string | null; publishedAt: string | null } | null> {
+async function fetchArticleDetails(url: string, includeText = true, isTier1 = false): Promise<{ text: string; lang: string | null; publishedAt: string | null } | null> {
   try {
-    const { response: resp, elapsed, attempts, error } = await fetchWithRetry(url, { type: "article", maxRetries: 2, label: `article ${normalizeDomain(new URL(url).hostname)}` });
+    const { response: resp, elapsed, attempts, error } = await fetchWithRetry(url, { type: "article", tier1: isTier1, label: `article ${normalizeDomain(new URL(url).hostname)}` });
     if (!resp?.ok) {
       if (error) console.log(`[article] ${url.slice(0, 60)}: failed after ${attempts} attempts: ${error}`);
       return null;
@@ -547,7 +577,7 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body = await req.json().catch(() => ({}));
-    const deepScanLimit = Math.max(0, Number(body.deep_scan_limit ?? 20));
+    const deepScanLimit = Math.max(0, Number(body.deep_scan_limit ?? 50));
     const debug = Boolean(body.debug);
 
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
@@ -591,164 +621,14 @@ serve(async (req) => {
     const allSources = await fetchAllRows(supabase, "sources", { active: true });
     const allDomains = await fetchAllRows(supabase, "approved_domains", { active: true, approval_status: "approved" }, { col: "priority", asc: false });
 
+    // Split domains into tiers
+    const tier1Domains = allDomains.filter((d: any) => (d.priority || 0) >= TIER1_PRIORITY_THRESHOLD);
+    const tier2Domains = allDomains.filter((d: any) => (d.priority || 0) < TIER1_PRIORITY_THRESHOLD);
+
     let allDiscovered: DiscoveredArticle[] = [];
     let allUnmatched: RSSItem[] = [];
     const logs: string[] = [];
     const CONC = 5;
-
-    // ── Step 1: Google News RSS (multi-region) ─────────
-    const regions = [
-      { hl: "en", gl: "US", ceid: "US:en" },
-      { hl: "en", gl: "GB", ceid: "GB:en" },
-      { hl: "en", gl: "AU", ceid: "AU:en" },
-      { hl: "en", gl: "NZ", ceid: "NZ:en" },
-      { hl: "ja", gl: "JP", ceid: "JP:ja" },
-      { hl: "pt", gl: "PT", ceid: "PT:pt" },
-      { hl: "de", gl: "DE", ceid: "DE:de" },
-      { hl: "fr", gl: "FR", ceid: "FR:fr" },
-      { hl: "en", gl: "IE", ceid: "IE:en" },
-    ];
-    console.log(`Step 1: Google News for ${searchTerms.length} keywords across ${regions.length} regions...`);
-    for (const term of searchTerms) {
-      for (const reg of regions) {
-        try {
-          const q = encodeURIComponent(term);
-          const url = `https://news.google.com/rss/search?q=${q}&hl=${reg.hl}&gl=${reg.gl}&ceid=${reg.ceid}`;
-          const { response: resp, elapsed, attempts, error } = await fetchWithRetry(url, { type: "google_news", maxRetries: 1, label: `GN "${term}" ${reg.gl}` });
-          if (resp?.ok) {
-            const xml = await resp.text();
-            const articles = parseGoogleNewsRSS(xml, term);
-            logs.push(`Google News "${term}" (${reg.gl}): ${articles.length} [${elapsed}ms, ${attempts} attempts]`);
-            allDiscovered.push(...articles);
-          } else {
-            logs.push(`Google News "${term}" (${reg.gl}): ${error || "failed"}`);
-          }
-          await new Promise(r => setTimeout(r, 300));
-        } catch (e: any) {
-          logs.push(`Google News "${term}" (${reg.gl}) error: ${e.message}`);
-        }
-      }
-    }
-
-    // Resolve Google News URLs to canonical publisher URLs (batch)
-    console.log(`Resolving ${allDiscovered.length} Google News URLs to canonical URLs...`);
-    for (let i = 0; i < allDiscovered.length; i += CONC) {
-      const batch = allDiscovered.slice(i, i + CONC);
-      await Promise.allSettled(batch.map(async (article) => {
-        if (article.url.includes("news.google.com")) {
-          const resolved = await resolveGoogleNewsUrl(article.url);
-          if (resolved !== article.url) {
-            article.url = resolved;
-            try {
-              const resolvedDomain = normalizeDomain(new URL(resolved).hostname);
-              if (!isBlockedDomain(resolvedDomain)) {
-                article.source_domain = resolvedDomain;
-              }
-            } catch {}
-          }
-        }
-      }));
-    }
-
-    // ── Step 2: Active source feeds (ALL) ────────────────
-    if (allSources.length > 0) {
-      console.log(`Step 2: Scanning ${allSources.length} active source feeds...`);
-      for (let i = 0; i < allSources.length; i += CONC) {
-        const batch = allSources.slice(i, i + CONC);
-        const results = await Promise.allSettled(batch.map(async (src: any) => {
-          try {
-            const { response: resp, elapsed, attempts, error } = await fetchWithRetry(src.rss_url, { type: "rss", maxRetries: 2, label: `RSS ${src.name}` });
-            if (!resp?.ok) {
-              logs.push(`Source ${src.name}: ${error || `HTTP ${resp?.status}`} [${elapsed}ms, ${attempts} attempts]`);
-              // Track failures for health
-              await supabase.from("sources").update({
-                consecutive_failures: (src.consecutive_failures || 0) + 1,
-                health_status: (src.consecutive_failures || 0) + 1 >= 5 ? "degraded" : src.health_status,
-              }).eq("id", src.id);
-              return { matched: [], unmatched: [] };
-            }
-            // Reset failures on success
-            if (src.consecutive_failures > 0) {
-              await supabase.from("sources").update({ consecutive_failures: 0, health_status: "healthy", last_success_at: new Date().toISOString() }).eq("id", src.id);
-            }
-            const xml = await resp.text();
-            const domain = src.domain || normalizeDomain(new URL(src.rss_url).hostname);
-            const items = parseRSSItems(xml, domain, src.name);
-            const matched: DiscoveredArticle[] = [];
-            const unmatched: RSSItem[] = [];
-            for (const item of items) {
-              const kws = matchKeywordsExpanded(`${item.title} ${item.snippet} ${item.url}`, searchTerms);
-              if (kws.length > 0) matched.push({ ...item, matched_keywords: kws, discovery_method: "rss" });
-              else unmatched.push(item);
-            }
-            logs.push(`Source ${src.name}: ${items.length} items, ${matched.length} matched [${elapsed}ms, ${attempts} attempts]`);
-            return { matched, unmatched };
-          } catch { return { matched: [], unmatched: [] }; }
-        }));
-        for (const r of results) {
-          if (r.status === "fulfilled") { allDiscovered.push(...r.value.matched); allUnmatched.push(...r.value.unmatched); }
-        }
-        if (i + CONC < allSources.length) await new Promise(r => setTimeout(r, 150));
-      }
-    }
-
-    // ── Step 3: Approved domain feeds ────────────────────
-    const domainsWithFeeds = allDomains.filter((d: any) => d.feed_url);
-    if (domainsWithFeeds.length > 0) {
-      console.log(`Step 3: Scanning ${domainsWithFeeds.length} approved domain feeds...`);
-      for (let i = 0; i < domainsWithFeeds.length; i += CONC) {
-        const batch = domainsWithFeeds.slice(i, i + CONC);
-        const results = await Promise.allSettled(batch.map(async (dom: any) => {
-          try {
-            const { response: resp, elapsed, attempts } = await fetchWithRetry(dom.feed_url, { type: "rss", maxRetries: 2, label: `Feed ${dom.name}` });
-            if (!resp?.ok) return { matched: [], unmatched: [] };
-            const xml = await resp.text();
-            const items = parseRSSItems(xml, dom.domain, dom.name);
-            const matched: DiscoveredArticle[] = [];
-            const unmatched: RSSItem[] = [];
-            for (const item of items) {
-              const kws = matchKeywordsExpanded(`${item.title} ${item.snippet} ${item.url}`, searchTerms);
-              if (kws.length > 0) matched.push({ ...item, matched_keywords: kws, discovery_method: "feed" });
-              else unmatched.push(item);
-            }
-            logs.push(`Feed ${dom.name}: ${items.length} items, ${matched.length} matched [${elapsed}ms, ${attempts} attempts]`);
-            return { matched, unmatched };
-          } catch { return { matched: [], unmatched: [] }; }
-        }));
-        for (const r of results) {
-          if (r.status === "fulfilled") { allDiscovered.push(...r.value.matched); allUnmatched.push(...r.value.unmatched); }
-        }
-        if (i + CONC < domainsWithFeeds.length) await new Promise(r => setTimeout(r, 150));
-      }
-    }
-
-    // ── Step 4: Sitemap discovery for ALL approved domains ──
-    console.log(`Step 4: Sitemap discovery for ${allDomains.length} approved domains (batched)...`);
-    let sitemapDiscovered = 0;
-    for (let i = 0; i < allDomains.length; i += CONC) {
-      const batch = allDomains.slice(i, i + CONC);
-      const results = await Promise.allSettled(batch.map(async (dom: any) => {
-        const domain = normalizeDomain(dom.domain);
-        try {
-          const items = await fetchSitemapItemsForDomain(domain, dom.name, dom.sitemap_url);
-          if (items.length === 0) {
-            // Fallback: listing page extraction
-            const listingItems = await fetchListingPageItems(domain, dom.name);
-            return classifyItems(listingItems, "listing_page");
-          }
-          return classifyItems(items, "sitemap");
-        } catch { return { matched: [], unmatched: [] }; }
-      }));
-      for (const r of results) {
-        if (r.status === "fulfilled") {
-          allDiscovered.push(...r.value.matched);
-          allUnmatched.push(...r.value.unmatched);
-          sitemapDiscovered += r.value.matched.length;
-        }
-      }
-      if (i + CONC < allDomains.length) await new Promise(r => setTimeout(r, 200));
-    }
-    console.log(`Sitemap discovery found ${sitemapDiscovered} keyword-matched articles`);
 
     function classifyItems(items: SitemapItem[], method: string): { matched: DiscoveredArticle[]; unmatched: RSSItem[] } {
       const matched: DiscoveredArticle[] = [];
@@ -763,26 +643,249 @@ serve(async (req) => {
       return { matched, unmatched };
     }
 
-    // ── Step 5: Deep scan unmatched article bodies ───────
+    // ══════════════════════════════════════════════════════
+    // STEP 1: TIER 1 — Major outlets get full multi-method discovery
+    // ══════════════════════════════════════════════════════
+
+    console.log(`Step 1: Tier 1 full scan for ${tier1Domains.length} major outlets...`);
+    let tier1Discovered = 0;
+
+    for (let i = 0; i < tier1Domains.length; i += CONC) {
+      const batch = tier1Domains.slice(i, i + CONC);
+      const results = await Promise.allSettled(batch.map(async (dom: any) => {
+        const domain = normalizeDomain(dom.domain);
+        const name = dom.name || domain;
+        let domainMatched: DiscoveredArticle[] = [];
+        let domainUnmatched: RSSItem[] = [];
+
+        // 1a. Feed URL
+        if (dom.feed_url) {
+          try {
+            const { response: resp, elapsed } = await fetchWithRetry(dom.feed_url, { type: "rss", tier1: true, label: `T1 Feed ${name}` });
+            if (resp?.ok) {
+              const xml = await resp.text();
+              const items = parseRSSItems(xml, domain, name);
+              const { matched, unmatched } = classifyItems(items, "rss");
+              domainMatched.push(...matched);
+              domainUnmatched.push(...unmatched);
+              logs.push(`T1 Feed ${name}: ${items.length} items, ${matched.length} matched [${elapsed}ms]`);
+            }
+          } catch {}
+        }
+
+        // 1b-e. Sitemap discovery (robots.txt → sitemap.xml → news-sitemap.xml → index traversal)
+        try {
+          const items = await fetchSitemapItemsForDomain(domain, name, dom.sitemap_url, true);
+          if (items.length > 0) {
+            const { matched, unmatched } = classifyItems(items, "sitemap");
+            domainMatched.push(...matched);
+            domainUnmatched.push(...unmatched);
+            logs.push(`T1 Sitemap ${name}: ${items.length} items, ${matched.length} matched`);
+          }
+        } catch {}
+
+        // 1f. Listing page extraction (fallback or supplement)
+        try {
+          const listingItems = await fetchListingPageItems(domain, name, true);
+          if (listingItems.length > 0) {
+            const { matched, unmatched } = classifyItems(listingItems, "listing_page");
+            domainMatched.push(...matched);
+            domainUnmatched.push(...unmatched);
+            logs.push(`T1 Listing ${name}: ${listingItems.length} items, ${matched.length} matched`);
+          }
+        } catch {}
+
+        return { matched: domainMatched, unmatched: domainUnmatched };
+      }));
+
+      for (const r of results) {
+        if (r.status === "fulfilled") {
+          allDiscovered.push(...r.value.matched);
+          allUnmatched.push(...r.value.unmatched);
+          tier1Discovered += r.value.matched.length;
+        }
+      }
+      if (i + CONC < tier1Domains.length) await new Promise(r => setTimeout(r, 200));
+    }
+    console.log(`Tier 1 scan complete: ${tier1Discovered} matched articles from ${tier1Domains.length} outlets`);
+
+    // ══════════════════════════════════════════════════════
+    // STEP 2: Google News RSS (multi-region)
+    // ══════════════════════════════════════════════════════
+
+    const regions = [
+      { hl: "en", gl: "US", ceid: "US:en" },
+      { hl: "en", gl: "GB", ceid: "GB:en" },
+      { hl: "en", gl: "AU", ceid: "AU:en" },
+      { hl: "en", gl: "NZ", ceid: "NZ:en" },
+      { hl: "ja", gl: "JP", ceid: "JP:ja" },
+      { hl: "pt", gl: "PT", ceid: "PT:pt" },
+      { hl: "de", gl: "DE", ceid: "DE:de" },
+      { hl: "fr", gl: "FR", ceid: "FR:fr" },
+      { hl: "en", gl: "IE", ceid: "IE:en" },
+    ];
+    console.log(`Step 2: Google News for ${searchTerms.length} keywords across ${regions.length} regions...`);
+    for (const term of searchTerms) {
+      for (const reg of regions) {
+        try {
+          const q = encodeURIComponent(term);
+          const url = `https://news.google.com/rss/search?q=${q}&hl=${reg.hl}&gl=${reg.gl}&ceid=${reg.ceid}`;
+          const { response: resp, elapsed, attempts, error } = await fetchWithRetry(url, { type: "google_news", maxRetries: 1, label: `GN "${term}" ${reg.gl}` });
+          if (resp?.ok) {
+            const xml = await resp.text();
+            const articles = parseGoogleNewsRSS(xml, term);
+            logs.push(`Google News "${term}" (${reg.gl}): ${articles.length} [${elapsed}ms]`);
+            allDiscovered.push(...articles);
+          } else {
+            logs.push(`Google News "${term}" (${reg.gl}): ${error || "failed"}`);
+          }
+          await new Promise(r => setTimeout(r, 300));
+        } catch (e: any) {
+          logs.push(`Google News "${term}" (${reg.gl}) error: ${e.message}`);
+        }
+      }
+    }
+
+    // Resolve Google News URLs to canonical publisher URLs
+    console.log(`Resolving ${allDiscovered.filter(a => a.url.includes("news.google.com")).length} Google News URLs...`);
+    const gnArticles = allDiscovered.filter(a => a.url.includes("news.google.com"));
+    for (let i = 0; i < gnArticles.length; i += CONC) {
+      const batch = gnArticles.slice(i, i + CONC);
+      await Promise.allSettled(batch.map(async (article) => {
+        const resolved = await resolveGoogleNewsUrl(article.url);
+        if (resolved !== article.url) {
+          article.url = resolved;
+          try {
+            const resolvedDomain = normalizeDomain(new URL(resolved).hostname);
+            if (!isBlockedDomain(resolvedDomain)) {
+              article.source_domain = resolvedDomain;
+            }
+          } catch {}
+        }
+      }));
+    }
+
+    // ══════════════════════════════════════════════════════
+    // STEP 3: Active source feeds (ALL sources)
+    // ══════════════════════════════════════════════════════
+
+    if (allSources.length > 0) {
+      console.log(`Step 3: Scanning ${allSources.length} active source feeds...`);
+      for (let i = 0; i < allSources.length; i += CONC) {
+        const batch = allSources.slice(i, i + CONC);
+        const results = await Promise.allSettled(batch.map(async (src: any) => {
+          try {
+            const { response: resp, elapsed, attempts, error } = await fetchWithRetry(src.rss_url, { type: "rss", maxRetries: 2, label: `RSS ${src.name}` });
+            if (!resp?.ok) {
+              logs.push(`Source ${src.name}: ${error || `HTTP ${resp?.status}`} [${elapsed}ms, ${attempts} attempts]`);
+              await supabase.from("sources").update({
+                consecutive_failures: (src.consecutive_failures || 0) + 1,
+                health_status: (src.consecutive_failures || 0) + 1 >= 5 ? "degraded" : src.health_status,
+              }).eq("id", src.id);
+              return { matched: [], unmatched: [] };
+            }
+            if (src.consecutive_failures > 0) {
+              await supabase.from("sources").update({ consecutive_failures: 0, health_status: "healthy", last_success_at: new Date().toISOString() }).eq("id", src.id);
+            }
+            const xml = await resp.text();
+            const domain = src.domain || normalizeDomain(new URL(src.rss_url).hostname);
+            const items = parseRSSItems(xml, domain, src.name);
+            const matched: DiscoveredArticle[] = [];
+            const unmatched: RSSItem[] = [];
+            for (const item of items) {
+              const kws = matchKeywordsExpanded(`${item.title} ${item.snippet} ${item.url}`, searchTerms);
+              if (kws.length > 0) matched.push({ ...item, matched_keywords: kws, discovery_method: "rss" });
+              else unmatched.push(item);
+            }
+            logs.push(`Source ${src.name}: ${items.length} items, ${matched.length} matched [${elapsed}ms]`);
+            return { matched, unmatched };
+          } catch { return { matched: [], unmatched: [] }; }
+        }));
+        for (const r of results) {
+          if (r.status === "fulfilled") { allDiscovered.push(...r.value.matched); allUnmatched.push(...r.value.unmatched); }
+        }
+        if (i + CONC < allSources.length) await new Promise(r => setTimeout(r, 150));
+      }
+    }
+
+    // ══════════════════════════════════════════════════════
+    // STEP 4: Tier 2 approved domains — feeds + sitemaps
+    // ══════════════════════════════════════════════════════
+
+    if (tier2Domains.length > 0) {
+      console.log(`Step 4: Tier 2 scan for ${tier2Domains.length} approved domains...`);
+
+      // 4a. Domain feeds
+      const t2WithFeeds = tier2Domains.filter((d: any) => d.feed_url);
+      for (let i = 0; i < t2WithFeeds.length; i += CONC) {
+        const batch = t2WithFeeds.slice(i, i + CONC);
+        const results = await Promise.allSettled(batch.map(async (dom: any) => {
+          try {
+            const { response: resp, elapsed } = await fetchWithRetry(dom.feed_url, { type: "rss", label: `T2 Feed ${dom.name}` });
+            if (!resp?.ok) return { matched: [], unmatched: [] };
+            const xml = await resp.text();
+            const items = parseRSSItems(xml, dom.domain, dom.name);
+            const { matched, unmatched } = classifyItems(items, "feed");
+            logs.push(`T2 Feed ${dom.name}: ${items.length} items, ${matched.length} matched [${elapsed}ms]`);
+            return { matched, unmatched };
+          } catch { return { matched: [], unmatched: [] }; }
+        }));
+        for (const r of results) {
+          if (r.status === "fulfilled") { allDiscovered.push(...r.value.matched); allUnmatched.push(...r.value.unmatched); }
+        }
+      }
+
+      // 4b. Sitemap discovery for Tier 2
+      let t2SitemapMatched = 0;
+      for (let i = 0; i < tier2Domains.length; i += CONC) {
+        const batch = tier2Domains.slice(i, i + CONC);
+        const results = await Promise.allSettled(batch.map(async (dom: any) => {
+          const domain = normalizeDomain(dom.domain);
+          try {
+            const items = await fetchSitemapItemsForDomain(domain, dom.name, dom.sitemap_url, false);
+            if (items.length === 0) {
+              const listingItems = await fetchListingPageItems(domain, dom.name, false);
+              return classifyItems(listingItems, "listing_page");
+            }
+            return classifyItems(items, "sitemap");
+          } catch { return { matched: [], unmatched: [] }; }
+        }));
+        for (const r of results) {
+          if (r.status === "fulfilled") {
+            allDiscovered.push(...r.value.matched);
+            allUnmatched.push(...r.value.unmatched);
+            t2SitemapMatched += r.value.matched.length;
+          }
+        }
+        if (i + CONC < tier2Domains.length) await new Promise(r => setTimeout(r, 200));
+      }
+      console.log(`Tier 2 discovery: ${t2SitemapMatched} sitemap-matched articles`);
+    }
+
+    // ══════════════════════════════════════════════════════
+    // STEP 5: Deep scan unmatched — prioritize Tier 1
+    // ══════════════════════════════════════════════════════
+
     let deepScanned = 0;
     if (deepScanLimit > 0 && allUnmatched.length > 0) {
-      const priorityDomains = new Set(allDomains.filter((d: any) => (d.priority || 0) >= 70).map((d: any) => normalizeDomain(d.domain)));
+      const tier1DomainSet = new Set(tier1Domains.map((d: any) => normalizeDomain(d.domain)));
       const sortedUnmatched = allUnmatched
         .filter(item => !existingUrlSet.has(normalizeUrl(item.url)))
         .sort((a, b) => {
-          const aPri = priorityDomains.has(normalizeDomain(a.source_domain)) ? 1 : 0;
-          const bPri = priorityDomains.has(normalizeDomain(b.source_domain)) ? 1 : 0;
+          const aPri = tier1DomainSet.has(normalizeDomain(a.source_domain)) ? 1 : 0;
+          const bPri = tier1DomainSet.has(normalizeDomain(b.source_domain)) ? 1 : 0;
           if (aPri !== bPri) return bPri - aPri;
           return new Date(b.published_at || 0).getTime() - new Date(a.published_at || 0).getTime();
         })
         .slice(0, deepScanLimit);
 
-      console.log(`Step 5: Deep scanning ${sortedUnmatched.length} article bodies...`);
+      console.log(`Step 5: Deep scanning ${sortedUnmatched.length} article bodies (Tier 1 prioritized)...`);
       for (let i = 0; i < sortedUnmatched.length; i += 3) {
         const batch = sortedUnmatched.slice(i, i + 3);
         const results = await Promise.allSettled(batch.map(async item => {
           deepScanned++;
-          const result = await fetchArticleDetails(item.url, true);
+          const isTier1Item = tier1DomainSet.has(normalizeDomain(item.source_domain));
+          const result = await fetchArticleDetails(item.url, true, isTier1Item);
           if (!result) return null;
           const kws = matchKeywordsExpanded(result.text, searchTerms);
           if (kws.length > 0) {
@@ -902,13 +1005,14 @@ serve(async (req) => {
     const summary = {
       discovered: totalInserted,
       totalCandidates: allDiscovered.length,
-      sitemapDiscovered,
+      tier1Discovered,
       deepScanned,
       newDomainsFound: newDomains.size,
       sourcesScanned: allSources.length,
-      domainsScanned: allDomains.length,
+      tier1Domains: tier1Domains.length,
+      tier2Domains: tier2Domains.length,
       keywordsUsed: searchTerms,
-      methods: ["google_news_rss", "source_feeds", "domain_feeds", "sitemap_discovery", "listing_pages", deepScanLimit > 0 ? "deep_scan" : null].filter(Boolean),
+      methods: ["tier1_full_scan", "google_news_rss", "source_feeds", "tier2_feeds", "tier2_sitemaps", deepScanLimit > 0 ? "deep_scan" : null].filter(Boolean),
     };
     console.log("Discovery complete:", JSON.stringify(summary));
 
