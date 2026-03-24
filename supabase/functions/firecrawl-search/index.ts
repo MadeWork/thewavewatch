@@ -442,7 +442,7 @@ serve(async (req) => {
         const response = await fetch("https://api.firecrawl.dev/v1/search", {
           method: "POST",
           headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ query: `${term} news`, limit: maxResults, tbs: "qdr:w" }),
+          body: JSON.stringify({ query: `${term} news -site:facebook.com -site:twitter.com -site:linkedin.com -site:youtube.com -site:reddit.com -site:instagram.com -site:tiktok.com`, limit: maxResults, tbs: "qdr:w" }),
         });
 
         if (!response.ok) {

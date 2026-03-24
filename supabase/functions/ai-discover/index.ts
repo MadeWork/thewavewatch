@@ -441,7 +441,7 @@ serve(async (req) => {
         const response = await fetch("https://api.firecrawl.dev/v1/search", {
           method: "POST",
           headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ query: q.query, limit: maxResultsPerQuery, tbs: "qdr:m" }),
+          body: JSON.stringify({ query: `${q.query} -site:facebook.com -site:twitter.com -site:linkedin.com -site:youtube.com -site:reddit.com -site:instagram.com`, limit: maxResultsPerQuery, tbs: "qdr:m" }),
         });
 
         searchesDone++;
