@@ -224,8 +224,8 @@ serve(async (req) => {
       const sitemapUrls: string[] = [];
       if (dom.sitemap_url) sitemapUrls.push(dom.sitemap_url);
       try {
-        const robotsResp = await fetchWithTimeout(`https://${domain}/robots.txt`, 4000);
-        if (robotsResp.ok) {
+        const robotsResp = await fetchWithRetry(`https://${domain}/robots.txt`, 6000, 1, `robots ${domain}`);
+        if (robotsResp?.ok) {
           const robotsTxt = await robotsResp.text();
           for (const line of robotsTxt.split(/\r?\n/)) {
             const match = line.match(/^Sitemap:\s*(.+)$/i);
@@ -242,8 +242,8 @@ serve(async (req) => {
       for (const sitemapUrl of sitemapUrls.slice(0, 3)) {
         if (allItems.length >= 60) break;
         try {
-          const resp = await fetchWithTimeout(sitemapUrl, 5000);
-          if (!resp.ok) { await resp.text().catch(() => {}); continue; }
+          const resp = await fetchWithRetry(sitemapUrl, 15000, 2, `sitemap ${domain}`);
+          if (!resp?.ok) { if (resp) await resp.text().catch(() => {}); continue; }
           const xml = await resp.text();
 
           if (/<sitemapindex/i.test(xml)) {
@@ -251,8 +251,8 @@ serve(async (req) => {
             for (const childUrl of children) {
               if (allItems.length >= 60) break;
               try {
-                const childResp = await fetchWithTimeout(childUrl, 5000);
-                if (!childResp.ok) { await childResp.text().catch(() => {}); continue; }
+                const childResp = await fetchWithRetry(childUrl, 15000, 1, `child sitemap ${domain}`);
+                if (!childResp?.ok) { if (childResp) await childResp.text().catch(() => {}); continue; }
                 const childXml = await childResp.text();
                 allItems.push(...parseSitemapItems(childXml, domain, name).slice(-25));
               } catch {}
