@@ -55,6 +55,10 @@ function normalizeDomain(d: string): string {
   return d.replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/.*$/, "").trim().toLowerCase();
 }
 
+function trimXmlForParsing(xml: string, maxChars = 1_000_000): string {
+  return xml.length > maxChars ? xml.slice(0, maxChars) : xml;
+}
+
 const BLOCKED_DOMAINS = new Set([
   "facebook.com", "m.facebook.com", "l.facebook.com",
   "twitter.com", "x.com", "mobile.twitter.com",
@@ -101,19 +105,24 @@ function extractTitleFromUrl(url: string): string {
   } catch { return url; }
 }
 
-function parseSitemapIndex(xml: string): string[] {
+function parseSitemapIndex(xml: string, limit = 5): string[] {
   const urls: string[] = [];
   const re = /<sitemap>([\s\S]*?)<\/sitemap>/gi;
-  let m; while ((m = re.exec(xml)) !== null) { const loc = getXmlTag(m[1], "loc"); if (loc) urls.push(loc); }
+  let m;
+  while (urls.length < limit && (m = re.exec(xml)) !== null) {
+    const loc = getXmlTag(m[1], "loc");
+    if (loc) urls.push(loc);
+  }
   return urls;
 }
 
 interface SitemapItem { title: string; url: string; snippet: string; published_at: string; source_domain: string; source_name: string; }
 
-function parseSitemapItems(xml: string, domain: string, name: string): SitemapItem[] {
+function parseSitemapItems(xml: string, domain: string, name: string, limit = 50): SitemapItem[] {
   const items: SitemapItem[] = [];
   const re = /<url>([\s\S]*?)<\/url>/gi;
-  let m; while ((m = re.exec(xml)) !== null) {
+  let m;
+  while (items.length < limit && (m = re.exec(xml)) !== null) {
     const url = getXmlTag(m[1], "loc"); if (!url) continue;
     const title = stripHtml(getXmlTag(m[1], "news:title") || extractTitleFromUrl(url)).slice(0, 220);
     const snippet = stripHtml(getXmlTag(m[1], "news:keywords")).slice(0, 500);
@@ -196,23 +205,19 @@ serve(async (req) => {
     if (!activeKeywords.length) return new Response(JSON.stringify({ discovered: 0, message: "No active keywords" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
     const searchTerms = activeKeywords.map((k: any) => k.text);
+    const keywordByText = new Map(activeKeywords.map((k: any) => [k.text, k]));
     const allSources = await fetchAllRows(supabase, "sources", { active: true });
+    const sourceIdByDomain = new Map(allSources.map((s: any) => [normalizeDomain(s.domain || ""), s.id]));
     const { data: existingUrls } = await supabase.from("articles").select("url").limit(5000);
     const existingUrlSet = new Set((existingUrls || []).map((a: any) => normalizeUrl(a.url)));
 
-    // Fetch all approved domains, paginated, ordered by priority
-    let allApprovedDomains: any[] = [];
-    let dOffset = domainOffset;
-    while (true) {
-      const { data: batch } = await supabase.from("approved_domains").select("*").eq("active", true).eq("approval_status", "approved").order("priority", { ascending: false }).range(dOffset, dOffset + 499);
-      if (!batch || batch.length === 0) break;
-      allApprovedDomains = allApprovedDomains.concat(batch);
-      if (batch.length < 500) break;
-      dOffset += 500;
-    }
-    // Sort by priority descending so Tier 1 outlets are processed first
-    allApprovedDomains.sort((a: any, b: any) => (b.priority || 0) - (a.priority || 0));
-    const domains = allApprovedDomains.slice(0, maxDomains);
+    const { data: domains } = await supabase
+      .from("approved_domains")
+      .select("*")
+      .eq("active", true)
+      .eq("approval_status", "approved")
+      .order("priority", { ascending: false })
+      .range(domainOffset, domainOffset + maxDomains - 1);
 
     let discovered: { title: string; snippet: string; url: string; published_at: string; source_domain: string; source_name: string; matched_keywords: string[] }[] = [];
     let unmatchedForDeepScan: SitemapItem[] = [];
@@ -224,26 +229,34 @@ serve(async (req) => {
 
       // Discover sitemap URLs
       const sitemapUrls: string[] = [];
-      if (dom.sitemap_url) sitemapUrls.push(dom.sitemap_url);
+      const seenSitemapUrls = new Set<string>();
+      const addSitemapUrl = (candidate?: string | null) => {
+        const value = candidate?.trim();
+        if (!value || seenSitemapUrls.has(value)) return;
+        seenSitemapUrls.add(value);
+        sitemapUrls.push(value);
+      };
+
+      addSitemapUrl(dom.sitemap_url);
       try {
         const robotsResp = await fetchWithRetry(`https://${domain}/robots.txt`, 6000, 1, `robots ${domain}`);
         if (robotsResp?.ok) {
           const robotsTxt = await robotsResp.text();
           for (const line of robotsTxt.split(/\r?\n/)) {
             const match = line.match(/^Sitemap:\s*(.+)$/i);
-            if (match?.[1] && !sitemapUrls.includes(match[1].trim())) sitemapUrls.push(match[1].trim());
+            addSitemapUrl(match?.[1]);
           }
         }
       } catch {}
       // Fallback guesses
       for (const guess of [`https://${domain}/sitemap.xml`, `https://${domain}/news-sitemap.xml`, `https://${domain}/sitemap_index.xml`]) {
-        if (!sitemapUrls.includes(guess)) sitemapUrls.push(guess);
+        addSitemapUrl(guess);
       }
 
       const isTier1 = (dom.priority || 0) >= 70;
-      const maxSitemapItems = isTier1 ? 200 : 80;
-      const maxSitemaps = isTier1 ? 6 : 3;
-      const maxChildren = isTier1 ? 5 : 2;
+      const maxSitemapItems = isTier1 ? 120 : 60;
+      const maxSitemaps = isTier1 ? 4 : 2;
+      const maxChildren = isTier1 ? 3 : 1;
       const timeoutMs = isTier1 ? 20000 : 15000;
       const maxRetries = isTier1 ? 3 : 2;
 
@@ -253,23 +266,23 @@ serve(async (req) => {
         try {
           const resp = await fetchWithRetry(sitemapUrl, timeoutMs, maxRetries, `sitemap ${domain}`);
           if (!resp?.ok) { if (resp) await resp.text().catch(() => {}); continue; }
-          const xml = await resp.text();
+          const xml = trimXmlForParsing(await resp.text());
 
           if (/<sitemapindex/i.test(xml)) {
-            const children = parseSitemapIndex(xml).slice(-maxChildren);
+            const children = parseSitemapIndex(xml, maxChildren);
             for (const childUrl of children) {
               if (allItems.length >= maxSitemapItems) break;
               try {
                 const childResp = await fetchWithRetry(childUrl, timeoutMs, isTier1 ? 2 : 1, `child sitemap ${domain}`);
                 if (!childResp?.ok) { if (childResp) await childResp.text().catch(() => {}); continue; }
-                const childXml = await childResp.text();
-                const perChild = isTier1 ? 50 : 25;
-                allItems.push(...parseSitemapItems(childXml, domain, name).slice(-perChild));
+                const childXml = trimXmlForParsing(await childResp.text());
+                const perChild = isTier1 ? 40 : 20;
+                allItems.push(...parseSitemapItems(childXml, domain, name, perChild));
               } catch {}
             }
           } else if (/<urlset/i.test(xml)) {
-            const perSitemap = isTier1 ? 60 : 30;
-            allItems.push(...parseSitemapItems(xml, domain, name).slice(-perSitemap));
+            const perSitemap = isTier1 ? 50 : 25;
+            allItems.push(...parseSitemapItems(xml, domain, name, perSitemap));
           }
         } catch {}
       }
@@ -322,11 +335,14 @@ serve(async (req) => {
     for (let b = 0; b < discovered.length; b += 10) {
       const batch = discovered.slice(b, b + 10);
       const toInsert = batch.map(a => {
-        for (const kw of a.matched_keywords) { const k = activeKeywords.find((x: any) => x.text === kw); if (k) keywordMatchUpdates[k.id] = (keywordMatchUpdates[k.id] || 0) + 1; }
-        const src = allSources.find((s: any) => normalizeDomain(s.domain || "") === normalizeDomain(a.source_domain));
+        for (const kw of a.matched_keywords) {
+          const k = keywordByText.get(kw);
+          if (k) keywordMatchUpdates[k.id] = (keywordMatchUpdates[k.id] || 0) + 1;
+        }
+        const sourceId = sourceIdByDomain.get(normalizeDomain(a.source_domain));
         return {
           title: a.title, snippet: a.snippet.slice(0, 500), url: a.url,
-          source_id: src?.id || null,
+          source_id: sourceId || null,
           source_name: a.source_name || null,
           source_domain: a.source_domain || null,
           published_at: a.published_at, fetched_at: new Date().toISOString(),
