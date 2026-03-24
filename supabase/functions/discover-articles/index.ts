@@ -581,6 +581,8 @@ serve(async (req) => {
           matched_keywords: a.matched_keywords,
           language: a.language || null,
           sentiment: "neutral" as string, sentiment_score: 0.5,
+          discovery_method: "rss",
+          matched_via: "title_snippet",
         };
       });
 
