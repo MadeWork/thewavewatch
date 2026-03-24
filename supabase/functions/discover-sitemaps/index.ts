@@ -187,8 +187,8 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body = await req.json().catch(() => ({}));
-    const maxDomains = Math.max(1, Number(body.max_domains || 20));
-    const deepScanLimit = Math.max(0, Number(body.deep_scan_limit || 15));
+    const maxDomains = Math.max(1, Number(body.max_domains || 500));
+    const deepScanLimit = Math.max(0, Number(body.deep_scan_limit || 50));
     const domainOffset = Math.max(0, Number(body.offset || 0));
 
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
@@ -210,6 +210,8 @@ serve(async (req) => {
       if (batch.length < 500) break;
       dOffset += 500;
     }
+    // Sort by priority descending so Tier 1 outlets are processed first
+    allApprovedDomains.sort((a: any, b: any) => (b.priority || 0) - (a.priority || 0));
     const domains = allApprovedDomains.slice(0, maxDomains);
 
     let discovered: { title: string; snippet: string; url: string; published_at: string; source_domain: string; source_name: string; matched_keywords: string[] }[] = [];
@@ -238,31 +240,40 @@ serve(async (req) => {
         if (!sitemapUrls.includes(guess)) sitemapUrls.push(guess);
       }
 
+      const isTier1 = (dom.priority || 0) >= 70;
+      const maxSitemapItems = isTier1 ? 200 : 80;
+      const maxSitemaps = isTier1 ? 6 : 3;
+      const maxChildren = isTier1 ? 5 : 2;
+      const timeoutMs = isTier1 ? 20000 : 15000;
+      const maxRetries = isTier1 ? 3 : 2;
+
       let allItems: SitemapItem[] = [];
-      for (const sitemapUrl of sitemapUrls.slice(0, 3)) {
-        if (allItems.length >= 60) break;
+      for (const sitemapUrl of sitemapUrls.slice(0, maxSitemaps)) {
+        if (allItems.length >= maxSitemapItems) break;
         try {
-          const resp = await fetchWithRetry(sitemapUrl, 15000, 2, `sitemap ${domain}`);
+          const resp = await fetchWithRetry(sitemapUrl, timeoutMs, maxRetries, `sitemap ${domain}`);
           if (!resp?.ok) { if (resp) await resp.text().catch(() => {}); continue; }
           const xml = await resp.text();
 
           if (/<sitemapindex/i.test(xml)) {
-            const children = parseSitemapIndex(xml).slice(-2);
+            const children = parseSitemapIndex(xml).slice(-maxChildren);
             for (const childUrl of children) {
-              if (allItems.length >= 60) break;
+              if (allItems.length >= maxSitemapItems) break;
               try {
-                const childResp = await fetchWithRetry(childUrl, 15000, 1, `child sitemap ${domain}`);
+                const childResp = await fetchWithRetry(childUrl, timeoutMs, isTier1 ? 2 : 1, `child sitemap ${domain}`);
                 if (!childResp?.ok) { if (childResp) await childResp.text().catch(() => {}); continue; }
                 const childXml = await childResp.text();
-                allItems.push(...parseSitemapItems(childXml, domain, name).slice(-25));
+                const perChild = isTier1 ? 50 : 25;
+                allItems.push(...parseSitemapItems(childXml, domain, name).slice(-perChild));
               } catch {}
             }
           } else if (/<urlset/i.test(xml)) {
-            allItems.push(...parseSitemapItems(xml, domain, name).slice(-30));
+            const perSitemap = isTier1 ? 60 : 30;
+            allItems.push(...parseSitemapItems(xml, domain, name).slice(-perSitemap));
           }
         } catch {}
       }
-      allItems = allItems.slice(0, 60);
+      allItems = allItems.slice(0, maxSitemapItems);
 
       console.log(`${domain}: ${allItems.length} sitemap URLs found`);
 
