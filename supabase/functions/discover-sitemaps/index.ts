@@ -188,7 +188,7 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const maxDomains = Math.max(1, Number(body.max_domains || 500));
-    const deepScanLimit = Math.max(0, Number(body.deep_scan_limit || 15));
+    const deepScanLimit = Math.max(0, Number(body.deep_scan_limit || 50));
     const domainOffset = Math.max(0, Number(body.offset || 0));
 
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
