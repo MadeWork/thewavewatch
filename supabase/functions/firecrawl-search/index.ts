@@ -100,9 +100,24 @@ function extractPublishedAtFromHtml(html: string): string | null {
     if (parsed) return parsed;
   }
   const timeMatch = html.match(/<time[^>]+datetime=["']([^"']+)["']/i);
-  const timeParsed = parseDateValue(timeMatch?.[1]);
-  if (timeParsed) return timeParsed;
-  return null;
+  return parseDateValue(timeMatch?.[1]) || null;
+}
+
+function extractCanonicalUrl(html: string, fallback: string): string {
+  const m = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i)
+    || html.match(/<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']+)["']/i);
+  if (m?.[1]) { try { new URL(m[1]); return normalizeUrl(m[1]); } catch {} }
+  return normalizeUrl(fallback);
+}
+
+function extractLanguageFromHtml(html: string): string | null {
+  const m = html.match(/<html[^>]+lang=["']([^"']+)["']/i);
+  return m ? m[1].split("-")[0].toLowerCase() : null;
+}
+
+function extractSourceNameFromHtml(html: string): string | null {
+  const m = html.match(/<meta[^>]+property=["']og:site_name["'][^>]+content=["']([^"']+)["']/i);
+  return m?.[1] || null;
 }
 
 function extractReadableText(html: string): string {
@@ -118,92 +133,13 @@ function extractReadableText(html: string): string {
     .trim();
 }
 
-function extractCanonicalUrl(html: string, fallbackUrl: string): string {
-  const m = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i)
-    || html.match(/<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']+)["']/i);
-  if (m?.[1]) {
-    try { new URL(m[1]); return normalizeUrl(m[1]); } catch {}
-  }
-  return normalizeUrl(fallbackUrl);
-}
-
-function extractLanguageFromHtml(html: string): string | null {
-  const m = html.match(/<html[^>]+lang=["']([^"']+)["']/i);
-  return m ? m[1].split("-")[0].toLowerCase() : null;
-}
-
-function extractSourceNameFromHtml(html: string): string | null {
-  const m = html.match(/<meta[^>]+property=["']og:site_name["'][^>]+content=["']([^"']+)["']/i)
-    || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:site_name["']/i);
-  return m?.[1] || null;
-}
-
-// ── Candidate type ───────────────────────────────────────
-
-interface Candidate {
-  title: string;
-  snippet: string;
-  url: string;
-  canonical_url: string;
-  published_at: string | null;
-  source_domain: string;
-  source_name: string;
-  matched_keywords: string[];
-  matched_via: string; // "title_snippet" | "body_scan" | "ai_classified"
-  discovery_method: string;
-  body_text?: string;
-  language?: string | null;
-  relevance_score?: number;
-  primary_entity?: string;
-  sentiment?: string;
-  sentiment_score?: number;
-  ai_summary?: string;
-}
-
-// ── Firecrawl scrape for metadata extraction ─────────────
-
-async function firecrawlScrape(url: string, firecrawlKey: string): Promise<{
-  title?: string; snippet?: string; canonical_url?: string;
-  published_at?: string | null; source_name?: string; language?: string | null;
-  body_text?: string;
-} | null> {
-  try {
-    const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ url, formats: ["markdown", "html"], onlyMainContent: true }),
-    });
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    const d = data.data || data;
-    const html = d.html || "";
-    const markdown = d.markdown || "";
-    const meta = d.metadata || {};
-
-    return {
-      title: meta.title || d.title || null,
-      snippet: (meta.description || "").slice(0, 500),
-      canonical_url: meta.sourceURL ? normalizeUrl(meta.sourceURL) : extractCanonicalUrl(html, url),
-      published_at: parseDateValue(meta.publishedDate || meta.date) || extractPublishedAtFromHtml(html) || extractDateFromUrl(url),
-      source_name: meta.ogSiteName || extractSourceNameFromHtml(html) || null,
-      language: meta.language?.split("-")[0]?.toLowerCase() || extractLanguageFromHtml(html) || null,
-      body_text: markdown.slice(0, 15000) || extractReadableText(html).slice(0, 15000),
-    };
-  } catch (e) {
-    console.error(`Firecrawl scrape error for ${url}:`, e);
-    return null;
-  }
-}
-
-// ── Fallback HTML fetch (no Firecrawl credits) ───────────
-
 async function fetchArticleMeta(url: string): Promise<{
   published_at: string | null; language: string | null; body_text: string;
   canonical_url: string; source_name: string | null;
 } | null> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
+    const timeout = setTimeout(() => controller.abort(), 8000);
     try {
       const resp = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "Mozilla/5.0 (compatible; WaveWatch/1.0)" } });
       if (!resp.ok) return null;
@@ -219,23 +155,35 @@ async function fetchArticleMeta(url: string): Promise<{
   } catch { return null; }
 }
 
-// ── AI relevance classification ──────────────────────────
+// ── Candidate type ───────────────────────────────────────
 
-interface RelevanceResult {
-  relevant: boolean;
-  relevance_score: number;
-  primary_entity: string;
-  matched_reason: string;
-  sentiment: string;
-  sentiment_score: number;
-  summary: string;
+interface Candidate {
+  title: string;
+  snippet: string;
+  url: string;
+  canonical_url: string;
+  published_at: string | null;
+  source_domain: string;
+  source_name: string;
+  matched_keywords: string[];
+  matched_via: string;
+  discovery_method: string;
+  body_text?: string;
+  language?: string | null;
+  relevance_score?: number;
+  primary_entity?: string;
+  sentiment?: string;
+  sentiment_score?: number;
+  ai_summary?: string;
 }
+
+// ── AI relevance classification ──────────────────────────
 
 async function classifyRelevanceBatch(
   items: { index: number; title: string; snippet: string; body_excerpt: string; search_keyword: string }[],
   apiKey: string,
   companyContext: string
-): Promise<Map<number, RelevanceResult>> {
+): Promise<Map<number, { relevant: boolean; relevance_score: number; primary_entity: string; sentiment: string; sentiment_score: number; summary: string }>> {
   if (!items.length) return new Map();
   const prompt = items.map(it =>
     `[${it.index}] Keyword: "${it.search_keyword}"\nTitle: ${it.title}\nSnippet: ${it.snippet}\nBody excerpt: ${it.body_excerpt.slice(0, 800)}`
@@ -261,13 +209,13 @@ async function classifyRelevanceBatch(
                     type: "object",
                     properties: {
                       index: { type: "number" },
-                      relevant: { type: "boolean", description: "Is the tracked entity/topic CENTRAL to the article (not just mentioned in passing)?" },
-                      relevance_score: { type: "number", description: "0.0-1.0 relevance score" },
-                      primary_entity: { type: "string", description: "The main entity/company/topic the article is about" },
-                      matched_reason: { type: "string", description: "Brief reason why this is or isn't relevant" },
+                      relevant: { type: "boolean" },
+                      relevance_score: { type: "number" },
+                      primary_entity: { type: "string" },
+                      matched_reason: { type: "string" },
                       sentiment: { type: "string", enum: ["positive", "neutral", "negative"] },
-                      sentiment_score: { type: "number", description: "0.0-1.0 sentiment score" },
-                      summary: { type: "string", description: "One-sentence summary" },
+                      sentiment_score: { type: "number" },
+                      summary: { type: "string" },
                     },
                     required: ["index", "relevant", "relevance_score", "primary_entity", "matched_reason", "sentiment", "sentiment_score", "summary"],
                   },
@@ -281,13 +229,9 @@ async function classifyRelevanceBatch(
         messages: [
           {
             role: "system",
-            content: `You are a media monitoring analyst. Classify whether each article is genuinely relevant to the tracked keywords/entities. ${companyContext ? `Context: we are monitoring for "${companyContext}".` : ""}
-
-Rules:
-- "relevant" = the tracked entity/keyword is CENTRAL to the article, not just passing mention
-- relevance_score: 0.9+ = about the entity; 0.6-0.9 = significantly related; 0.3-0.6 = tangentially related; <0.3 = not relevant
-- Assign sentiment about the tracked entity specifically, not overall article tone
-- Summary should capture the key news in one sentence`,
+            content: `You are a media monitoring analyst. Classify whether each article is genuinely relevant. ${companyContext ? `Context: monitoring for "${companyContext}".` : ""}
+- "relevant" = the tracked entity/keyword is CENTRAL to the article
+- relevance_score: 0.9+ = about entity; 0.6-0.9 = significantly related; <0.4 = not relevant`,
           },
           { role: "user", content: prompt },
         ],
@@ -299,19 +243,15 @@ Rules:
     const tc = d.choices?.[0]?.message?.tool_calls?.[0];
     if (tc?.function?.arguments) {
       const p = JSON.parse(tc.function.arguments);
-      const map = new Map<number, RelevanceResult>();
-      for (const item of (p.results || [])) {
-        map.set(item.index, item);
-      }
+      const map = new Map<number, any>();
+      for (const item of (p.results || [])) map.set(item.index, item);
       return map;
     }
-  } catch (e) {
-    console.error("AI classification error:", e);
-  }
+  } catch (e) { console.error("AI classification error:", e); }
   return new Map();
 }
 
-// ── Simple sentiment batch (for high-confidence matches) ─
+// ── Simple sentiment batch ───────────────────────────────
 
 async function sentimentBatch(items: { title: string; snippet: string }[], apiKey: string): Promise<{ sentiment: string; score: number }[]> {
   if (!items.length) return [];
@@ -339,6 +279,39 @@ async function sentimentBatch(items: { title: string; snippet: string }[], apiKe
   } catch { return items.map(() => ({ sentiment: "neutral", score: 0.5 })); }
 }
 
+// ── Multi-angle query generation ─────────────────────────
+
+function generateSearchQueries(
+  keywords: { text: string; expanded_terms?: string[] }[],
+  companyName: string,
+  regions: string[]
+): { query: string; keyword: string }[] {
+  const queries: { query: string; keyword: string }[] = [];
+  const siteSuffix = " -site:facebook.com -site:twitter.com -site:linkedin.com -site:youtube.com -site:reddit.com -site:instagram.com -site:tiktok.com";
+
+  for (const kw of keywords) {
+    const term = kw.text;
+    // Core query
+    queries.push({ query: `"${term}" news${siteSuffix}`, keyword: term });
+    // With company context
+    if (companyName) {
+      queries.push({ query: `"${term}" "${companyName}"${siteSuffix}`, keyword: term });
+    }
+    // Regional angles
+    for (const region of regions) {
+      queries.push({ query: `"${term}" ${region} news${siteSuffix}`, keyword: term });
+    }
+    // Industry context
+    queries.push({ query: `"${term}" energy renewable latest${siteSuffix}`, keyword: term });
+    queries.push({ query: `"${term}" technology investment 2026${siteSuffix}`, keyword: term });
+    // Expanded terms
+    for (const et of (kw.expanded_terms || []).slice(0, 2)) {
+      queries.push({ query: `"${et}" news${siteSuffix}`, keyword: term });
+    }
+  }
+  return queries;
+}
+
 // ── Main ─────────────────────────────────────────────────
 
 serve(async (req) => {
@@ -358,14 +331,13 @@ serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    const maxResults = Math.min(Number(body.max_results || 5), 10);
-    const minThreshold = Number(body.min_threshold ?? 5);
-    const priorCounts: Record<string, number> = body.prior_counts || {};
+    const maxResultsPerQuery = Math.min(Number(body.max_results || 5), 10);
     const relevanceThreshold = Number(body.relevance_threshold ?? 0.4);
-    const enableScrape = body.enable_scrape !== false; // default true
-    const enableAiClassify = body.enable_ai_classify !== false; // default true
+    const enableScrape = body.enable_scrape !== false;
+    const enableAiClassify = body.enable_ai_classify !== false;
+    const maxQueries = Math.min(Number(body.max_queries || 50), 80);
 
-    // Get active keywords & settings
+    // Get ALL active keywords (no min_threshold gating)
     const [{ data: keywords }, { data: settings }] = await Promise.all([
       supabase.from("keywords").select("*").eq("active", true),
       supabase.from("settings").select("company_name").limit(1).maybeSingle(),
@@ -379,16 +351,24 @@ serve(async (req) => {
 
     const companyName = settings?.company_name && settings.company_name !== "My Company" ? settings.company_name : "";
 
-    // Filter to keywords needing more results
-    const needsSearch = activeKeywords.filter((k: any) => {
-      const prior = priorCounts[k.text] ?? 0;
-      return prior < minThreshold;
-    });
-    console.log(`Keywords needing Firecrawl: ${needsSearch.length}/${activeKeywords.length}`);
-    if (!needsSearch.length) {
-      return new Response(JSON.stringify({ discovered: 0, searched: 0, skipped: activeKeywords.length, method: "firecrawl_search" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // Build expanded term map
+    const expandedTermMap = new Map<string, string>();
+    for (const kw of activeKeywords) {
+      for (const et of ((kw as any).expanded_terms || [])) {
+        expandedTermMap.set(et.toLowerCase(), kw.text);
+      }
+    }
+    const allMatchTerms = [...activeKeywords.map((k: any) => k.text), ...Array.from(expandedTermMap.keys())];
+
+    function matchKeywordsExpanded(text: string): string[] {
+      const n = normalizeText(text);
+      const matched = new Set<string>();
+      for (const term of allMatchTerms) {
+        if (n.includes(normalizeText(term))) {
+          matched.add(expandedTermMap.get(term.toLowerCase()) || term);
+        }
+      }
+      return Array.from(matched);
     }
 
     // Get existing URLs for dedup
@@ -403,56 +383,41 @@ serve(async (req) => {
     const allSources = sources || [];
     const approvedDomainSet = new Set((approvedDomains || []).map((d: any) => normalizeDomain(d.domain)));
 
-    // Build expanded term map
-    const expandedTermMap = new Map<string, string>();
-    for (const kw of activeKeywords) {
-      for (const et of ((kw as any).expanded_terms || [])) {
-        expandedTermMap.set(et.toLowerCase(), kw.text);
-      }
-    }
+    // ── Generate multi-angle search queries ────────────────
+    const regions = ["Europe", "Nordic", "Asia Pacific", "North America"];
+    const searchQueries = generateSearchQueries(
+      activeKeywords.map((k: any) => ({ text: k.text, expanded_terms: k.expanded_terms || [] })),
+      companyName,
+      regions
+    ).slice(0, maxQueries);
 
-    // Search terms: original keywords + top expanded terms
-    const searchTerms = [...new Set([
-      ...needsSearch.map((k: any) => k.text),
-      ...needsSearch.flatMap((k: any) => ((k as any).expanded_terms || []).slice(0, 3)),
-    ])];
-    const allMatchTerms = [
-      ...activeKeywords.map((k: any) => k.text),
-      ...Array.from(expandedTermMap.keys()),
-    ];
+    console.log(`Firecrawl search: ${searchQueries.length} queries for ${activeKeywords.length} keywords`);
 
-    function matchKeywordsExpanded(text: string): string[] {
-      const n = normalizeText(text);
-      const matched = new Set<string>();
-      for (const term of allMatchTerms) {
-        if (n.includes(normalizeText(term))) {
-          matched.add(expandedTermMap.get(term.toLowerCase()) || term);
-        }
-      }
-      return Array.from(matched);
-    }
-
-    // ── Stage 1: Cheap discovery via Firecrawl search ────
-    console.log(`Stage 1: Firecrawl search for ${searchTerms.length} terms`);
     const rawCandidates: Candidate[] = [];
+    let searchesDone = 0;
 
-    for (const term of searchTerms) {
+    for (const sq of searchQueries) {
       try {
-        console.log(`Firecrawl searching: "${term}"`);
+        console.log(`Firecrawl searching: "${sq.query.slice(0, 80)}"`);
         const response = await fetch("https://api.firecrawl.dev/v1/search", {
           method: "POST",
           headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ query: `${term} news -site:facebook.com -site:twitter.com -site:linkedin.com -site:youtube.com -site:reddit.com -site:instagram.com -site:tiktok.com`, limit: maxResults, tbs: "qdr:w" }),
+          body: JSON.stringify({ query: sq.query, limit: maxResultsPerQuery, tbs: "qdr:w" }),
         });
 
+        searchesDone++;
         if (!response.ok) {
-          console.error(`Firecrawl search error for "${term}": ${response.status}`);
+          console.error(`Firecrawl search error: ${response.status}`);
+          if (response.status === 402) {
+            console.error("Firecrawl credits exhausted");
+            break;
+          }
           continue;
         }
 
         const data = await response.json();
         const results = data.data || [];
-        console.log(`Firecrawl "${term}": ${results.length} results`);
+        console.log(`  → ${results.length} results`);
 
         for (const result of results) {
           const url = normalizeUrl(result.url || "");
@@ -464,84 +429,58 @@ serve(async (req) => {
           let domain = "";
           try { domain = normalizeDomain(new URL(url).hostname); } catch {}
 
-          const urlDate = extractDateFromUrl(url);
-          const metaDate = parseDateValue(result.publishedDate || result.metadata?.publishedDate);
-
           rawCandidates.push({
             title: (result.title || "").slice(0, 220),
             snippet: (result.description || "").slice(0, 500),
             url,
             canonical_url: url,
-            published_at: urlDate || metaDate || null,
+            published_at: extractDateFromUrl(url) || parseDateValue(result.publishedDate || result.metadata?.publishedDate) || null,
             source_domain: domain,
             source_name: domain,
-            matched_keywords: matched.length > 0 ? matched : [expandedTermMap.get(term.toLowerCase()) || term],
+            matched_keywords: matched.length > 0 ? matched : [sq.keyword],
             matched_via: matched.length > 0 ? "title_snippet" : "search_query",
             discovery_method: "firecrawl_search",
           });
           existingUrlSet.add(url);
         }
-        await new Promise(r => setTimeout(r, 400));
+        await new Promise(r => setTimeout(r, 300));
       } catch (e: any) {
-        console.error(`Firecrawl error for "${term}":`, e.message);
+        console.error(`Firecrawl error:`, e.message);
       }
     }
 
-    console.log(`Stage 1 complete: ${rawCandidates.length} raw candidates`);
+    console.log(`Stage 1 complete: ${rawCandidates.length} raw candidates from ${searchesDone} searches`);
 
-    // ── Stage 2: Cheap filtering — deterministic match split ─
+    // ── Stage 2: Split into strong/weak ─────────────────
     const strongMatches: Candidate[] = [];
     const weakCandidates: Candidate[] = [];
 
     for (const c of rawCandidates) {
       if (c.matched_via === "title_snippet" && c.matched_keywords.length > 0) {
-        // Check if it's from an approved/known domain (bonus confidence)
-        const isKnownDomain = approvedDomainSet.has(normalizeDomain(c.source_domain));
-        if (isKnownDomain || c.matched_keywords.length >= 2) {
-          strongMatches.push(c);
-        } else {
-          // Single keyword match from unknown domain — still decent but verify
-          strongMatches.push(c);
-        }
+        strongMatches.push(c);
       } else {
         weakCandidates.push(c);
       }
     }
 
-    console.log(`Stage 2: ${strongMatches.length} strong matches, ${weakCandidates.length} weak candidates for enrichment`);
+    console.log(`Stage 2: ${strongMatches.length} strong matches, ${weakCandidates.length} weak candidates`);
 
-    // ── Stage 3: Firecrawl scrape for weak candidates (body scan) ─
+    // ── Stage 3: Body scan for weak candidates ──────────
     if (enableScrape && weakCandidates.length > 0) {
-      const scrapeLimit = Math.min(weakCandidates.length, 10); // cap scrape credits
-      console.log(`Stage 3: Scraping ${scrapeLimit} weak candidates for body scan`);
+      const scrapeLimit = Math.min(weakCandidates.length, 20);
+      console.log(`Stage 3: Body scanning ${scrapeLimit} weak candidates`);
 
       for (let i = 0; i < scrapeLimit; i += 3) {
         const batch = weakCandidates.slice(i, i + 3);
         await Promise.allSettled(batch.map(async (c) => {
-          // Try free HTML fetch first, Firecrawl scrape as fallback
-          let meta = await fetchArticleMeta(c.url);
-          if (!meta && firecrawlKey) {
-            const scraped = await firecrawlScrape(c.url, firecrawlKey);
-            if (scraped) {
-              meta = {
-                published_at: scraped.published_at || null,
-                language: scraped.language || null,
-                body_text: scraped.body_text || "",
-                canonical_url: scraped.canonical_url || c.url,
-                source_name: scraped.source_name || null,
-              };
-            }
-          }
+          const meta = await fetchArticleMeta(c.url);
           if (!meta) return;
-
-          // Update candidate with enriched data
           c.canonical_url = meta.canonical_url || c.canonical_url;
           c.published_at = c.published_at || meta.published_at;
           c.language = meta.language;
           c.source_name = meta.source_name || c.source_name;
           c.body_text = meta.body_text;
 
-          // Retry keyword matching on body text
           if (meta.body_text) {
             const bodyMatched = matchKeywordsExpanded(meta.body_text);
             if (bodyMatched.length > 0) {
@@ -553,7 +492,6 @@ serve(async (req) => {
         }));
       }
 
-      // Remove body-scanned candidates from weak list
       const strongUrls = new Set(strongMatches.map(c => c.canonical_url));
       const stillWeak = weakCandidates.filter(c => !strongUrls.has(c.canonical_url));
       weakCandidates.length = 0;
@@ -562,9 +500,9 @@ serve(async (req) => {
 
     console.log(`After body scan: ${strongMatches.length} strong, ${weakCandidates.length} still weak`);
 
-    // ── Stage 4: AI relevance classification for remaining weak candidates ─
+    // ── Stage 4: AI classification for remaining weak ───
     if (enableAiClassify && weakCandidates.length > 0) {
-      const classifyLimit = Math.min(weakCandidates.length, 15);
+      const classifyLimit = Math.min(weakCandidates.length, 20);
       console.log(`Stage 4: AI classifying ${classifyLimit} weak candidates`);
 
       const classifyItems = weakCandidates.slice(0, classifyLimit).map((c, i) => ({
@@ -580,17 +518,14 @@ serve(async (req) => {
       for (let i = 0; i < Math.min(classifyLimit, weakCandidates.length); i++) {
         const r = results.get(i);
         if (!r) continue;
-
         const c = weakCandidates[i];
         c.relevance_score = r.relevance_score;
         c.primary_entity = r.primary_entity;
         c.sentiment = r.sentiment;
         c.sentiment_score = r.sentiment_score;
         c.ai_summary = r.summary;
-
         if (r.relevant && r.relevance_score >= relevanceThreshold) {
           c.matched_via = "ai_classified";
-          c.matched_keywords = [...new Set([...c.matched_keywords])];
           strongMatches.push(c);
         }
       }
@@ -598,7 +533,7 @@ serve(async (req) => {
 
     console.log(`Final candidates to insert: ${strongMatches.length}`);
 
-    // ── Stage 5: Resolve dates + canonical URLs for strong matches ─
+    // ── Stage 5: Resolve dates ──────────────────────────
     const needMeta = strongMatches.filter(c => !c.published_at);
     if (needMeta.length > 0) {
       console.log(`Resolving dates for ${needMeta.length} articles`);
@@ -617,7 +552,7 @@ serve(async (req) => {
     }
     strongMatches.forEach(c => { if (!c.published_at) c.published_at = new Date().toISOString(); });
 
-    // Dedup by canonical URL
+    // Dedup
     const seenCanonical = new Set<string>();
     const deduped = strongMatches.filter(c => {
       const key = c.canonical_url || c.url;
@@ -626,12 +561,11 @@ serve(async (req) => {
       return true;
     });
 
-    // ── Stage 6: Insert with sentiment ───────────────────
+    // ── Stage 6: Insert ─────────────────────────────────
     let totalInserted = 0;
     for (let b = 0; b < deduped.length; b += 10) {
       const batch = deduped.slice(b, b + 10);
 
-      // For candidates without AI-assigned sentiment, run cheap sentiment
       const needSentiment = batch.filter(c => !c.sentiment);
       if (needSentiment.length > 0) {
         const sentiments = await sentimentBatch(
@@ -645,18 +579,12 @@ serve(async (req) => {
           normalizeDomain(s.domain || "") === normalizeDomain(c.source_domain)
         );
         return {
-          title: c.title,
-          snippet: c.snippet,
-          url: c.canonical_url || c.url,
+          title: c.title, snippet: c.snippet, url: c.canonical_url || c.url,
           source_id: matchedSource?.id || null,
-          source_name: c.source_name || null,
-          source_domain: c.source_domain || null,
-          published_at: c.published_at,
-          fetched_at: new Date().toISOString(),
-          matched_keywords: c.matched_keywords,
-          language: c.language || null,
-          sentiment: c.sentiment || "neutral",
-          sentiment_score: c.sentiment_score ?? 0.5,
+          source_name: c.source_name, source_domain: c.source_domain,
+          published_at: c.published_at, fetched_at: new Date().toISOString(),
+          matched_keywords: c.matched_keywords, language: c.language || null,
+          sentiment: c.sentiment || "neutral", sentiment_score: c.sentiment_score ?? 0.5,
           discovery_method: c.discovery_method,
           relevance_score: c.relevance_score ?? null,
           primary_entity: c.primary_entity ?? null,
@@ -684,7 +612,7 @@ serve(async (req) => {
 
     const summary = {
       discovered: totalInserted,
-      searched: searchTerms.length,
+      searched: searchesDone,
       raw_candidates: rawCandidates.length,
       strong_matches: strongMatches.length,
       ai_classified: deduped.filter(c => c.matched_via === "ai_classified").length,
