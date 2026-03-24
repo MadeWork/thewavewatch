@@ -519,6 +519,7 @@ export type Database = {
           crawl_delay_ms: number
           created_at: string
           domain: string | null
+          fetch_priority: number
           health_status: string
           id: string
           language: string | null
@@ -539,6 +540,7 @@ export type Database = {
           crawl_delay_ms?: number
           created_at?: string
           domain?: string | null
+          fetch_priority?: number
           health_status?: string
           id?: string
           language?: string | null
@@ -559,6 +561,7 @@ export type Database = {
           crawl_delay_ms?: number
           created_at?: string
           domain?: string | null
+          fetch_priority?: number
           health_status?: string
           id?: string
           language?: string | null
