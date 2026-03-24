@@ -125,8 +125,8 @@ function parseSitemapItems(xml: string, domain: string, name: string): SitemapIt
 
 async function fetchArticleText(url: string): Promise<string | null> {
   try {
-    const resp = await fetchWithTimeout(url, 5000);
-    if (!resp.ok) return null;
+    const resp = await fetchWithRetry(url, 25000, 2, `body scan ${url.slice(0, 50)}`);
+    if (!resp?.ok) return null;
     const ct = resp.headers.get("content-type") || "";
     if (!ct.includes("text/html")) { await resp.text(); return null; }
     const html = await resp.text();
