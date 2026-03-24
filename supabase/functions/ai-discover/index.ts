@@ -269,7 +269,7 @@ Rules:
             title: (result.title || "").slice(0, 220),
             snippet: (result.description || "").slice(0, 500),
             url,
-            published_at: publishedAt || new Date().toISOString(),
+            published_at: publishedAt || null,
             source_domain: domain,
             source_name: domain,
             matched_keywords: Array.from(matched),
