@@ -657,8 +657,20 @@ serve(async (req) => {
         const batch = allSources.slice(i, i + CONC);
         const results = await Promise.allSettled(batch.map(async (src: any) => {
           try {
-            const resp = await fetchWithTimeout(src.rss_url, 8000);
-            if (!resp.ok) { logs.push(`Source ${src.name}: HTTP ${resp.status}`); return { matched: [], unmatched: [] }; }
+            const { response: resp, elapsed, attempts, error } = await fetchWithRetry(src.rss_url, { type: "rss", maxRetries: 2, label: `RSS ${src.name}` });
+            if (!resp?.ok) {
+              logs.push(`Source ${src.name}: ${error || `HTTP ${resp?.status}`} [${elapsed}ms, ${attempts} attempts]`);
+              // Track failures for health
+              await supabase.from("sources").update({
+                consecutive_failures: (src.consecutive_failures || 0) + 1,
+                health_status: (src.consecutive_failures || 0) + 1 >= 5 ? "degraded" : src.health_status,
+              }).eq("id", src.id);
+              return { matched: [], unmatched: [] };
+            }
+            // Reset failures on success
+            if (src.consecutive_failures > 0) {
+              await supabase.from("sources").update({ consecutive_failures: 0, health_status: "healthy", last_success_at: new Date().toISOString() }).eq("id", src.id);
+            }
             const xml = await resp.text();
             const domain = src.domain || normalizeDomain(new URL(src.rss_url).hostname);
             const items = parseRSSItems(xml, domain, src.name);
@@ -669,7 +681,7 @@ serve(async (req) => {
               if (kws.length > 0) matched.push({ ...item, matched_keywords: kws, discovery_method: "rss" });
               else unmatched.push(item);
             }
-            logs.push(`Source ${src.name}: ${items.length} items, ${matched.length} matched`);
+            logs.push(`Source ${src.name}: ${items.length} items, ${matched.length} matched [${elapsed}ms, ${attempts} attempts]`);
             return { matched, unmatched };
           } catch { return { matched: [], unmatched: [] }; }
         }));
