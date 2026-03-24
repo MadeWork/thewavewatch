@@ -338,8 +338,8 @@ async function discoverSitemapUrlsForDomain(domain: string, sitemapUrl?: string 
 
   // robots.txt
   try {
-    const resp = await fetchWithTimeout(`https://${domain}/robots.txt`, 4000);
-    if (resp.ok) {
+    const { response: resp } = await fetchWithRetry(`https://${domain}/robots.txt`, { type: "robots", maxRetries: 1, label: `robots.txt ${domain}` });
+    if (resp?.ok) {
       const txt = await resp.text();
       for (const line of txt.split(/\r?\n/)) {
         const match = line.match(/^Sitemap:\s*(.+)$/i);
