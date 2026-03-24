@@ -22,6 +22,42 @@ function normalizeDomain(d: string): string {
   return d.replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/.*$/, "").trim().toLowerCase();
 }
 
+const BLOCKED_DOMAINS = new Set([
+  "facebook.com", "m.facebook.com", "l.facebook.com",
+  "twitter.com", "x.com", "mobile.twitter.com",
+  "instagram.com", "linkedin.com",
+  "youtube.com", "m.youtube.com", "youtu.be",
+  "tiktok.com", "reddit.com", "old.reddit.com",
+  "pinterest.com", "tumblr.com", "snapchat.com",
+  "threads.net", "mastodon.social", "bsky.app",
+  "t.me", "telegram.org", "wa.me", "whatsapp.com",
+  "discord.com", "discord.gg",
+]);
+
+const BLOCKED_URL_PATTERNS = [
+  /\/posts?\//i, /\/video\//i, /\/watch\//i, /\/reel/i, /\/status\//i,
+  /\/stories\//i, /\/shorts\//i, /\/live\//i, /\/pin\//i,
+];
+
+function isBlockedDomain(domain: string): boolean {
+  const d = normalizeDomain(domain);
+  for (const blocked of BLOCKED_DOMAINS) {
+    if (d === blocked || d.endsWith("." + blocked)) return true;
+  }
+  return false;
+}
+
+function isBlockedUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    if (isBlockedDomain(u.hostname)) return true;
+    for (const pattern of BLOCKED_URL_PATTERNS) {
+      if (pattern.test(u.pathname)) return true;
+    }
+    return false;
+  } catch { return false; }
+}
+
 function normalizeText(t: string): string {
   return t.toLowerCase().replace(/[_\-–—]+/gu, " ").replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/g, " ").trim();
 }
