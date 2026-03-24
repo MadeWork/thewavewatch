@@ -282,8 +282,9 @@ async function analyzeSentimentBatch(items: { title: string; snippet: string }[]
 }
 
 const domainLastFetch: Record<string, number> = {};
-async function rateLimitedFetch(url: string, crawlDelayMs: number): Promise<Response> {
-  return fetchWithTimeout(url, 6000);
+async function rateLimitedFetch(url: string, crawlDelayMs: number): Promise<Response | null> {
+  const { response } = await fetchWithRetry(url, 15000, 2, `RSS ${url.slice(0, 50)}`);
+  return response;
 }
 
 // ── Paginated fetch ──────────────────────────────────────
