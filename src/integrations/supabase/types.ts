@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      alert_rules: {
+        Row: {
+          active: boolean
+          conditions: Json
+          created_at: string
+          digest_schedule: string | null
+          id: string
+          last_triggered_at: string | null
+          name: string
+          rule_type: string
+          updated_at: string
+          user_id: string
+          webhook_url: string | null
+        }
+        Insert: {
+          active?: boolean
+          conditions?: Json
+          created_at?: string
+          digest_schedule?: string | null
+          id?: string
+          last_triggered_at?: string | null
+          name: string
+          rule_type?: string
+          updated_at?: string
+          user_id: string
+          webhook_url?: string | null
+        }
+        Update: {
+          active?: boolean
+          conditions?: Json
+          created_at?: string
+          digest_schedule?: string | null
+          id?: string
+          last_triggered_at?: string | null
+          name?: string
+          rule_type?: string
+          updated_at?: string
+          user_id?: string
+          webhook_url?: string | null
+        }
+        Relationships: []
+      }
       approved_domains: {
         Row: {
           active: boolean | null
@@ -68,6 +110,35 @@ export type Database = {
         }
         Relationships: []
       }
+      article_bookmarks: {
+        Row: {
+          article_id: string
+          created_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          article_id: string
+          created_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          article_id?: string
+          created_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "article_bookmarks_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "articles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       article_enrichments: {
         Row: {
           article_id: string
@@ -113,6 +184,73 @@ export type Database = {
             foreignKeyName: "article_enrichments_article_id_fkey"
             columns: ["article_id"]
             isOneToOne: true
+            referencedRelation: "articles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      article_notes: {
+        Row: {
+          article_id: string
+          content: string
+          created_at: string
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          article_id: string
+          content: string
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          article_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "article_notes_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "articles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      article_tags: {
+        Row: {
+          article_id: string
+          created_at: string
+          id: string
+          tag: string
+          user_id: string
+        }
+        Insert: {
+          article_id: string
+          created_at?: string
+          id?: string
+          tag: string
+          user_id: string
+        }
+        Update: {
+          article_id?: string
+          created_at?: string
+          id?: string
+          tag?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "article_tags_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
             referencedRelation: "articles"
             referencedColumns: ["id"]
           },
@@ -186,6 +324,36 @@ export type Database = {
           },
         ]
       }
+      keyword_groups: {
+        Row: {
+          created_at: string
+          description: string | null
+          group_type: string | null
+          id: string
+          keyword_ids: string[]
+          name: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          group_type?: string | null
+          id?: string
+          keyword_ids?: string[]
+          name: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          group_type?: string | null
+          id?: string
+          keyword_ids?: string[]
+          name?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       keywords: {
         Row: {
           active: boolean
@@ -219,6 +387,78 @@ export type Database = {
           logic_operator?: string
           match_count?: number
           text?: string
+        }
+        Relationships: []
+      }
+      report_templates: {
+        Row: {
+          created_at: string
+          description: string | null
+          filters: Json
+          id: string
+          last_generated_at: string | null
+          name: string
+          schedule: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          filters?: Json
+          id?: string
+          last_generated_at?: string | null
+          name: string
+          schedule?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          filters?: Json
+          id?: string
+          last_generated_at?: string | null
+          name?: string
+          schedule?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      saved_searches: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          is_preset: boolean
+          name: string
+          preset_type: string | null
+          query: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_preset?: boolean
+          name: string
+          preset_type?: string | null
+          query?: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_preset?: boolean
+          name?: string
+          preset_type?: string | null
+          query?: Json
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }

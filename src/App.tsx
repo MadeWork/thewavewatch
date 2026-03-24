@@ -12,6 +12,9 @@ import Mentions from "@/pages/Mentions";
 import Keywords from "@/pages/Keywords";
 import Sources from "@/pages/Sources";
 import Analytics from "@/pages/Analytics";
+import Alerts from "@/pages/Alerts";
+import Archive from "@/pages/Archive";
+import Reports from "@/pages/Reports";
 import SettingsPage from "@/pages/SettingsPage";
 import NotFound from "@/pages/NotFound";
 
@@ -30,9 +33,12 @@ const App = () => (
               <Route element={<AppLayout />}>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/mentions" element={<Mentions />} />
+                <Route path="/archive" element={<Archive />} />
                 <Route path="/keywords" element={<Keywords />} />
                 <Route path="/sources" element={<Sources />} />
                 <Route path="/analytics" element={<Analytics />} />
+                <Route path="/alerts" element={<Alerts />} />
+                <Route path="/reports" element={<Reports />} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Route>
               <Route path="*" element={<NotFound />} />
