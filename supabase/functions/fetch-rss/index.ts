@@ -179,8 +179,8 @@ function extractPublishedAtFromHtml(html: string): string | null {
 
 async function fetchArticleMetadata(url: string): Promise<{ published_at: string | null; language: string | null } | null> {
   try {
-    const resp = await fetchWithTimeout(url, 6000);
-    if (!resp.ok) return null;
+    const { response: resp } = await fetchWithRetry(url, 25000, 2, `metadata ${url.slice(0, 50)}`);
+    if (!resp?.ok) return null;
     const ct = resp.headers.get("content-type") || "";
     if (!ct.includes("text/html") && !ct.includes("application/xhtml")) { await resp.text(); return null; }
     const html = await resp.text();
