@@ -614,12 +614,14 @@ serve(async (req) => {
         try {
           const q = encodeURIComponent(term);
           const url = `https://news.google.com/rss/search?q=${q}&hl=${reg.hl}&gl=${reg.gl}&ceid=${reg.ceid}`;
-          const resp = await fetchWithTimeout(url, 8000);
-          if (resp.ok) {
+          const { response: resp, elapsed, attempts, error } = await fetchWithRetry(url, { type: "google_news", maxRetries: 1, label: `GN "${term}" ${reg.gl}` });
+          if (resp?.ok) {
             const xml = await resp.text();
             const articles = parseGoogleNewsRSS(xml, term);
-            logs.push(`Google News "${term}" (${reg.gl}): ${articles.length}`);
+            logs.push(`Google News "${term}" (${reg.gl}): ${articles.length} [${elapsed}ms, ${attempts} attempts]`);
             allDiscovered.push(...articles);
+          } else {
+            logs.push(`Google News "${term}" (${reg.gl}): ${error || "failed"}`);
           }
           await new Promise(r => setTimeout(r, 300));
         } catch (e: any) {
