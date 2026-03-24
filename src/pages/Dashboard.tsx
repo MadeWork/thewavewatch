@@ -185,10 +185,10 @@ export default function Dashboard() {
       {/* Favorite Keywords Mentions */}
       {favKeywords && favKeywords.length > 0 && (
         <div className="monitor-card">
-          <div className="flex items-center gap-2 mb-4">
+          <div className="flex items-center gap-2 mb-4 flex-wrap">
             <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
             <p className="section-label">Favorite Keyword Mentions</p>
-            <div className="flex items-center gap-1.5 ml-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
               {favKeywords.map(k => (
                 <span key={k.text} className="px-2 py-0.5 rounded-full text-[10px] text-primary bg-primary/10">{k.text}</span>
               ))}
