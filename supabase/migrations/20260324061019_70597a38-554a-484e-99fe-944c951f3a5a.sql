@@ -1,0 +1,1 @@
+CREATE POLICY "Authenticated delete article_enrichments" ON public.article_enrichments FOR DELETE TO authenticated USING (auth.uid() IS NOT NULL);

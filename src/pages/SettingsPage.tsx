@@ -1,7 +1,53 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import ErrorBanner from "@/components/ErrorBanner";
+
+function ClearDataButton() {
+  const [confirming, setConfirming] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const queryClient = useQueryClient();
+
+  const handleClear = async () => {
+    setClearing(true);
+    try {
+      await supabase.from("article_enrichments").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      await supabase.from("articles").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      await supabase.from("sources").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      queryClient.invalidateQueries();
+      toast.success("All data cleared successfully");
+    } catch {
+      toast.error("Failed to clear data");
+    } finally {
+      setClearing(false);
+      setConfirming(false);
+    }
+  };
+
+  if (confirming) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">Are you sure?</span>
+        <button onClick={handleClear} disabled={clearing}
+          className="px-4 py-2 rounded-xl bg-destructive text-destructive-foreground text-sm font-medium hover:opacity-90 transition disabled:opacity-50">
+          {clearing ? "Clearing…" : "Yes, delete all"}
+        </button>
+        <button onClick={() => setConfirming(false)}
+          className="px-4 py-2 rounded-xl bg-muted text-muted-foreground text-sm hover:opacity-90 transition">
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button onClick={() => setConfirming(true)}
+      className="px-4 py-2 rounded-xl border border-destructive text-destructive text-sm font-medium hover:bg-destructive/10 transition">
+      Clear All Data
+    </button>
+  );
+}
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
@@ -114,6 +160,12 @@ export default function SettingsPage() {
               {mutation.isPending ? "Saving…" : "Save Changes"}
             </button>
             {saved && <span className="text-xs text-positive">Settings saved!</span>}
+          </div>
+
+          <div className="border-t border-border pt-5 mt-5">
+            <h2 className="text-sm font-medium text-destructive mb-2">Danger Zone</h2>
+            <p className="text-xs text-muted-foreground mb-3">This will permanently delete all articles, enrichments, and sources. Keywords and settings will be kept.</p>
+            <ClearDataButton />
           </div>
         </div>
       )}
