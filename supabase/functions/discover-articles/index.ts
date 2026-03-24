@@ -434,7 +434,7 @@ function parseRSSItems(xml: string, domain: string, sourceName: string): RSSItem
     const link = getXmlTag(c, "link") || getXmlTag(c, "guid");
     const desc = stripHtml(getXmlTag(c, "description")).slice(0, 500);
     const pubDate = getXmlTag(c, "pubDate") || getXmlTag(c, "dc:date");
-    if (title && link) items.push({ title, url: link, snippet: desc, published_at: parseDateValue(pubDate) || extractDateFromUrl(link), source_domain: nd, source_name: sourceName });
+    if (title && link) items.push({ title: stripHtml(title), url: normalizeUrl(link), snippet: desc, published_at: parseDateValue(pubDate) || extractDateFromUrl(link), source_domain: nd, source_name: sourceName });
   }
 
   const entryRe = /<entry>([\s\S]*?)<\/entry>/gi;
@@ -445,7 +445,7 @@ function parseRSSItems(xml: string, domain: string, sourceName: string): RSSItem
     const link = linkMatch ? linkMatch[1] : getXmlTag(c, "link");
     const summary = stripHtml(getXmlTag(c, "summary") || getXmlTag(c, "content")).slice(0, 500);
     const updated = getXmlTag(c, "updated") || getXmlTag(c, "published");
-    if (title && link) items.push({ title, url: link, snippet: summary, published_at: parseDateValue(updated) || extractDateFromUrl(link), source_domain: nd, source_name: sourceName });
+    if (title && link) items.push({ title: stripHtml(title), url: normalizeUrl(link), snippet: summary, published_at: parseDateValue(updated) || extractDateFromUrl(link), source_domain: nd, source_name: sourceName });
   }
   return items;
 }
