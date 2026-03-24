@@ -29,20 +29,9 @@ interface RSSItem {
   source_name: string;
 }
 
-// ── Tier-aware timeout presets ───────────────────────────
+// ── Timeout presets ─────────────────────────────────────
 
-const TIMEOUTS_TIER1 = {
-  rss: 20000,
-  sitemap: 20000,
-  listing: 25000,
-  article: 30000,
-  robots: 8000,
-  google_news: 12000,
-  resolve: 12000,
-  default: 20000,
-} as const;
-
-const TIMEOUTS_DEFAULT = {
+const TIMEOUTS = {
   rss: 15000,
   sitemap: 15000,
   listing: 20000,
@@ -53,20 +42,7 @@ const TIMEOUTS_DEFAULT = {
   default: 15000,
 } as const;
 
-type TimeoutType = keyof typeof TIMEOUTS_DEFAULT;
-
-// ── Tier config ─────────────────────────────────────────
-
-const TIER1_PRIORITY_THRESHOLD = 70; // approved_domains with priority >= 70 are Tier 1
-const TIER1_MAX_SITEMAP_ITEMS = 200;
-const TIER1_MAX_SITEMAPS = 6;
-const TIER1_MAX_CHILD_SITEMAPS = 5;
-const TIER1_MAX_RETRIES = 3;
-
-const DEFAULT_MAX_SITEMAP_ITEMS = 100;
-const DEFAULT_MAX_SITEMAPS = 4;
-const DEFAULT_MAX_CHILD_SITEMAPS = 3;
-const DEFAULT_MAX_RETRIES = 2;
+type TimeoutType = keyof typeof TIMEOUTS;
 
 // ── Utilities ────────────────────────────────────────────
 
@@ -86,11 +62,10 @@ async function fetchWithTimeout(url: string, timeoutMs = 15000): Promise<Respons
 
 async function fetchWithRetry(
   url: string,
-  opts: { timeout?: number; type?: TimeoutType; maxRetries?: number; label?: string; tier1?: boolean } = {}
+  opts: { timeout?: number; type?: TimeoutType; maxRetries?: number; label?: string } = {}
 ): Promise<{ response: Response | null; elapsed: number; attempts: number; error?: string }> {
-  const timeouts = opts.tier1 ? TIMEOUTS_TIER1 : TIMEOUTS_DEFAULT;
-  const timeoutMs = opts.timeout ?? timeouts[opts.type ?? "default"];
-  const maxRetries = opts.maxRetries ?? (opts.tier1 ? TIER1_MAX_RETRIES : DEFAULT_MAX_RETRIES);
+  const timeoutMs = opts.timeout ?? TIMEOUTS[opts.type ?? "default"];
+  const maxRetries = opts.maxRetries ?? 2;
   const label = opts.label ?? url.slice(0, 80);
   let lastError = "";
 
@@ -200,11 +175,6 @@ function getXmlTag(content: string, tag: string): string {
   return m ? m[1].trim() : "";
 }
 
-function matchKeywords(text: string, keywords: string[]): string[] {
-  const n = normalizeText(text);
-  return keywords.filter(kw => n.includes(normalizeText(kw)));
-}
-
 function extractDateFromUrl(url: string): string | null {
   try {
     const path = new URL(url).pathname;
@@ -215,29 +185,6 @@ function extractDateFromUrl(url: string): string | null {
     }
   } catch {}
   return null;
-}
-
-function extractPublishedAtFromHtml(html: string): string | null {
-  const metaPatterns = [
-    /<meta[^>]+property=["']article:published_time["'][^>]+content=["']([^"']+)["']/i,
-    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']article:published_time["']/i,
-    /<meta[^>]+property=["']og:published_time["'][^>]+content=["']([^"']+)["']/i,
-    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:published_time["']/i,
-    /<meta[^>]+name=["']parsely-pub-date["'][^>]+content=["']([^"']+)["']/i,
-    /<meta[^>]+itemprop=["']datePublished["'][^>]+content=["']([^"']+)["']/i,
-  ];
-  for (const pattern of metaPatterns) {
-    const match = html.match(pattern);
-    const parsed = parseDateValue(match?.[1]);
-    if (parsed) return parsed;
-  }
-  const jsonLdMatches = html.matchAll(/"datePublished"\s*:\s*"([^"]+)"/gi);
-  for (const match of jsonLdMatches) {
-    const parsed = parseDateValue(match[1]);
-    if (parsed) return parsed;
-  }
-  const timeMatch = html.match(/<time[^>]+datetime=["']([^"']+)["']/i);
-  return parseDateValue(timeMatch?.[1]) || null;
 }
 
 function extractTitleFromUrl(url: string): string {
@@ -268,6 +215,27 @@ function extractReadableText(html: string): string {
     .trim();
 }
 
+function extractPublishedAtFromHtml(html: string): string | null {
+  const metaPatterns = [
+    /<meta[^>]+property=["']article:published_time["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']article:published_time["']/i,
+    /<meta[^>]+name=["']parsely-pub-date["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+itemprop=["']datePublished["'][^>]+content=["']([^"']+)["']/i,
+  ];
+  for (const pattern of metaPatterns) {
+    const match = html.match(pattern);
+    const parsed = parseDateValue(match?.[1]);
+    if (parsed) return parsed;
+  }
+  const jsonLdMatches = html.matchAll(/"datePublished"\s*:\s*"([^"]+)"/gi);
+  for (const match of jsonLdMatches) {
+    const parsed = parseDateValue(match[1]);
+    if (parsed) return parsed;
+  }
+  const timeMatch = html.match(/<time[^>]+datetime=["']([^"']+)["']/i);
+  return parseDateValue(timeMatch?.[1]) || null;
+}
+
 // ── Google News URL resolver ─────────────────────────────
 
 async function resolveGoogleNewsUrl(gnUrl: string): Promise<string> {
@@ -286,7 +254,7 @@ async function resolveGoogleNewsUrl(gnUrl: string): Promise<string> {
   }
 }
 
-// ── Sitemap helpers (tier-aware) ─────────────────────────
+// ── Sitemap helpers ─────────────────────────────────────
 
 interface SitemapItem {
   title: string;
@@ -354,12 +322,15 @@ function extractListingPageLinks(html: string, domain: string, name: string): Si
   return items;
 }
 
-async function discoverSitemapUrlsForDomain(domain: string, sitemapUrl?: string | null, isTier1 = false): Promise<string[]> {
+async function fetchSitemapItemsForDomain(
+  domain: string, name: string, sitemapUrl?: string | null
+): Promise<SitemapItem[]> {
   const urls: string[] = [];
   if (sitemapUrl) urls.push(sitemapUrl);
 
+  // robots.txt
   try {
-    const { response: resp } = await fetchWithRetry(`https://${domain}/robots.txt`, { type: "robots", tier1: isTier1, maxRetries: isTier1 ? 2 : 1, label: `robots.txt ${domain}` });
+    const { response: resp } = await fetchWithRetry(`https://${domain}/robots.txt`, { type: "robots", maxRetries: 1, label: `robots ${domain}` });
     if (resp?.ok) {
       const txt = await resp.text();
       for (const line of txt.split(/\r?\n/)) {
@@ -372,73 +343,41 @@ async function discoverSitemapUrlsForDomain(domain: string, sitemapUrl?: string 
   for (const guess of [
     `https://${domain}/sitemap.xml`,
     `https://${domain}/news-sitemap.xml`,
-    `https://${domain}/sitemap_index.xml`,
-    `https://${domain}/sitemap-news.xml`,
   ]) {
     if (!urls.includes(guess)) urls.push(guess);
   }
 
-  return urls;
-}
-
-async function fetchSitemapItemsForDomain(
-  domain: string, name: string, sitemapUrl?: string | null, isTier1 = false
-): Promise<SitemapItem[]> {
-  const sitemapUrls = await discoverSitemapUrlsForDomain(domain, sitemapUrl, isTier1);
-  const maxSitemaps = isTier1 ? TIER1_MAX_SITEMAPS : DEFAULT_MAX_SITEMAPS;
-  const maxChildren = isTier1 ? TIER1_MAX_CHILD_SITEMAPS : DEFAULT_MAX_CHILD_SITEMAPS;
-  const maxItems = isTier1 ? TIER1_MAX_SITEMAP_ITEMS : DEFAULT_MAX_SITEMAP_ITEMS;
   let allItems: SitemapItem[] = [];
+  const MAX_SITEMAPS = 4;
+  const MAX_ITEMS = 100;
+  const MAX_CHILDREN = 3;
 
-  for (const smUrl of sitemapUrls.slice(0, maxSitemaps)) {
-    if (allItems.length >= maxItems) break;
+  for (const smUrl of urls.slice(0, MAX_SITEMAPS)) {
+    if (allItems.length >= MAX_ITEMS) break;
     try {
-      const { response: resp, elapsed } = await fetchWithRetry(smUrl, { type: "sitemap", tier1: isTier1, label: `sitemap ${domain}` });
+      const { response: resp, elapsed } = await fetchWithRetry(smUrl, { type: "sitemap", maxRetries: 1, label: `sitemap ${domain}` });
       if (!resp?.ok) { if (resp) await resp.text().catch(() => {}); continue; }
       const xml = await resp.text();
       console.log(`[sitemap] ${domain} ${smUrl.split("/").pop()} fetched in ${elapsed}ms`);
 
       if (/<sitemapindex/i.test(xml)) {
-        const children = parseSitemapIndex(xml).slice(-maxChildren);
+        const children = parseSitemapIndex(xml).slice(-MAX_CHILDREN);
         for (const childUrl of children) {
-          if (allItems.length >= maxItems) break;
+          if (allItems.length >= MAX_ITEMS) break;
           try {
-            const { response: childResp } = await fetchWithRetry(childUrl, { type: "sitemap", tier1: isTier1, label: `child sitemap ${domain}` });
+            const { response: childResp } = await fetchWithRetry(childUrl, { type: "sitemap", maxRetries: 1, label: `child sitemap ${domain}` });
             if (!childResp?.ok) { if (childResp) await childResp.text().catch(() => {}); continue; }
             const childXml = await childResp.text();
-            const perChild = isTier1 ? 50 : 30;
-            allItems.push(...parseSitemapItems(childXml, domain, name).slice(-perChild));
+            allItems.push(...parseSitemapItems(childXml, domain, name).slice(-30));
           } catch {}
         }
       } else if (/<urlset/i.test(xml)) {
-        const perSitemap = isTier1 ? 60 : 40;
-        allItems.push(...parseSitemapItems(xml, domain, name).slice(-perSitemap));
+        allItems.push(...parseSitemapItems(xml, domain, name).slice(-40));
       }
     } catch {}
   }
 
-  return allItems.slice(0, maxItems);
-}
-
-async function fetchListingPageItems(domain: string, name: string, isTier1 = false): Promise<SitemapItem[]> {
-  const paths = isTier1
-    ? ["/", "/news", "/latest", "/articles", "/press", "/media", "/press-releases"]
-    : ["/", "/news", "/latest", "/articles"];
-  let items: SitemapItem[] = [];
-  const maxItems = isTier1 ? 50 : 30;
-  for (const path of paths) {
-    if (items.length >= maxItems) break;
-    try {
-      const { response: resp, elapsed } = await fetchWithRetry(`https://${domain}${path}`, { type: "listing", tier1: isTier1, label: `listing ${domain}${path}` });
-      if (!resp?.ok) continue;
-      const ct = resp.headers.get("content-type") || "";
-      if (!ct.includes("text/html")) { await resp.text(); continue; }
-      const html = await resp.text();
-      console.log(`[listing] ${domain}${path} fetched in ${elapsed}ms`);
-      items.push(...extractListingPageLinks(html, domain, name));
-    } catch {}
-  }
-  return items.slice(0, maxItems);
+  return allItems.slice(0, MAX_ITEMS);
 }
 
 // ── RSS Parsers ──────────────────────────────────────────
@@ -498,17 +437,13 @@ function parseGoogleNewsRSS(xml: string, keyword: string): DiscoveredArticle[] {
   return articles;
 }
 
-async function fetchArticleDetails(url: string, includeText = true, isTier1 = false): Promise<{ text: string; lang: string | null; publishedAt: string | null } | null> {
+async function fetchArticleDetails(url: string, includeText = true): Promise<{ text: string; lang: string | null; publishedAt: string | null } | null> {
   try {
-    const { response: resp, elapsed, attempts, error } = await fetchWithRetry(url, { type: "article", tier1: isTier1, label: `article ${normalizeDomain(new URL(url).hostname)}` });
-    if (!resp?.ok) {
-      if (error) console.log(`[article] ${url.slice(0, 60)}: failed after ${attempts} attempts: ${error}`);
-      return null;
-    }
+    const { response: resp, elapsed, attempts, error } = await fetchWithRetry(url, { type: "article", maxRetries: 1, label: `article ${url.slice(0, 60)}` });
+    if (!resp?.ok) return null;
     const ct = resp.headers.get("content-type") || "";
     if (!ct.includes("text/html") && !ct.includes("application/xhtml")) { await resp.text(); return null; }
     const html = await resp.text();
-    if (attempts > 1) console.log(`[article] ${url.slice(0, 60)}: succeeded on attempt ${attempts} (${elapsed}ms)`);
     const lang = detectLanguage(html);
     const publishedAt = extractPublishedAtFromHtml(html) || extractDateFromUrl(url);
     const text = includeText ? extractReadableText(html).slice(0, 12000) : "";
@@ -544,27 +479,6 @@ async function analyzeSentimentBatch(items: { title: string; snippet: string }[]
   } catch { return items.map(() => ({ sentiment: "neutral", score: 0.5 })); }
 }
 
-// ── Paginated query helper ───────────────────────────────
-
-async function fetchAllRows(supabase: any, table: string, filters: Record<string, any>, orderBy?: { col: string; asc: boolean }): Promise<any[]> {
-  const PAGE = 500;
-  let all: any[] = [];
-  let offset = 0;
-  while (true) {
-    let q = supabase.from(table).select("*");
-    for (const [k, v] of Object.entries(filters)) q = q.eq(k, v);
-    if (orderBy) q = q.order(orderBy.col, { ascending: orderBy.asc });
-    q = q.range(offset, offset + PAGE - 1);
-    const { data, error } = await q;
-    if (error) { console.error(`fetchAllRows ${table} error:`, error); break; }
-    if (!data || data.length === 0) break;
-    all = all.concat(data);
-    if (data.length < PAGE) break;
-    offset += PAGE;
-  }
-  return all;
-}
-
 // ── Main ─────────────────────────────────────────────────
 
 serve(async (req) => {
@@ -577,22 +491,28 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body = await req.json().catch(() => ({}));
-    const deepScanLimit = Math.max(0, Number(body.deep_scan_limit ?? 50));
-    const debug = Boolean(body.debug);
+
+    // Stage-based execution to stay within CPU limits:
+    // stage=tier1 (offset, limit) — scan Tier 1 domains in batches
+    // stage=google_news — Google News RSS
+    // stage=sources (offset, limit) — active source feeds
+    // stage=tier2 (offset, limit) — Tier 2 approved domains
+    const stage = body.stage || "tier1";
+    const offset = Number(body.offset ?? 0);
+    const limit = Number(body.limit ?? 10);
+    const deepScanLimit = Math.min(Number(body.deep_scan_limit ?? 5), 10);
 
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
     const activeKeywords = keywords || [];
-    if (!activeKeywords.length) return new Response(JSON.stringify({ discovered: 0, message: "No active keywords" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    if (!activeKeywords.length) return new Response(JSON.stringify({ discovered: 0, stage, message: "No active keywords" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
     const { data: settings } = await supabase.from("settings").select("company_name").limit(1).maybeSingle();
 
-    // Build expanded search terms map
+    // Build expanded search terms
     const expandedTermMap = new Map<string, string>();
     for (const kw of activeKeywords) {
       const expandedTerms = (kw as any).expanded_terms || [];
-      for (const et of expandedTerms) {
-        expandedTermMap.set(et.toLowerCase(), kw.text);
-      }
+      for (const et of expandedTerms) expandedTermMap.set(et.toLowerCase(), kw.text);
     }
 
     const searchTerms = uniqueStrings([
@@ -613,22 +533,13 @@ serve(async (req) => {
       return Array.from(matched);
     }
 
-    // Fetch ALL existing URLs for dedup
+    // Fetch existing URLs for dedup
     const { data: existingUrls } = await supabase.from("articles").select("url").limit(5000);
     const existingUrlSet = new Set((existingUrls || []).map((a: any) => normalizeUrl(a.url)));
 
-    // Fetch ALL sources and approved domains (no limits)
-    const allSources = await fetchAllRows(supabase, "sources", { active: true });
-    const allDomains = await fetchAllRows(supabase, "approved_domains", { active: true, approval_status: "approved" }, { col: "priority", asc: false });
-
-    // Split domains into tiers
-    const tier1Domains = allDomains.filter((d: any) => (d.priority || 0) >= TIER1_PRIORITY_THRESHOLD);
-    const tier2Domains = allDomains.filter((d: any) => (d.priority || 0) < TIER1_PRIORITY_THRESHOLD);
-
     let allDiscovered: DiscoveredArticle[] = [];
     let allUnmatched: RSSItem[] = [];
-    const logs: string[] = [];
-    const CONC = 5;
+    const CONC = 3; // reduced concurrency
 
     function classifyItems(items: SitemapItem[], method: string): { matched: DiscoveredArticle[]; unmatched: RSSItem[] } {
       const matched: DiscoveredArticle[] = [];
@@ -643,146 +554,153 @@ serve(async (req) => {
       return { matched, unmatched };
     }
 
-    // ══════════════════════════════════════════════════════
-    // STEP 1: TIER 1 — Major outlets get full multi-method discovery
-    // ══════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════
+    // STAGE: tier1 — scan batch of Tier 1 domains
+    // ═══════════════════════════════════════════════════════
+    if (stage === "tier1") {
+      const { data: allDomains } = await supabase
+        .from("approved_domains")
+        .select("*")
+        .eq("active", true)
+        .eq("approval_status", "approved")
+        .gte("priority", 70)
+        .order("priority", { ascending: false })
+        .range(offset, offset + limit - 1);
 
-    console.log(`Step 1: Tier 1 full scan for ${tier1Domains.length} major outlets...`);
-    let tier1Discovered = 0;
+      const tier1Batch = allDomains || [];
+      console.log(`Stage tier1: scanning ${tier1Batch.length} domains (offset=${offset}, limit=${limit})`);
 
-    for (let i = 0; i < tier1Domains.length; i += CONC) {
-      const batch = tier1Domains.slice(i, i + CONC);
-      const results = await Promise.allSettled(batch.map(async (dom: any) => {
-        const domain = normalizeDomain(dom.domain);
-        const name = dom.name || domain;
-        let domainMatched: DiscoveredArticle[] = [];
-        let domainUnmatched: RSSItem[] = [];
+      for (let i = 0; i < tier1Batch.length; i += CONC) {
+        const batch = tier1Batch.slice(i, i + CONC);
+        const results = await Promise.allSettled(batch.map(async (dom: any) => {
+          const domain = normalizeDomain(dom.domain);
+          const name = dom.name || domain;
+          let domainMatched: DiscoveredArticle[] = [];
 
-        // 1a. Feed URL
-        if (dom.feed_url) {
+          // Feed URL
+          if (dom.feed_url) {
+            try {
+              const { response: resp, elapsed } = await fetchWithRetry(dom.feed_url, { type: "rss", maxRetries: 1, label: `T1 Feed ${name}` });
+              if (resp?.ok) {
+                const xml = await resp.text();
+                const items = parseRSSItems(xml, domain, name);
+                const { matched } = classifyItems(items, "rss");
+                domainMatched.push(...matched);
+              }
+            } catch {}
+          }
+
+          // Sitemaps (robots.txt → sitemap.xml → news-sitemap.xml)
           try {
-            const { response: resp, elapsed } = await fetchWithRetry(dom.feed_url, { type: "rss", tier1: true, label: `T1 Feed ${name}` });
+            const items = await fetchSitemapItemsForDomain(domain, name, dom.sitemap_url);
+            if (items.length > 0) {
+              const { matched } = classifyItems(items, "sitemap");
+              domainMatched.push(...matched);
+            }
+          } catch {}
+
+          return domainMatched;
+        }));
+
+        for (const r of results) {
+          if (r.status === "fulfilled") allDiscovered.push(...r.value);
+        }
+      }
+
+      // Check if there are more Tier 1 domains
+      const { count } = await supabase
+        .from("approved_domains")
+        .select("id", { count: "exact", head: true })
+        .eq("active", true)
+        .eq("approval_status", "approved")
+        .gte("priority", 70);
+
+      const hasMore = (count || 0) > offset + limit;
+      console.log(`Tier 1 batch: ${allDiscovered.length} matched (hasMore=${hasMore})`);
+
+      // Insert and return
+      const inserted = await insertArticles(allDiscovered, existingUrlSet, activeKeywords, searchTerms, expandedTermMap, supabase, lovableApiKey);
+      return new Response(JSON.stringify({
+        discovered: inserted, stage: "tier1", offset, limit,
+        hasMore, totalTier1: count || 0,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // STAGE: google_news — Google News RSS search
+    // ═══════════════════════════════════════════════════════
+    if (stage === "google_news") {
+      const regions = [
+        { hl: "en", gl: "US", ceid: "US:en" },
+        { hl: "en", gl: "GB", ceid: "GB:en" },
+        { hl: "en", gl: "AU", ceid: "AU:en" },
+      ];
+      // Use only primary keywords (not expanded terms) to limit queries
+      const primaryTerms = activeKeywords.map((k: any) => k.text).slice(0, 5);
+      console.log(`Stage google_news: ${primaryTerms.length} keywords × ${regions.length} regions`);
+
+      for (const term of primaryTerms) {
+        for (const reg of regions) {
+          try {
+            const q = encodeURIComponent(term);
+            const url = `https://news.google.com/rss/search?q=${q}&hl=${reg.hl}&gl=${reg.gl}&ceid=${reg.ceid}`;
+            const { response: resp } = await fetchWithRetry(url, { type: "google_news", maxRetries: 1, label: `GN "${term}" ${reg.gl}` });
             if (resp?.ok) {
               const xml = await resp.text();
-              const items = parseRSSItems(xml, domain, name);
-              const { matched, unmatched } = classifyItems(items, "rss");
-              domainMatched.push(...matched);
-              domainUnmatched.push(...unmatched);
-              logs.push(`T1 Feed ${name}: ${items.length} items, ${matched.length} matched [${elapsed}ms]`);
+              const articles = parseGoogleNewsRSS(xml, term);
+              allDiscovered.push(...articles);
             }
+            await new Promise(r => setTimeout(r, 200));
           } catch {}
         }
-
-        // 1b-e. Sitemap discovery (robots.txt → sitemap.xml → news-sitemap.xml → index traversal)
-        try {
-          const items = await fetchSitemapItemsForDomain(domain, name, dom.sitemap_url, true);
-          if (items.length > 0) {
-            const { matched, unmatched } = classifyItems(items, "sitemap");
-            domainMatched.push(...matched);
-            domainUnmatched.push(...unmatched);
-            logs.push(`T1 Sitemap ${name}: ${items.length} items, ${matched.length} matched`);
-          }
-        } catch {}
-
-        // 1f. Listing page extraction (fallback or supplement)
-        try {
-          const listingItems = await fetchListingPageItems(domain, name, true);
-          if (listingItems.length > 0) {
-            const { matched, unmatched } = classifyItems(listingItems, "listing_page");
-            domainMatched.push(...matched);
-            domainUnmatched.push(...unmatched);
-            logs.push(`T1 Listing ${name}: ${listingItems.length} items, ${matched.length} matched`);
-          }
-        } catch {}
-
-        return { matched: domainMatched, unmatched: domainUnmatched };
-      }));
-
-      for (const r of results) {
-        if (r.status === "fulfilled") {
-          allDiscovered.push(...r.value.matched);
-          allUnmatched.push(...r.value.unmatched);
-          tier1Discovered += r.value.matched.length;
-        }
       }
-      if (i + CONC < tier1Domains.length) await new Promise(r => setTimeout(r, 200));
-    }
-    console.log(`Tier 1 scan complete: ${tier1Discovered} matched articles from ${tier1Domains.length} outlets`);
 
-    // ══════════════════════════════════════════════════════
-    // STEP 2: Google News RSS (multi-region)
-    // ══════════════════════════════════════════════════════
-
-    const regions = [
-      { hl: "en", gl: "US", ceid: "US:en" },
-      { hl: "en", gl: "GB", ceid: "GB:en" },
-      { hl: "en", gl: "AU", ceid: "AU:en" },
-      { hl: "en", gl: "NZ", ceid: "NZ:en" },
-      { hl: "ja", gl: "JP", ceid: "JP:ja" },
-      { hl: "pt", gl: "PT", ceid: "PT:pt" },
-      { hl: "de", gl: "DE", ceid: "DE:de" },
-      { hl: "fr", gl: "FR", ceid: "FR:fr" },
-      { hl: "en", gl: "IE", ceid: "IE:en" },
-    ];
-    console.log(`Step 2: Google News for ${searchTerms.length} keywords across ${regions.length} regions...`);
-    for (const term of searchTerms) {
-      for (const reg of regions) {
-        try {
-          const q = encodeURIComponent(term);
-          const url = `https://news.google.com/rss/search?q=${q}&hl=${reg.hl}&gl=${reg.gl}&ceid=${reg.ceid}`;
-          const { response: resp, elapsed, attempts, error } = await fetchWithRetry(url, { type: "google_news", maxRetries: 1, label: `GN "${term}" ${reg.gl}` });
-          if (resp?.ok) {
-            const xml = await resp.text();
-            const articles = parseGoogleNewsRSS(xml, term);
-            logs.push(`Google News "${term}" (${reg.gl}): ${articles.length} [${elapsed}ms]`);
-            allDiscovered.push(...articles);
-          } else {
-            logs.push(`Google News "${term}" (${reg.gl}): ${error || "failed"}`);
+      // Resolve Google News URLs (limit to first 20)
+      const gnArticles = allDiscovered.filter(a => a.url.includes("news.google.com")).slice(0, 20);
+      for (let i = 0; i < gnArticles.length; i += CONC) {
+        const batch = gnArticles.slice(i, i + CONC);
+        await Promise.allSettled(batch.map(async (article) => {
+          const resolved = await resolveGoogleNewsUrl(article.url);
+          if (resolved !== article.url) {
+            article.url = resolved;
+            try {
+              const resolvedDomain = normalizeDomain(new URL(resolved).hostname);
+              if (!isBlockedDomain(resolvedDomain)) article.source_domain = resolvedDomain;
+            } catch {}
           }
-          await new Promise(r => setTimeout(r, 300));
-        } catch (e: any) {
-          logs.push(`Google News "${term}" (${reg.gl}) error: ${e.message}`);
-        }
+        }));
       }
+
+      const inserted = await insertArticles(allDiscovered, existingUrlSet, activeKeywords, searchTerms, expandedTermMap, supabase, lovableApiKey);
+      return new Response(JSON.stringify({
+        discovered: inserted, stage: "google_news",
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Resolve Google News URLs to canonical publisher URLs
-    console.log(`Resolving ${allDiscovered.filter(a => a.url.includes("news.google.com")).length} Google News URLs...`);
-    const gnArticles = allDiscovered.filter(a => a.url.includes("news.google.com"));
-    for (let i = 0; i < gnArticles.length; i += CONC) {
-      const batch = gnArticles.slice(i, i + CONC);
-      await Promise.allSettled(batch.map(async (article) => {
-        const resolved = await resolveGoogleNewsUrl(article.url);
-        if (resolved !== article.url) {
-          article.url = resolved;
-          try {
-            const resolvedDomain = normalizeDomain(new URL(resolved).hostname);
-            if (!isBlockedDomain(resolvedDomain)) {
-              article.source_domain = resolvedDomain;
-            }
-          } catch {}
-        }
-      }));
-    }
+    // ═══════════════════════════════════════════════════════
+    // STAGE: sources — active source feeds
+    // ═══════════════════════════════════════════════════════
+    if (stage === "sources") {
+      const { data: sources } = await supabase
+        .from("sources")
+        .select("*")
+        .eq("active", true)
+        .range(offset, offset + limit - 1);
 
-    // ══════════════════════════════════════════════════════
-    // STEP 3: Active source feeds (ALL sources)
-    // ══════════════════════════════════════════════════════
+      const srcBatch = sources || [];
+      console.log(`Stage sources: scanning ${srcBatch.length} feeds (offset=${offset})`);
 
-    if (allSources.length > 0) {
-      console.log(`Step 3: Scanning ${allSources.length} active source feeds...`);
-      for (let i = 0; i < allSources.length; i += CONC) {
-        const batch = allSources.slice(i, i + CONC);
+      for (let i = 0; i < srcBatch.length; i += CONC) {
+        const batch = srcBatch.slice(i, i + CONC);
         const results = await Promise.allSettled(batch.map(async (src: any) => {
           try {
-            const { response: resp, elapsed, attempts, error } = await fetchWithRetry(src.rss_url, { type: "rss", maxRetries: 2, label: `RSS ${src.name}` });
+            const { response: resp, elapsed, error } = await fetchWithRetry(src.rss_url, { type: "rss", maxRetries: 1, label: `RSS ${src.name}` });
             if (!resp?.ok) {
-              logs.push(`Source ${src.name}: ${error || `HTTP ${resp?.status}`} [${elapsed}ms, ${attempts} attempts]`);
               await supabase.from("sources").update({
                 consecutive_failures: (src.consecutive_failures || 0) + 1,
                 health_status: (src.consecutive_failures || 0) + 1 >= 5 ? "degraded" : src.health_status,
               }).eq("id", src.id);
-              return { matched: [], unmatched: [] };
+              return [];
             }
             if (src.consecutive_failures > 0) {
               await supabase.from("sources").update({ consecutive_failures: 0, health_status: "healthy", last_success_at: new Date().toISOString() }).eq("id", src.id);
@@ -791,234 +709,196 @@ serve(async (req) => {
             const domain = src.domain || normalizeDomain(new URL(src.rss_url).hostname);
             const items = parseRSSItems(xml, domain, src.name);
             const matched: DiscoveredArticle[] = [];
-            const unmatched: RSSItem[] = [];
             for (const item of items) {
               const kws = matchKeywordsExpanded(`${item.title} ${item.snippet} ${item.url}`, searchTerms);
               if (kws.length > 0) matched.push({ ...item, matched_keywords: kws, discovery_method: "rss" });
-              else unmatched.push(item);
             }
-            logs.push(`Source ${src.name}: ${items.length} items, ${matched.length} matched [${elapsed}ms]`);
-            return { matched, unmatched };
-          } catch { return { matched: [], unmatched: [] }; }
+            return matched;
+          } catch { return []; }
         }));
         for (const r of results) {
-          if (r.status === "fulfilled") { allDiscovered.push(...r.value.matched); allUnmatched.push(...r.value.unmatched); }
+          if (r.status === "fulfilled") allDiscovered.push(...r.value);
         }
-        if (i + CONC < allSources.length) await new Promise(r => setTimeout(r, 150));
       }
+
+      const { count } = await supabase
+        .from("sources")
+        .select("id", { count: "exact", head: true })
+        .eq("active", true);
+
+      const hasMore = (count || 0) > offset + limit;
+      const inserted = await insertArticles(allDiscovered, existingUrlSet, activeKeywords, searchTerms, expandedTermMap, supabase, lovableApiKey);
+      return new Response(JSON.stringify({
+        discovered: inserted, stage: "sources", offset, hasMore,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // ══════════════════════════════════════════════════════
-    // STEP 4: Tier 2 approved domains — feeds + sitemaps
-    // ══════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════
+    // STAGE: tier2 — Tier 2 approved domains
+    // ═══════════════════════════════════════════════════════
+    if (stage === "tier2") {
+      const { data: t2Domains } = await supabase
+        .from("approved_domains")
+        .select("*")
+        .eq("active", true)
+        .eq("approval_status", "approved")
+        .lt("priority", 70)
+        .order("priority", { ascending: false })
+        .range(offset, offset + limit - 1);
 
-    if (tier2Domains.length > 0) {
-      console.log(`Step 4: Tier 2 scan for ${tier2Domains.length} approved domains...`);
+      const t2Batch = t2Domains || [];
+      console.log(`Stage tier2: scanning ${t2Batch.length} domains (offset=${offset})`);
 
-      // 4a. Domain feeds
-      const t2WithFeeds = tier2Domains.filter((d: any) => d.feed_url);
-      for (let i = 0; i < t2WithFeeds.length; i += CONC) {
-        const batch = t2WithFeeds.slice(i, i + CONC);
-        const results = await Promise.allSettled(batch.map(async (dom: any) => {
-          try {
-            const { response: resp, elapsed } = await fetchWithRetry(dom.feed_url, { type: "rss", label: `T2 Feed ${dom.name}` });
-            if (!resp?.ok) return { matched: [], unmatched: [] };
-            const xml = await resp.text();
-            const items = parseRSSItems(xml, dom.domain, dom.name);
-            const { matched, unmatched } = classifyItems(items, "feed");
-            logs.push(`T2 Feed ${dom.name}: ${items.length} items, ${matched.length} matched [${elapsed}ms]`);
-            return { matched, unmatched };
-          } catch { return { matched: [], unmatched: [] }; }
-        }));
-        for (const r of results) {
-          if (r.status === "fulfilled") { allDiscovered.push(...r.value.matched); allUnmatched.push(...r.value.unmatched); }
-        }
-      }
-
-      // 4b. Sitemap discovery for Tier 2
-      let t2SitemapMatched = 0;
-      for (let i = 0; i < tier2Domains.length; i += CONC) {
-        const batch = tier2Domains.slice(i, i + CONC);
+      for (let i = 0; i < t2Batch.length; i += CONC) {
+        const batch = t2Batch.slice(i, i + CONC);
         const results = await Promise.allSettled(batch.map(async (dom: any) => {
           const domain = normalizeDomain(dom.domain);
+          const name = dom.name || domain;
+
+          // Feed first
+          if (dom.feed_url) {
+            try {
+              const { response: resp } = await fetchWithRetry(dom.feed_url, { type: "rss", maxRetries: 1, label: `T2 Feed ${name}` });
+              if (resp?.ok) {
+                const xml = await resp.text();
+                const items = parseRSSItems(xml, domain, name);
+                const { matched } = classifyItems(items, "feed");
+                if (matched.length > 0) return matched;
+              }
+            } catch {}
+          }
+
+          // Sitemap fallback
           try {
-            const items = await fetchSitemapItemsForDomain(domain, dom.name, dom.sitemap_url, false);
-            if (items.length === 0) {
-              const listingItems = await fetchListingPageItems(domain, dom.name, false);
-              return classifyItems(listingItems, "listing_page");
+            const items = await fetchSitemapItemsForDomain(domain, name, dom.sitemap_url);
+            if (items.length > 0) {
+              const { matched } = classifyItems(items, "sitemap");
+              return matched;
             }
-            return classifyItems(items, "sitemap");
-          } catch { return { matched: [], unmatched: [] }; }
+          } catch {}
+
+          return [] as DiscoveredArticle[];
         }));
         for (const r of results) {
-          if (r.status === "fulfilled") {
-            allDiscovered.push(...r.value.matched);
-            allUnmatched.push(...r.value.unmatched);
-            t2SitemapMatched += r.value.matched.length;
-          }
-        }
-        if (i + CONC < tier2Domains.length) await new Promise(r => setTimeout(r, 200));
-      }
-      console.log(`Tier 2 discovery: ${t2SitemapMatched} sitemap-matched articles`);
-    }
-
-    // ══════════════════════════════════════════════════════
-    // STEP 5: Deep scan unmatched — prioritize Tier 1
-    // ══════════════════════════════════════════════════════
-
-    let deepScanned = 0;
-    if (deepScanLimit > 0 && allUnmatched.length > 0) {
-      const tier1DomainSet = new Set(tier1Domains.map((d: any) => normalizeDomain(d.domain)));
-      const sortedUnmatched = allUnmatched
-        .filter(item => !existingUrlSet.has(normalizeUrl(item.url)))
-        .sort((a, b) => {
-          const aPri = tier1DomainSet.has(normalizeDomain(a.source_domain)) ? 1 : 0;
-          const bPri = tier1DomainSet.has(normalizeDomain(b.source_domain)) ? 1 : 0;
-          if (aPri !== bPri) return bPri - aPri;
-          return new Date(b.published_at || 0).getTime() - new Date(a.published_at || 0).getTime();
-        })
-        .slice(0, deepScanLimit);
-
-      console.log(`Step 5: Deep scanning ${sortedUnmatched.length} article bodies (Tier 1 prioritized)...`);
-      for (let i = 0; i < sortedUnmatched.length; i += 3) {
-        const batch = sortedUnmatched.slice(i, i + 3);
-        const results = await Promise.allSettled(batch.map(async item => {
-          deepScanned++;
-          const isTier1Item = tier1DomainSet.has(normalizeDomain(item.source_domain));
-          const result = await fetchArticleDetails(item.url, true, isTier1Item);
-          if (!result) return null;
-          const kws = matchKeywordsExpanded(result.text, searchTerms);
-          if (kws.length > 0) {
-            return {
-              ...item,
-              matched_keywords: kws,
-              language: result.lang,
-              published_at: item.published_at || result.publishedAt,
-              discovery_method: "body_scan",
-            } as DiscoveredArticle;
-          }
-          return null;
-        }));
-        for (const r of results) { if (r.status === "fulfilled" && r.value) allDiscovered.push(r.value); }
-      }
-    }
-
-    // ── Dedup ────────────────────────────────────────────
-    console.log(`Total candidates before dedup: ${allDiscovered.length}`);
-    const seen = new Set<string>();
-    allDiscovered = allDiscovered.filter(a => {
-      if (isBlockedDomain(a.source_domain) || isBlockedUrl(a.url)) return false;
-      const n = normalizeUrl(a.url);
-      if (seen.has(n) || existingUrlSet.has(n)) return false;
-      seen.add(n);
-      return true;
-    });
-    console.log(`After dedup: ${allDiscovered.length} new articles`);
-
-    // ── Resolve missing publication dates ────────────────
-    const unresolvedDates = allDiscovered.filter(a => !a.published_at);
-    if (unresolvedDates.length > 0) {
-      console.log(`Resolving dates for ${unresolvedDates.length} articles...`);
-      for (let i = 0; i < unresolvedDates.length; i += 3) {
-        const batch = unresolvedDates.slice(i, i + 3);
-        await Promise.allSettled(batch.map(async article => {
-          const details = await fetchArticleDetails(article.url, false);
-          if (details) {
-            article.published_at = article.published_at || details.publishedAt;
-            article.language = article.language || details.lang;
-          }
-        }));
-      }
-    }
-
-    // ── Auto-discover new domains ────────────────────────
-    const knownDomains = new Set([
-      ...allSources.map((s: any) => normalizeDomain(s.domain || "")),
-      ...allDomains.map((d: any) => normalizeDomain(d.domain)),
-    ]);
-    const newDomains = new Map<string, { name: string; count: number }>();
-    for (const a of allDiscovered) {
-      if (a.source_domain) {
-        const key = normalizeDomain(a.source_domain);
-        if (!knownDomains.has(key) && !isBlockedDomain(key)) {
-          const ex = newDomains.get(key);
-          if (ex) ex.count++; else newDomains.set(key, { name: a.source_name, count: 1 });
+          if (r.status === "fulfilled") allDiscovered.push(...r.value);
         }
       }
-    }
-    if (newDomains.size > 0) {
-      const candidates = Array.from(newDomains.entries()).map(([domain, info]) => ({
-        domain, name: info.name || domain, approval_status: "pending", auto_discovered: true, active: false, priority: 30,
-      }));
-      const { data: existingDoms } = await supabase.from("approved_domains").select("domain").in("domain", candidates.map(c => c.domain));
-      const existSet = new Set((existingDoms || []).map((d: any) => normalizeDomain(d.domain)));
-      const trulyNew = candidates.filter(c => !existSet.has(normalizeDomain(c.domain)));
-      if (trulyNew.length > 0) {
-        await supabase.from("approved_domains").insert(trulyNew);
-        console.log(`Auto-discovered ${trulyNew.length} new domains`);
-      }
-    }
 
-    // ── Insert ───────────────────────────────────────────
-    let totalInserted = 0;
-    const keywordMatchUpdates: Record<string, number> = {};
-    const BATCH = 10;
+      const { count } = await supabase
+        .from("approved_domains")
+        .select("id", { count: "exact", head: true })
+        .eq("active", true)
+        .eq("approval_status", "approved")
+        .lt("priority", 70);
 
-    for (let b = 0; b < allDiscovered.length; b += BATCH) {
-      const batch = allDiscovered.slice(b, b + BATCH);
-      const toInsert = batch.map(a => {
-        for (const kw of a.matched_keywords) {
-          const k = activeKeywords.find((x: any) => x.text === kw);
-          if (k) keywordMatchUpdates[k.id] = (keywordMatchUpdates[k.id] || 0) + 1;
-        }
-        const matchedSource = allSources.find((s: any) =>
-          normalizeDomain(s.domain || "") === normalizeDomain(a.source_domain)
-          || (s.rss_url && normalizeDomain(new URL(s.rss_url).hostname) === normalizeDomain(a.source_domain))
-        );
-        return {
-          title: a.title, snippet: a.snippet.slice(0, 500), url: a.url,
-          source_id: matchedSource?.id || null,
-          source_name: a.source_name || null,
-          source_domain: a.source_domain || null,
-          published_at: a.published_at || new Date().toISOString(), fetched_at: new Date().toISOString(),
-          matched_keywords: a.matched_keywords,
-          language: a.language || null,
-          sentiment: "neutral" as string, sentiment_score: 0.5,
-          discovery_method: a.discovery_method || "rss",
-          matched_via: "title_snippet",
-        };
-      });
-
-      const sentiments = await analyzeSentimentBatch(toInsert.map(a => ({ title: a.title, snippet: a.snippet || "" })), lovableApiKey);
-      toInsert.forEach((a, i) => { a.sentiment = sentiments[i].sentiment; a.sentiment_score = sentiments[i].score; });
-
-      const { data: ins, error } = await supabase.from("articles").upsert(toInsert, { onConflict: "url", ignoreDuplicates: true }).select("id");
-      if (error) console.error("Insert error:", error);
-      else totalInserted += ins?.length || 0;
+      const hasMore = (count || 0) > offset + limit;
+      const inserted = await insertArticles(allDiscovered, existingUrlSet, activeKeywords, searchTerms, expandedTermMap, supabase, lovableApiKey);
+      return new Response(JSON.stringify({
+        discovered: inserted, stage: "tier2", offset, hasMore,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    for (const [id, count] of Object.entries(keywordMatchUpdates)) {
-      const kw = activeKeywords.find((k: any) => k.id === id);
-      if (kw) await supabase.from("keywords").update({ match_count: (kw as any).match_count + count }).eq("id", id);
-    }
-
-    const summary = {
-      discovered: totalInserted,
-      totalCandidates: allDiscovered.length,
-      tier1Discovered,
-      deepScanned,
-      newDomainsFound: newDomains.size,
-      sourcesScanned: allSources.length,
-      tier1Domains: tier1Domains.length,
-      tier2Domains: tier2Domains.length,
-      keywordsUsed: searchTerms,
-      methods: ["tier1_full_scan", "google_news_rss", "source_feeds", "tier2_feeds", "tier2_sitemaps", deepScanLimit > 0 ? "deep_scan" : null].filter(Boolean),
-    };
-    console.log("Discovery complete:", JSON.stringify(summary));
-
-    return new Response(JSON.stringify(summary), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: "Unknown stage", stage }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     console.error("discover-articles error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });
+
+// ── Insert helper ────────────────────────────────────────
+
+async function insertArticles(
+  allDiscovered: DiscoveredArticle[],
+  existingUrlSet: Set<string>,
+  activeKeywords: any[],
+  searchTerms: string[],
+  expandedTermMap: Map<string, string>,
+  supabase: any,
+  lovableApiKey: string,
+): Promise<number> {
+  // Dedup
+  const seen = new Set<string>();
+  allDiscovered = allDiscovered.filter(a => {
+    if (isBlockedDomain(a.source_domain) || isBlockedUrl(a.url)) return false;
+    const n = normalizeUrl(a.url);
+    if (seen.has(n) || existingUrlSet.has(n)) return false;
+    seen.add(n);
+    return true;
+  });
+
+  if (allDiscovered.length === 0) return 0;
+  console.log(`Inserting ${allDiscovered.length} new articles`);
+
+  // Fetch sources for matching
+  const { data: allSources } = await supabase.from("sources").select("id,domain,rss_url,name").eq("active", true).limit(500);
+  const sources = allSources || [];
+
+  let totalInserted = 0;
+  const keywordMatchUpdates: Record<string, number> = {};
+  const BATCH = 10;
+
+  for (let b = 0; b < allDiscovered.length; b += BATCH) {
+    const batch = allDiscovered.slice(b, b + BATCH);
+    const toInsert = batch.map(a => {
+      for (const kw of a.matched_keywords) {
+        const k = activeKeywords.find((x: any) => x.text === kw);
+        if (k) keywordMatchUpdates[k.id] = (keywordMatchUpdates[k.id] || 0) + 1;
+      }
+      const matchedSource = sources.find((s: any) =>
+        normalizeDomain(s.domain || "") === normalizeDomain(a.source_domain)
+        || (s.rss_url && normalizeDomain(new URL(s.rss_url).hostname) === normalizeDomain(a.source_domain))
+      );
+      return {
+        title: a.title, snippet: (a.snippet || "").slice(0, 500), url: a.url,
+        source_id: matchedSource?.id || null,
+        source_name: a.source_name || null,
+        source_domain: a.source_domain || null,
+        published_at: a.published_at || new Date().toISOString(), fetched_at: new Date().toISOString(),
+        matched_keywords: a.matched_keywords,
+        language: a.language || null,
+        sentiment: "neutral" as string, sentiment_score: 0.5,
+        discovery_method: a.discovery_method || "rss",
+        matched_via: "title_snippet",
+      };
+    });
+
+    const sentiments = await analyzeSentimentBatch(toInsert.map(a => ({ title: a.title, snippet: a.snippet || "" })), lovableApiKey);
+    toInsert.forEach((a, i) => { a.sentiment = sentiments[i].sentiment; a.sentiment_score = sentiments[i].score; });
+
+    const { data: ins, error } = await supabase.from("articles").upsert(toInsert, { onConflict: "url", ignoreDuplicates: true }).select("id");
+    if (error) console.error("Insert error:", error);
+    else totalInserted += ins?.length || 0;
+  }
+
+  for (const [id, count] of Object.entries(keywordMatchUpdates)) {
+    const kw = activeKeywords.find((k: any) => k.id === id);
+    if (kw) await supabase.from("keywords").update({ match_count: (kw as any).match_count + count }).eq("id", id);
+  }
+
+  // Auto-discover new domains
+  const knownDomains = new Set(sources.map((s: any) => normalizeDomain(s.domain || "")));
+  const newDomains = new Map<string, { name: string; count: number }>();
+  for (const a of allDiscovered) {
+    if (a.source_domain) {
+      const key = normalizeDomain(a.source_domain);
+      if (!knownDomains.has(key) && !isBlockedDomain(key)) {
+        const ex = newDomains.get(key);
+        if (ex) ex.count++; else newDomains.set(key, { name: a.source_name, count: 1 });
+      }
+    }
+  }
+  if (newDomains.size > 0) {
+    const candidates = Array.from(newDomains.entries()).map(([domain, info]) => ({
+      domain, name: info.name || domain, approval_status: "pending", auto_discovered: true, active: false, priority: 30,
+    }));
+    const { data: existingDoms } = await supabase.from("approved_domains").select("domain").in("domain", candidates.map(c => c.domain));
+    const existSet = new Set((existingDoms || []).map((d: any) => normalizeDomain(d.domain)));
+    const trulyNew = candidates.filter(c => !existSet.has(normalizeDomain(c.domain)));
+    if (trulyNew.length > 0) {
+      await supabase.from("approved_domains").insert(trulyNew);
+      console.log(`Auto-discovered ${trulyNew.length} new domains`);
+    }
+  }
+
+  return totalInserted;
+}
