@@ -109,7 +109,7 @@ Extract the following as JSON:
 
 Be precise. If information is not available, use null. Do not invent data.`;
 
-    const aiRes = await fetch("https://ai.lovable.dev/api/generate", {
+    const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${lovableApiKey}`,
@@ -117,7 +117,10 @@ Be precise. If information is not available, use null. Do not invent data.`;
       },
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
-        prompt: extractionPrompt,
+        messages: [
+          { role: "system", content: "You extract structured data from articles. Return only valid JSON." },
+          { role: "user", content: extractionPrompt },
+        ],
       }),
     });
 
@@ -135,7 +138,7 @@ Be precise. If information is not available, use null. Do not invent data.`;
 
     if (aiRes.ok) {
       const aiData = await aiRes.json();
-      const text = aiData?.text || aiData?.choices?.[0]?.message?.content || "";
+      const text = aiData?.choices?.[0]?.message?.content || "";
       console.log("AI response length:", text.length);
 
       try {
