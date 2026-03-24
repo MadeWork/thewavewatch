@@ -76,7 +76,7 @@
 
 @layer components {
   .monitor-card {
-    @apply bg-card rounded-[20px] p-6;
+    @apply bg-card rounded-[20px] p-4 md:p-6;
   }
   .section-label {
     font-size: 11px;
