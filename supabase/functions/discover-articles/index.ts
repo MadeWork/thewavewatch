@@ -700,8 +700,8 @@ serve(async (req) => {
         const batch = domainsWithFeeds.slice(i, i + CONC);
         const results = await Promise.allSettled(batch.map(async (dom: any) => {
           try {
-            const resp = await fetchWithTimeout(dom.feed_url, 8000);
-            if (!resp.ok) return { matched: [], unmatched: [] };
+            const { response: resp, elapsed, attempts } = await fetchWithRetry(dom.feed_url, { type: "rss", maxRetries: 2, label: `Feed ${dom.name}` });
+            if (!resp?.ok) return { matched: [], unmatched: [] };
             const xml = await resp.text();
             const items = parseRSSItems(xml, dom.domain, dom.name);
             const matched: DiscoveredArticle[] = [];
@@ -711,7 +711,7 @@ serve(async (req) => {
               if (kws.length > 0) matched.push({ ...item, matched_keywords: kws, discovery_method: "feed" });
               else unmatched.push(item);
             }
-            logs.push(`Feed ${dom.name}: ${items.length} items, ${matched.length} matched`);
+            logs.push(`Feed ${dom.name}: ${items.length} items, ${matched.length} matched [${elapsed}ms, ${attempts} attempts]`);
             return { matched, unmatched };
           } catch { return { matched: [], unmatched: [] }; }
         }));
