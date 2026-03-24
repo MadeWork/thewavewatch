@@ -249,14 +249,13 @@ function extractReadableText(html: string): string {
 async function resolveGoogleNewsUrl(gnUrl: string): Promise<string> {
   if (!gnUrl.includes("news.google.com")) return gnUrl;
   try {
-    const resp = await fetchWithTimeout(gnUrl, 6000);
+    const { response: resp } = await fetchWithRetry(gnUrl, { type: "resolve", maxRetries: 1, label: "GN resolve" });
+    if (!resp) return gnUrl;
     const finalUrl = resp.url;
-    // Consume body to free resources
     await resp.text().catch(() => {});
     if (finalUrl && !finalUrl.includes("news.google.com") && !finalUrl.includes("consent.google.com")) {
       return finalUrl;
     }
-    // Try to extract from the HTML if redirect didn't resolve
     return gnUrl;
   } catch {
     return gnUrl;
