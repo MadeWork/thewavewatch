@@ -367,18 +367,18 @@ async function fetchSitemapItemsForDomain(domain: string, name: string, sitemapU
   for (const smUrl of sitemapUrls.slice(0, 4)) {
     if (allItems.length >= 80) break;
     try {
-      const resp = await fetchWithTimeout(smUrl, 5000);
-      if (!resp.ok) { await resp.text().catch(() => {}); continue; }
+      const { response: resp, elapsed } = await fetchWithRetry(smUrl, { type: "sitemap", maxRetries: 1, label: `sitemap ${domain}` });
+      if (!resp?.ok) { if (resp) await resp.text().catch(() => {}); continue; }
       const xml = await resp.text();
+      console.log(`[sitemap] ${domain} ${smUrl.split("/").pop()} fetched in ${elapsed}ms`);
 
       if (/<sitemapindex/i.test(xml)) {
-        // Traverse sitemap index — take last 3 child sitemaps (most recent)
         const children = parseSitemapIndex(xml).slice(-3);
         for (const childUrl of children) {
           if (allItems.length >= 80) break;
           try {
-            const childResp = await fetchWithTimeout(childUrl, 5000);
-            if (!childResp.ok) { await childResp.text().catch(() => {}); continue; }
+            const { response: childResp } = await fetchWithRetry(childUrl, { type: "sitemap", maxRetries: 1, label: `child sitemap ${domain}` });
+            if (!childResp?.ok) { if (childResp) await childResp.text().catch(() => {}); continue; }
             const childXml = await childResp.text();
             allItems.push(...parseSitemapItems(childXml, domain, name).slice(-30));
           } catch {}
