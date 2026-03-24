@@ -142,8 +142,8 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body = await req.json().catch(() => ({}));
-    const maxDomains = Math.max(1, Math.min(Number(body.max_domains || 3), 5));
-    const deepScanLimit = Math.max(0, Math.min(Number(body.deep_scan_limit || 8), 12));
+    const maxDomains = Math.max(1, Number(body.max_domains || 20));
+    const deepScanLimit = Math.max(0, Number(body.deep_scan_limit || 15));
     const domainOffset = Math.max(0, Number(body.offset || 0));
 
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
@@ -155,7 +155,17 @@ serve(async (req) => {
     const { data: existingUrls } = await supabase.from("articles").select("url").limit(5000);
     const existingUrlSet = new Set((existingUrls || []).map((a: any) => normalizeUrl(a.url)));
 
-    const { data: domains } = await supabase.from("approved_domains").select("*").eq("active", true).eq("approval_status", "approved").order("priority", { ascending: false }).range(domainOffset, domainOffset + maxDomains - 1);
+    // Fetch all approved domains, paginated, ordered by priority
+    let allApprovedDomains: any[] = [];
+    let dOffset = domainOffset;
+    while (true) {
+      const { data: batch } = await supabase.from("approved_domains").select("*").eq("active", true).eq("approval_status", "approved").order("priority", { ascending: false }).range(dOffset, dOffset + 499);
+      if (!batch || batch.length === 0) break;
+      allApprovedDomains = allApprovedDomains.concat(batch);
+      if (batch.length < 500) break;
+      dOffset += 500;
+    }
+    const domains = allApprovedDomains.slice(0, maxDomains);
 
     let discovered: { title: string; snippet: string; url: string; published_at: string; source_domain: string; source_name: string; matched_keywords: string[] }[] = [];
     let unmatchedForDeepScan: SitemapItem[] = [];

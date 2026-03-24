@@ -68,20 +68,22 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       }
       setState(s => ({ ...s, progress: 40 }));
 
-      // Step 2: discover-sitemaps in 3 batches (40-70%)
+      // Step 2: discover-sitemaps in batches of 20 domains (40-70%)
       let sitemapCount = 0;
-      for (let batch = 0; batch < 3; batch++) {
+      const SITEMAP_BATCH_SIZE = 20;
+      const SITEMAP_BATCHES = 5;
+      for (let batch = 0; batch < SITEMAP_BATCHES; batch++) {
         setState(s => ({
           ...s,
-          progress: 42 + batch * 10,
-          stage: { step: "sitemaps", label: `Scanning sitemaps… (${batch + 1}/3)` },
+          progress: 42 + batch * 5,
+          stage: { step: "sitemaps", label: `Scanning sitemaps… (${batch + 1}/${SITEMAP_BATCHES})` },
         }));
         try {
           const sitemapResult = await withTimeout(
             supabase.functions.invoke("discover-sitemaps", {
-              body: { max_domains: 5, deep_scan_limit: 15, offset: batch * 5 },
+              body: { max_domains: SITEMAP_BATCH_SIZE, deep_scan_limit: 15, offset: batch * SITEMAP_BATCH_SIZE },
             }),
-            50000
+            60000
           );
           if (sitemapResult && !sitemapResult.error) {
             sitemapCount += sitemapResult.data?.discovered ?? 0;
@@ -97,22 +99,12 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       let rssCount = 0;
       let rssPendingInBackground = false;
       try {
-        // Batch 1: first 120 sources
+        // Batch 1: all sources (no artificial cap)
         const rss1 = await withTimeout(
-          supabase.functions.invoke("fetch-rss", { body: { max_sources: 120 } }),
-          50000
+          supabase.functions.invoke("fetch-rss", { body: { max_sources: 500 } }),
+          90000
         );
         if (rss1 && !rss1.error) rssCount += rss1.data?.totalInserted ?? 0;
-        setState(s => ({ ...s, progress: 74 }));
-
-        // Batch 2: next 120 (offset handled by slicing stored+hydrated)
-        const rss2 = await withTimeout(
-          supabase.functions.invoke("fetch-rss", { body: { max_sources: 200 } }),
-          50000
-        );
-        if (rss2 && !rss2.error) {
-          rssCount += rss2.data?.totalInserted ?? 0;
-        }
       } catch {}
       setState(s => ({ ...s, progress: 80 }));
 

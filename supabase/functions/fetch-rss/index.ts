@@ -303,7 +303,7 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body = await req.json().catch(() => ({}));
-    const maxSources = Math.min(Number(body.max_sources || 120), 200);
+    const maxSources = Number(body.max_sources || 500);
 
     // Fetch ALL active sources + hydrate missing approved domains into virtual fetch targets
     const storedSources = await fetchAllSources(supabase);
