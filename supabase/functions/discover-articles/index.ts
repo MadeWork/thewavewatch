@@ -685,6 +685,7 @@ serve(async (req) => {
         .from("sources")
         .select("*")
         .eq("active", true)
+        .order("fetch_priority", { ascending: false })
         .range(offset, offset + limit - 1);
 
       const srcBatch = sources || [];
