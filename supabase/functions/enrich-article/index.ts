@@ -138,7 +138,7 @@ Be precise. If information is not available, use null. Do not invent data.`;
 
     if (aiRes.ok) {
       const aiData = await aiRes.json();
-      const text = aiData?.text || aiData?.choices?.[0]?.message?.content || "";
+      const text = aiData?.choices?.[0]?.message?.content || "";
       console.log("AI response length:", text.length);
 
       try {
