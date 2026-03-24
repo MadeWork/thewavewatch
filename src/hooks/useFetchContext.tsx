@@ -116,30 +116,28 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       } catch {}
       setState(s => ({ ...s, progress: 80 }));
 
-      // Step 4: Firecrawl AI search - only for under-served keywords (80-95%)
-      setState(s => ({ ...s, progress: 82, stage: { step: "firecrawl", label: "AI-powered web search…" } }));
+      // Step 4: Firecrawl hybrid search — discovery + scrape + AI classification (80-95%)
+      setState(s => ({ ...s, progress: 82, stage: { step: "firecrawl", label: "Firecrawl search + AI filtering…" } }));
       let firecrawlCount = 0;
       try {
         const priorCounts: Record<string, number> = {};
-        // Pass rough counts so Firecrawl skips well-covered keywords
         if (discCount + sitemapCount + rssCount > 0) {
-          // distribute evenly as approximation
           const avg = Math.floor((discCount + sitemapCount + rssCount) / Math.max(1, 1));
           priorCounts["_default"] = avg;
         }
         const fcResult = await withTimeout(
-          supabase.functions.invoke("firecrawl-search", { body: { max_results: 5, min_threshold: 3, prior_counts: priorCounts } }),
-          60000
+          supabase.functions.invoke("firecrawl-search", { body: { max_results: 5, min_threshold: 3, prior_counts: priorCounts, enable_scrape: true, enable_ai_classify: true } }),
+          90000
         );
         if (fcResult && !fcResult.error) firecrawlCount = fcResult.data?.discovered ?? 0;
       } catch {}
 
-      // Step 5: AI-powered discovery - Lovable AI generates smart queries → Firecrawl (95-99%)
-      setState(s => ({ ...s, progress: 95, stage: { step: "firecrawl", label: "AI-powered smart discovery…" } }));
+      // Step 5: AI-powered smart discovery — multi-angle queries + relevance classification (95-99%)
+      setState(s => ({ ...s, progress: 95, stage: { step: "firecrawl", label: "AI smart discovery + classification…" } }));
       let aiDiscoverCount = 0;
       try {
         const aiResult = await withTimeout(
-          supabase.functions.invoke("ai-discover", { body: { max_queries: 6, max_results: 8 } }),
+          supabase.functions.invoke("ai-discover", { body: { max_queries: 6, max_results: 8, relevance_threshold: 0.4 } }),
           90000
         );
         if (aiResult && !aiResult.error) aiDiscoverCount = aiResult.data?.discovered ?? 0;
