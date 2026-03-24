@@ -29,9 +29,24 @@ interface RSSItem {
   source_name: string;
 }
 
+// ── Timeout presets per request type ─────────────────────
+
+const TIMEOUTS = {
+  rss: 15000,
+  sitemap: 15000,
+  listing: 20000,
+  article: 25000,
+  robots: 6000,
+  google_news: 12000,
+  resolve: 10000,
+  default: 15000,
+} as const;
+
+type TimeoutType = keyof typeof TIMEOUTS;
+
 // ── Utilities ────────────────────────────────────────────
 
-async function fetchWithTimeout(url: string, timeoutMs = 8000): Promise<Response> {
+async function fetchWithTimeout(url: string, timeoutMs = 15000): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -43,6 +58,46 @@ async function fetchWithTimeout(url: string, timeoutMs = 8000): Promise<Response
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/** Fetch with retry + exponential backoff. Retries on timeout, network error, 5xx. */
+async function fetchWithRetry(
+  url: string,
+  opts: { timeout?: number; type?: TimeoutType; maxRetries?: number; label?: string } = {}
+): Promise<{ response: Response | null; elapsed: number; attempts: number; error?: string }> {
+  const timeoutMs = opts.timeout ?? TIMEOUTS[opts.type ?? "default"];
+  const maxRetries = opts.maxRetries ?? 2;
+  const label = opts.label ?? url.slice(0, 80);
+  let lastError = "";
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      const backoff = Math.min(1000 * Math.pow(2, attempt - 1), 4000);
+      await new Promise(r => setTimeout(r, backoff));
+    }
+    const start = Date.now();
+    try {
+      const resp = await fetchWithTimeout(url, timeoutMs);
+      const elapsed = Date.now() - start;
+      if (resp.status >= 500 && attempt < maxRetries) {
+        lastError = `HTTP ${resp.status}`;
+        await resp.text().catch(() => {});
+        console.log(`[retry] ${label}: ${lastError}, attempt ${attempt + 1}/${maxRetries + 1} (${elapsed}ms)`);
+        continue;
+      }
+      return { response: resp, elapsed, attempts: attempt + 1 };
+    } catch (e: any) {
+      const elapsed = Date.now() - start;
+      const isTimeout = e.name === "AbortError" || e.message?.includes("abort");
+      lastError = isTimeout ? `timeout (${timeoutMs}ms)` : (e.message || "network error");
+      if (attempt < maxRetries) {
+        console.log(`[retry] ${label}: ${lastError}, attempt ${attempt + 1}/${maxRetries + 1} (${elapsed}ms)`);
+        continue;
+      }
+      return { response: null, elapsed, attempts: attempt + 1, error: lastError };
+    }
+  }
+  return { response: null, elapsed: 0, attempts: maxRetries + 1, error: lastError };
 }
 
 function stripHtml(text: string): string {
