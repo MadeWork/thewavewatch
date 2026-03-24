@@ -30,6 +30,26 @@ function normalizeDomain(d: string): string {
   return d.replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/.*$/, "").trim().toLowerCase();
 }
 
+const BLOCKED_DOMAINS = new Set([
+  "facebook.com", "m.facebook.com", "l.facebook.com",
+  "twitter.com", "x.com", "mobile.twitter.com",
+  "instagram.com", "linkedin.com",
+  "youtube.com", "m.youtube.com", "youtu.be",
+  "tiktok.com", "reddit.com", "old.reddit.com",
+  "pinterest.com", "tumblr.com", "snapchat.com",
+  "threads.net", "mastodon.social", "bsky.app",
+  "t.me", "telegram.org", "wa.me", "whatsapp.com",
+  "discord.com", "discord.gg",
+]);
+
+function isBlockedDomain(domain: string): boolean {
+  const d = normalizeDomain(domain);
+  for (const blocked of BLOCKED_DOMAINS) {
+    if (d === blocked || d.endsWith("." + blocked)) return true;
+  }
+  return false;
+}
+
 function getXmlTag(c: string, tag: string): string {
   const m = c.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`, "i"));
   return m ? m[1].trim() : "";
@@ -223,6 +243,7 @@ serve(async (req) => {
 
       for (const item of allItems) {
         if (existingUrlSet.has(normalizeUrl(item.url))) continue;
+        if (isBlockedDomain(item.source_domain)) continue;
         const kws = matchKeywords(`${item.title} ${item.snippet} ${item.url}`, searchTerms);
         if (kws.length > 0) {
           discovered.push({ ...item, matched_keywords: kws });
