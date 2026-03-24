@@ -18,11 +18,39 @@ interface FetchTarget {
   isVirtual: boolean;
 }
 
-async function fetchWithTimeout(url: string, timeoutMs = 6000): Promise<Response> {
+async function fetchWithTimeout(url: string, timeoutMs = 15000): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try { return await fetch(url, { signal: controller.signal, headers: { "User-Agent": "MediaPulse/1.0 RSS Reader" } }); }
   finally { clearTimeout(timeout); }
+}
+
+async function fetchWithRetry(url: string, timeoutMs = 15000, maxRetries = 2, label = ""): Promise<{ response: Response | null; elapsed: number; attempts: number; error?: string }> {
+  let lastError = "";
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
+    const start = Date.now();
+    try {
+      const resp = await fetchWithTimeout(url, timeoutMs);
+      const elapsed = Date.now() - start;
+      if (resp.status >= 500 && attempt < maxRetries) {
+        await resp.text().catch(() => {});
+        console.log(`[retry] ${label || url.slice(0, 60)}: HTTP ${resp.status}, attempt ${attempt + 1} (${elapsed}ms)`);
+        lastError = `HTTP ${resp.status}`;
+        continue;
+      }
+      return { response: resp, elapsed, attempts: attempt + 1 };
+    } catch (e: any) {
+      const elapsed = Date.now() - start;
+      lastError = e.name === "AbortError" ? `timeout (${timeoutMs}ms)` : (e.message || "network error");
+      if (attempt < maxRetries) {
+        console.log(`[retry] ${label || url.slice(0, 60)}: ${lastError}, attempt ${attempt + 1} (${elapsed}ms)`);
+        continue;
+      }
+      return { response: null, elapsed, attempts: attempt + 1, error: lastError };
+    }
+  }
+  return { response: null, elapsed: 0, attempts: maxRetries + 1, error: lastError };
 }
 
 function normalizeUrl(url: string): string {
@@ -151,8 +179,8 @@ function extractPublishedAtFromHtml(html: string): string | null {
 
 async function fetchArticleMetadata(url: string): Promise<{ published_at: string | null; language: string | null } | null> {
   try {
-    const resp = await fetchWithTimeout(url, 6000);
-    if (!resp.ok) return null;
+    const { response: resp } = await fetchWithRetry(url, 25000, 2, `metadata ${url.slice(0, 50)}`);
+    if (!resp?.ok) return null;
     const ct = resp.headers.get("content-type") || "";
     if (!ct.includes("text/html") && !ct.includes("application/xhtml")) { await resp.text(); return null; }
     const html = await resp.text();
@@ -254,8 +282,9 @@ async function analyzeSentimentBatch(items: { title: string; snippet: string }[]
 }
 
 const domainLastFetch: Record<string, number> = {};
-async function rateLimitedFetch(url: string, crawlDelayMs: number): Promise<Response> {
-  return fetchWithTimeout(url, 6000);
+async function rateLimitedFetch(url: string, crawlDelayMs: number): Promise<Response | null> {
+  const { response } = await fetchWithRetry(url, 15000, 2, `RSS ${url.slice(0, 50)}`);
+  return response;
 }
 
 // ── Paginated fetch ──────────────────────────────────────
@@ -361,29 +390,29 @@ serve(async (req) => {
 
             if (sourceType === "rss" || sourceType === "atom") {
               const resp = await rateLimitedFetch(source.rss_url, crawlDelay);
-              if (!resp.ok) {
+              if (!resp || !resp.ok) {
                 if (source.id) {
                   await supabase.from("sources").update({ health_status: "error", consecutive_failures: (source.consecutive_failures || 0) + 1 }).eq("id", source.id);
                 }
-                return { sourceId: source.id, sourceName: source.name, domain: source.domain, items: [], error: `HTTP ${resp.status}` };
+                return { sourceId: source.id, sourceName: source.name, domain: source.domain, items: [], error: resp ? `HTTP ${resp.status}` : "fetch failed" };
               }
               articles = parseRSSAtom(await resp.text());
             } else if (sourceType === "sitemap" || sourceType === "news_sitemap") {
               const resp = await rateLimitedFetch(source.rss_url, crawlDelay);
-              if (!resp.ok) {
+              if (!resp || !resp.ok) {
                 if (source.id) {
                   await supabase.from("sources").update({ health_status: "error", consecutive_failures: (source.consecutive_failures || 0) + 1 }).eq("id", source.id);
                 }
-                return { sourceId: source.id, sourceName: source.name, domain: source.domain, items: [], error: `HTTP ${resp.status}` };
+                return { sourceId: source.id, sourceName: source.name, domain: source.domain, items: [], error: resp ? `HTTP ${resp.status}` : "fetch failed" };
               }
               articles = parseSitemap(await resp.text()).slice(0, 50);
             } else if (sourceType === "html") {
               const resp = await rateLimitedFetch(source.rss_url, crawlDelay);
-              if (!resp.ok) {
+              if (!resp || !resp.ok) {
                 if (source.id) {
                   await supabase.from("sources").update({ health_status: "error", consecutive_failures: (source.consecutive_failures || 0) + 1 }).eq("id", source.id);
                 }
-                return { sourceId: source.id, sourceName: source.name, domain: source.domain, items: [], error: `HTTP ${resp.status}` };
+                return { sourceId: source.id, sourceName: source.name, domain: source.domain, items: [], error: resp ? `HTTP ${resp.status}` : "fetch failed" };
               }
               articles = parseHTMLArticles(await resp.text(), new URL(source.rss_url).origin);
             }

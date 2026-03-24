@@ -29,9 +29,24 @@ interface RSSItem {
   source_name: string;
 }
 
+// ── Timeout presets per request type ─────────────────────
+
+const TIMEOUTS = {
+  rss: 15000,
+  sitemap: 15000,
+  listing: 20000,
+  article: 25000,
+  robots: 6000,
+  google_news: 12000,
+  resolve: 10000,
+  default: 15000,
+} as const;
+
+type TimeoutType = keyof typeof TIMEOUTS;
+
 // ── Utilities ────────────────────────────────────────────
 
-async function fetchWithTimeout(url: string, timeoutMs = 8000): Promise<Response> {
+async function fetchWithTimeout(url: string, timeoutMs = 15000): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -43,6 +58,46 @@ async function fetchWithTimeout(url: string, timeoutMs = 8000): Promise<Response
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/** Fetch with retry + exponential backoff. Retries on timeout, network error, 5xx. */
+async function fetchWithRetry(
+  url: string,
+  opts: { timeout?: number; type?: TimeoutType; maxRetries?: number; label?: string } = {}
+): Promise<{ response: Response | null; elapsed: number; attempts: number; error?: string }> {
+  const timeoutMs = opts.timeout ?? TIMEOUTS[opts.type ?? "default"];
+  const maxRetries = opts.maxRetries ?? 2;
+  const label = opts.label ?? url.slice(0, 80);
+  let lastError = "";
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      const backoff = Math.min(1000 * Math.pow(2, attempt - 1), 4000);
+      await new Promise(r => setTimeout(r, backoff));
+    }
+    const start = Date.now();
+    try {
+      const resp = await fetchWithTimeout(url, timeoutMs);
+      const elapsed = Date.now() - start;
+      if (resp.status >= 500 && attempt < maxRetries) {
+        lastError = `HTTP ${resp.status}`;
+        await resp.text().catch(() => {});
+        console.log(`[retry] ${label}: ${lastError}, attempt ${attempt + 1}/${maxRetries + 1} (${elapsed}ms)`);
+        continue;
+      }
+      return { response: resp, elapsed, attempts: attempt + 1 };
+    } catch (e: any) {
+      const elapsed = Date.now() - start;
+      const isTimeout = e.name === "AbortError" || e.message?.includes("abort");
+      lastError = isTimeout ? `timeout (${timeoutMs}ms)` : (e.message || "network error");
+      if (attempt < maxRetries) {
+        console.log(`[retry] ${label}: ${lastError}, attempt ${attempt + 1}/${maxRetries + 1} (${elapsed}ms)`);
+        continue;
+      }
+      return { response: null, elapsed, attempts: attempt + 1, error: lastError };
+    }
+  }
+  return { response: null, elapsed: 0, attempts: maxRetries + 1, error: lastError };
 }
 
 function stripHtml(text: string): string {
@@ -194,14 +249,13 @@ function extractReadableText(html: string): string {
 async function resolveGoogleNewsUrl(gnUrl: string): Promise<string> {
   if (!gnUrl.includes("news.google.com")) return gnUrl;
   try {
-    const resp = await fetchWithTimeout(gnUrl, 6000);
+    const { response: resp } = await fetchWithRetry(gnUrl, { type: "resolve", maxRetries: 1, label: "GN resolve" });
+    if (!resp) return gnUrl;
     const finalUrl = resp.url;
-    // Consume body to free resources
     await resp.text().catch(() => {});
     if (finalUrl && !finalUrl.includes("news.google.com") && !finalUrl.includes("consent.google.com")) {
       return finalUrl;
     }
-    // Try to extract from the HTML if redirect didn't resolve
     return gnUrl;
   } catch {
     return gnUrl;
@@ -284,8 +338,8 @@ async function discoverSitemapUrlsForDomain(domain: string, sitemapUrl?: string 
 
   // robots.txt
   try {
-    const resp = await fetchWithTimeout(`https://${domain}/robots.txt`, 4000);
-    if (resp.ok) {
+    const { response: resp } = await fetchWithRetry(`https://${domain}/robots.txt`, { type: "robots", maxRetries: 1, label: `robots.txt ${domain}` });
+    if (resp?.ok) {
       const txt = await resp.text();
       for (const line of txt.split(/\r?\n/)) {
         const match = line.match(/^Sitemap:\s*(.+)$/i);
@@ -313,18 +367,18 @@ async function fetchSitemapItemsForDomain(domain: string, name: string, sitemapU
   for (const smUrl of sitemapUrls.slice(0, 4)) {
     if (allItems.length >= 80) break;
     try {
-      const resp = await fetchWithTimeout(smUrl, 5000);
-      if (!resp.ok) { await resp.text().catch(() => {}); continue; }
+      const { response: resp, elapsed } = await fetchWithRetry(smUrl, { type: "sitemap", maxRetries: 1, label: `sitemap ${domain}` });
+      if (!resp?.ok) { if (resp) await resp.text().catch(() => {}); continue; }
       const xml = await resp.text();
+      console.log(`[sitemap] ${domain} ${smUrl.split("/").pop()} fetched in ${elapsed}ms`);
 
       if (/<sitemapindex/i.test(xml)) {
-        // Traverse sitemap index — take last 3 child sitemaps (most recent)
         const children = parseSitemapIndex(xml).slice(-3);
         for (const childUrl of children) {
           if (allItems.length >= 80) break;
           try {
-            const childResp = await fetchWithTimeout(childUrl, 5000);
-            if (!childResp.ok) { await childResp.text().catch(() => {}); continue; }
+            const { response: childResp } = await fetchWithRetry(childUrl, { type: "sitemap", maxRetries: 1, label: `child sitemap ${domain}` });
+            if (!childResp?.ok) { if (childResp) await childResp.text().catch(() => {}); continue; }
             const childXml = await childResp.text();
             allItems.push(...parseSitemapItems(childXml, domain, name).slice(-30));
           } catch {}
@@ -345,11 +399,12 @@ async function fetchListingPageItems(domain: string, name: string): Promise<Site
   for (const path of paths) {
     if (items.length >= 30) break;
     try {
-      const resp = await fetchWithTimeout(`https://${domain}${path}`, 5000);
-      if (!resp.ok) continue;
+      const { response: resp, elapsed } = await fetchWithRetry(`https://${domain}${path}`, { type: "listing", maxRetries: 1, label: `listing ${domain}${path}` });
+      if (!resp?.ok) continue;
       const ct = resp.headers.get("content-type") || "";
       if (!ct.includes("text/html")) { await resp.text(); continue; }
       const html = await resp.text();
+      console.log(`[listing] ${domain}${path} fetched in ${elapsed}ms, found links`);
       items.push(...extractListingPageLinks(html, domain, name));
     } catch {}
   }
@@ -415,11 +470,15 @@ function parseGoogleNewsRSS(xml: string, keyword: string): DiscoveredArticle[] {
 
 async function fetchArticleDetails(url: string, includeText = true): Promise<{ text: string; lang: string | null; publishedAt: string | null } | null> {
   try {
-    const resp = await fetchWithTimeout(url, 6000);
-    if (!resp.ok) return null;
+    const { response: resp, elapsed, attempts, error } = await fetchWithRetry(url, { type: "article", maxRetries: 2, label: `article ${normalizeDomain(new URL(url).hostname)}` });
+    if (!resp?.ok) {
+      if (error) console.log(`[article] ${url.slice(0, 60)}: failed after ${attempts} attempts: ${error}`);
+      return null;
+    }
     const ct = resp.headers.get("content-type") || "";
     if (!ct.includes("text/html") && !ct.includes("application/xhtml")) { await resp.text(); return null; }
     const html = await resp.text();
+    if (attempts > 1) console.log(`[article] ${url.slice(0, 60)}: succeeded on attempt ${attempts} (${elapsed}ms)`);
     const lang = detectLanguage(html);
     const publishedAt = extractPublishedAtFromHtml(html) || extractDateFromUrl(url);
     const text = includeText ? extractReadableText(html).slice(0, 12000) : "";
@@ -555,12 +614,14 @@ serve(async (req) => {
         try {
           const q = encodeURIComponent(term);
           const url = `https://news.google.com/rss/search?q=${q}&hl=${reg.hl}&gl=${reg.gl}&ceid=${reg.ceid}`;
-          const resp = await fetchWithTimeout(url, 8000);
-          if (resp.ok) {
+          const { response: resp, elapsed, attempts, error } = await fetchWithRetry(url, { type: "google_news", maxRetries: 1, label: `GN "${term}" ${reg.gl}` });
+          if (resp?.ok) {
             const xml = await resp.text();
             const articles = parseGoogleNewsRSS(xml, term);
-            logs.push(`Google News "${term}" (${reg.gl}): ${articles.length}`);
+            logs.push(`Google News "${term}" (${reg.gl}): ${articles.length} [${elapsed}ms, ${attempts} attempts]`);
             allDiscovered.push(...articles);
+          } else {
+            logs.push(`Google News "${term}" (${reg.gl}): ${error || "failed"}`);
           }
           await new Promise(r => setTimeout(r, 300));
         } catch (e: any) {
@@ -596,8 +657,20 @@ serve(async (req) => {
         const batch = allSources.slice(i, i + CONC);
         const results = await Promise.allSettled(batch.map(async (src: any) => {
           try {
-            const resp = await fetchWithTimeout(src.rss_url, 8000);
-            if (!resp.ok) { logs.push(`Source ${src.name}: HTTP ${resp.status}`); return { matched: [], unmatched: [] }; }
+            const { response: resp, elapsed, attempts, error } = await fetchWithRetry(src.rss_url, { type: "rss", maxRetries: 2, label: `RSS ${src.name}` });
+            if (!resp?.ok) {
+              logs.push(`Source ${src.name}: ${error || `HTTP ${resp?.status}`} [${elapsed}ms, ${attempts} attempts]`);
+              // Track failures for health
+              await supabase.from("sources").update({
+                consecutive_failures: (src.consecutive_failures || 0) + 1,
+                health_status: (src.consecutive_failures || 0) + 1 >= 5 ? "degraded" : src.health_status,
+              }).eq("id", src.id);
+              return { matched: [], unmatched: [] };
+            }
+            // Reset failures on success
+            if (src.consecutive_failures > 0) {
+              await supabase.from("sources").update({ consecutive_failures: 0, health_status: "healthy", last_success_at: new Date().toISOString() }).eq("id", src.id);
+            }
             const xml = await resp.text();
             const domain = src.domain || normalizeDomain(new URL(src.rss_url).hostname);
             const items = parseRSSItems(xml, domain, src.name);
@@ -608,7 +681,7 @@ serve(async (req) => {
               if (kws.length > 0) matched.push({ ...item, matched_keywords: kws, discovery_method: "rss" });
               else unmatched.push(item);
             }
-            logs.push(`Source ${src.name}: ${items.length} items, ${matched.length} matched`);
+            logs.push(`Source ${src.name}: ${items.length} items, ${matched.length} matched [${elapsed}ms, ${attempts} attempts]`);
             return { matched, unmatched };
           } catch { return { matched: [], unmatched: [] }; }
         }));
@@ -627,8 +700,8 @@ serve(async (req) => {
         const batch = domainsWithFeeds.slice(i, i + CONC);
         const results = await Promise.allSettled(batch.map(async (dom: any) => {
           try {
-            const resp = await fetchWithTimeout(dom.feed_url, 8000);
-            if (!resp.ok) return { matched: [], unmatched: [] };
+            const { response: resp, elapsed, attempts } = await fetchWithRetry(dom.feed_url, { type: "rss", maxRetries: 2, label: `Feed ${dom.name}` });
+            if (!resp?.ok) return { matched: [], unmatched: [] };
             const xml = await resp.text();
             const items = parseRSSItems(xml, dom.domain, dom.name);
             const matched: DiscoveredArticle[] = [];
@@ -638,7 +711,7 @@ serve(async (req) => {
               if (kws.length > 0) matched.push({ ...item, matched_keywords: kws, discovery_method: "feed" });
               else unmatched.push(item);
             }
-            logs.push(`Feed ${dom.name}: ${items.length} items, ${matched.length} matched`);
+            logs.push(`Feed ${dom.name}: ${items.length} items, ${matched.length} matched [${elapsed}ms, ${attempts} attempts]`);
             return { matched, unmatched };
           } catch { return { matched: [], unmatched: [] }; }
         }));

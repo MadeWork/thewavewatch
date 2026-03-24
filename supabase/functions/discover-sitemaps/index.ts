@@ -8,12 +8,37 @@ const corsHeaders = {
 
 // ── Utilities ────────────────────────────────────────────
 
-async function fetchWithTimeout(url: string, timeoutMs = 6000): Promise<Response> {
+async function fetchWithTimeout(url: string, timeoutMs = 15000): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, { signal: controller.signal, headers: { "User-Agent": "Mozilla/5.0 (compatible; MediaPulse/1.0)" } });
   } finally { clearTimeout(timeout); }
+}
+
+async function fetchWithRetry(url: string, timeoutMs = 15000, maxRetries = 2, label = ""): Promise<Response | null> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
+    const start = Date.now();
+    try {
+      const resp = await fetchWithTimeout(url, timeoutMs);
+      if (resp.status >= 500 && attempt < maxRetries) {
+        await resp.text().catch(() => {});
+        console.log(`[retry] ${label || url.slice(0, 60)}: HTTP ${resp.status}, attempt ${attempt + 1} (${Date.now() - start}ms)`);
+        continue;
+      }
+      return resp;
+    } catch (e: any) {
+      const elapsed = Date.now() - start;
+      if (attempt < maxRetries) {
+        console.log(`[retry] ${label || url.slice(0, 60)}: ${e.name === "AbortError" ? `timeout (${timeoutMs}ms)` : e.message}, attempt ${attempt + 1} (${elapsed}ms)`);
+        continue;
+      }
+      console.log(`[failed] ${label || url.slice(0, 60)}: ${e.message} after ${attempt + 1} attempts (${elapsed}ms)`);
+      return null;
+    }
+  }
+  return null;
 }
 
 function normalizeUrl(url: string): string {
@@ -100,8 +125,8 @@ function parseSitemapItems(xml: string, domain: string, name: string): SitemapIt
 
 async function fetchArticleText(url: string): Promise<string | null> {
   try {
-    const resp = await fetchWithTimeout(url, 5000);
-    if (!resp.ok) return null;
+    const resp = await fetchWithRetry(url, 25000, 2, `body scan ${url.slice(0, 50)}`);
+    if (!resp?.ok) return null;
     const ct = resp.headers.get("content-type") || "";
     if (!ct.includes("text/html")) { await resp.text(); return null; }
     const html = await resp.text();
@@ -199,8 +224,8 @@ serve(async (req) => {
       const sitemapUrls: string[] = [];
       if (dom.sitemap_url) sitemapUrls.push(dom.sitemap_url);
       try {
-        const robotsResp = await fetchWithTimeout(`https://${domain}/robots.txt`, 4000);
-        if (robotsResp.ok) {
+        const robotsResp = await fetchWithRetry(`https://${domain}/robots.txt`, 6000, 1, `robots ${domain}`);
+        if (robotsResp?.ok) {
           const robotsTxt = await robotsResp.text();
           for (const line of robotsTxt.split(/\r?\n/)) {
             const match = line.match(/^Sitemap:\s*(.+)$/i);
@@ -217,8 +242,8 @@ serve(async (req) => {
       for (const sitemapUrl of sitemapUrls.slice(0, 3)) {
         if (allItems.length >= 60) break;
         try {
-          const resp = await fetchWithTimeout(sitemapUrl, 5000);
-          if (!resp.ok) { await resp.text().catch(() => {}); continue; }
+          const resp = await fetchWithRetry(sitemapUrl, 15000, 2, `sitemap ${domain}`);
+          if (!resp?.ok) { if (resp) await resp.text().catch(() => {}); continue; }
           const xml = await resp.text();
 
           if (/<sitemapindex/i.test(xml)) {
@@ -226,8 +251,8 @@ serve(async (req) => {
             for (const childUrl of children) {
               if (allItems.length >= 60) break;
               try {
-                const childResp = await fetchWithTimeout(childUrl, 5000);
-                if (!childResp.ok) { await childResp.text().catch(() => {}); continue; }
+                const childResp = await fetchWithRetry(childUrl, 15000, 1, `child sitemap ${domain}`);
+                if (!childResp?.ok) { if (childResp) await childResp.text().catch(() => {}); continue; }
                 const childXml = await childResp.text();
                 allItems.push(...parseSitemapItems(childXml, domain, name).slice(-25));
               } catch {}
