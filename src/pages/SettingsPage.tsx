@@ -116,6 +116,12 @@ export default function SettingsPage() {
             </button>
             {saved && <span className="text-xs text-positive">Settings saved!</span>}
           </div>
+
+          <div className="border-t border-border pt-5 mt-5">
+            <h2 className="text-sm font-medium text-destructive mb-2">Danger Zone</h2>
+            <p className="text-xs text-muted-foreground mb-3">This will permanently delete all articles, enrichments, and sources. Keywords and settings will be kept.</p>
+            <ClearDataButton />
+          </div>
         </div>
       )}
     </div>
