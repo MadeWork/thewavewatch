@@ -375,26 +375,34 @@ serve(async (req) => {
     const logs: string[] = [];
 
     // ── Step 1: Google News RSS ──────────────────────────
-    console.log(`Searching Google News for ${searchTerms.length} keywords...`);
+    // ── Step 1: Google News RSS (multi-region) ─────────
+    const regions = [
+      { hl: "en", gl: "US", ceid: "US:en" },
+      { hl: "en", gl: "GB", ceid: "GB:en" },
+      { hl: "en", gl: "AU", ceid: "AU:en" },
+      { hl: "en", gl: "NZ", ceid: "NZ:en" },
+      { hl: "ja", gl: "JP", ceid: "JP:ja" },
+      { hl: "pt", gl: "PT", ceid: "PT:pt" },
+      { hl: "de", gl: "DE", ceid: "DE:de" },
+      { hl: "fr", gl: "FR", ceid: "FR:fr" },
+    ];
+    console.log(`Searching Google News for ${searchTerms.length} keywords across ${regions.length} regions...`);
     for (const term of searchTerms) {
-      try {
-        const q = encodeURIComponent(term);
-        const url = `https://news.google.com/rss/search?q=${q}&hl=en&gl=US&ceid=US:en`;
-        const resp = await fetchWithTimeout(url, 8000);
-        if (resp.ok) {
-          const xml = await resp.text();
-          const articles = parseGoogleNewsRSS(xml, term);
-          logs.push(`Google News "${term}": ${articles.length} articles`);
-          console.log(`Google News "${term}": ${articles.length} articles`);
-          allDiscovered.push(...articles);
-        } else {
-          logs.push(`Google News "${term}": HTTP ${resp.status}`);
-          console.warn(`Google News "${term}": HTTP ${resp.status}`);
+      for (const reg of regions) {
+        try {
+          const q = encodeURIComponent(term);
+          const url = `https://news.google.com/rss/search?q=${q}&hl=${reg.hl}&gl=${reg.gl}&ceid=${reg.ceid}`;
+          const resp = await fetchWithTimeout(url, 8000);
+          if (resp.ok) {
+            const xml = await resp.text();
+            const articles = parseGoogleNewsRSS(xml, term);
+            logs.push(`Google News "${term}" (${reg.gl}): ${articles.length} articles`);
+            allDiscovered.push(...articles);
+          }
+          await new Promise(r => setTimeout(r, 400));
+        } catch (e: any) {
+          logs.push(`Google News "${term}" (${reg.gl}) error: ${e.message}`);
         }
-        await new Promise(r => setTimeout(r, 800));
-      } catch (e: any) {
-        logs.push(`Google News "${term}" error: ${e.message}`);
-        console.error(`Google News "${term}" error:`, e.message);
       }
     }
 
