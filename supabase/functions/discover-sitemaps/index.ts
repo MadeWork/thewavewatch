@@ -210,6 +210,8 @@ serve(async (req) => {
       if (batch.length < 500) break;
       dOffset += 500;
     }
+    // Sort by priority descending so Tier 1 outlets are processed first
+    allApprovedDomains.sort((a: any, b: any) => (b.priority || 0) - (a.priority || 0));
     const domains = allApprovedDomains.slice(0, maxDomains);
 
     let discovered: { title: string; snippet: string; url: string; published_at: string; source_domain: string; source_name: string; matched_keywords: string[] }[] = [];
