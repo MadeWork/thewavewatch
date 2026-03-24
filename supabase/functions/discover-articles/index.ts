@@ -279,6 +279,7 @@ function parseGoogleNewsRSS(xml: string, keyword: string): DiscoveredArticle[] {
     if (title && gnLink) {
       let domain = "";
       try { domain = normalizeDomain(srcMatch ? srcMatch[1] : gnLink); } catch {}
+      if (isBlockedDomain(domain) || isBlockedUrl(gnLink)) continue;
       articles.push({
         title, snippet: desc, url: gnLink,
         published_at: parseDateValue(pubDate) || extractDateFromUrl(gnLink),

@@ -243,6 +243,7 @@ serve(async (req) => {
 
       for (const item of allItems) {
         if (existingUrlSet.has(normalizeUrl(item.url))) continue;
+        if (isBlockedDomain(item.source_domain)) continue;
         const kws = matchKeywords(`${item.title} ${item.snippet} ${item.url}`, searchTerms);
         if (kws.length > 0) {
           discovered.push({ ...item, matched_keywords: kws });

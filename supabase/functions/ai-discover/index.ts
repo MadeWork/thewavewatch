@@ -453,7 +453,7 @@ serve(async (req) => {
 
         for (const result of results) {
           const url = normalizeUrl(result.url || "");
-          if (!url || existingUrlSet.has(url)) continue;
+          if (!url || existingUrlSet.has(url) || isBlockedUrl(url)) continue;
 
           const searchText = [result.title || "", result.description || ""].join(" ");
           const matched = matchKeywordsExpanded(searchText);
