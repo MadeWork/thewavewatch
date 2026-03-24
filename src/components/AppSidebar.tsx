@@ -1,13 +1,16 @@
-import { LayoutDashboard, List, Tag, Radio, BarChart3, Settings, LogOut } from "lucide-react";
+import { LayoutDashboard, List, Tag, Radio, BarChart3, Settings, LogOut, Bell, Archive, FileText, Search } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 
 const links = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/mentions", label: "Mentions", icon: List },
+  { to: "/archive", label: "Archive", icon: Archive },
   { to: "/keywords", label: "Keywords", icon: Tag },
   { to: "/sources", label: "Sources", icon: Radio },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
+  { to: "/alerts", label: "Alerts", icon: Bell },
+  { to: "/reports", label: "Reports", icon: FileText },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 

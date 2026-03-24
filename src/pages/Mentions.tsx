@@ -2,43 +2,31 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { format, subMonths } from "date-fns";
-import { Search, Download, ExternalLink, ChevronLeft, ChevronRight, X, Filter, Sparkles } from "lucide-react";
+import { Search, Download, ExternalLink, ChevronLeft, ChevronRight, X, Filter, Sparkles, Bookmark, List, Table, Tag, StickyNote, CheckSquare } from "lucide-react";
 import ErrorBanner from "@/components/ErrorBanner";
 import EmptyState from "@/components/EmptyState";
 import ArticleDetailDrawer from "@/components/ArticleDetailDrawer";
+import SearchBuilder, { SearchQuery } from "@/components/SearchBuilder";
+import { useBookmarks } from "@/hooks/useArticleActions";
 
 const PAGE_SIZE = 20;
-const SENTIMENTS = ["all", "positive", "neutral", "negative"];
-const DATE_RANGES = [
-  { label: "All time", value: "all" },
-  { label: "Last 24h", value: "1d" },
-  { label: "Last 7 days", value: "7d" },
-  { label: "Last 30 days", value: "30d" },
-  { label: "Last 3 months", value: "3m" },
-  { label: "Last 6 months", value: "6m" },
-];
 
 export default function Mentions() {
   const [page, setPage] = useState(0);
-  const [search, setSearch] = useState("");
-  const [selectedRegion, setSelectedRegion] = useState("all");
-  const [selectedCountry, setSelectedCountry] = useState("all");
-  const [selectedKeyword, setSelectedKeyword] = useState("all");
-  const [selectedSource, setSelectedSource] = useState("all");
-  const [sentiment, setSentiment] = useState("all");
-  const [dateRange, setDateRange] = useState("all");
-  const [sortBy, setSortBy] = useState<"newest" | "oldest">("newest");
-  const [showFilters, setShowFilters] = useState(true);
+  const [viewMode, setViewMode] = useState<"list" | "table">("list");
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState<SearchQuery | null>(null);
+  const [quickSearch, setQuickSearch] = useState("");
   const [selectedArticle, setSelectedArticle] = useState<any>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBookmarksOnly, setShowBookmarksOnly] = useState(false);
+
+  const { bookmarks, toggleBookmark, isBookmarked } = useBookmarks();
 
   const { data: articles, isLoading, error } = useQuery({
     queryKey: ["mentions"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("articles")
-        .select("*, sources(name, region, country_code)")
-        .order("published_at", { ascending: false })
-        .limit(1000);
+      const { data, error } = await supabase.from("articles").select("*, sources(name, region, country_code)").order("published_at", { ascending: false }).limit(1000);
       if (error) throw error;
       return data as any[];
     },
@@ -52,77 +40,93 @@ export default function Mentions() {
     },
   });
 
-  // Derive unique filter options from data
-  const filterOptions = useMemo(() => {
-    const regions = new Set<string>();
-    const countries = new Set<string>();
-    const sources = new Set<string>();
-    (articles ?? []).forEach(a => {
-      const s = a.sources as any;
-      if (s?.region) regions.add(s.region);
-      if (s?.country_code) countries.add(s.country_code);
-      const sourceName = s?.name || a.source_name;
-      if (sourceName) sources.add(sourceName);
-    });
-    return {
-      regions: ["all", ...Array.from(regions).sort()],
-      countries: ["all", ...Array.from(countries).sort()],
-      sources: ["all", ...Array.from(sources).sort()],
-    };
+  const allSources = useMemo(() => {
+    const s = new Set<string>();
+    (articles ?? []).forEach(a => { const n = (a.sources as any)?.name || a.source_name; if (n) s.add(n); });
+    return Array.from(s).sort();
   }, [articles]);
 
-  const allKeywords = useMemo(() => {
-    const kws = new Set<string>();
-    (articles ?? []).forEach(a => a.matched_keywords?.forEach((k: string) => kws.add(k)));
-    if (keywordTexts) keywordTexts.forEach(k => kws.add(k));
-    return ["all", ...Array.from(kws).sort()];
-  }, [articles, keywordTexts]);
-
-  const activeFilterCount = [selectedRegion, selectedCountry, selectedKeyword, selectedSource, sentiment, dateRange]
-    .filter(v => v !== "all").length;
+  const allCountries = useMemo(() => {
+    const c = new Set<string>();
+    (articles ?? []).forEach(a => { const cc = (a.sources as any)?.country_code; if (cc) c.add(cc); });
+    return Array.from(c).sort();
+  }, [articles]);
 
   const filtered = useMemo(() => {
     let result = articles ?? [];
-    if (search) {
-      const q = search.toLowerCase();
+
+    // Quick search
+    if (quickSearch) {
+      const q = quickSearch.toLowerCase();
       result = result.filter(a => a.title.toLowerCase().includes(q) || a.snippet?.toLowerCase().includes(q));
     }
-    if (dateRange !== "all") {
-      const now = new Date();
-      let cutoff: Date;
-      switch (dateRange) {
-        case "1d": cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000); break;
-        case "7d": cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
-        case "30d": cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
-        case "3m": cutoff = subMonths(now, 3); break;
-        case "6m": cutoff = subMonths(now, 6); break;
-        default: cutoff = new Date(0);
-      }
-      result = result.filter(a => new Date(a.published_at) >= cutoff);
+
+    // Bookmarks filter
+    if (showBookmarksOnly) {
+      result = result.filter(a => bookmarks.includes(a.id));
     }
-    if (selectedRegion !== "all") result = result.filter(a => (a.sources as any)?.region === selectedRegion);
-    if (selectedCountry !== "all") result = result.filter(a => (a.sources as any)?.country_code === selectedCountry);
-    if (selectedSource !== "all") result = result.filter(a => ((a.sources as any)?.name || a.source_name) === selectedSource);
-    if (selectedKeyword !== "all") result = result.filter(a => a.matched_keywords?.includes(selectedKeyword));
-    if (sentiment !== "all") result = result.filter(a => a.sentiment === sentiment);
-    if (sortBy === "oldest") result = [...result].reverse();
+
+    // Advanced search
+    if (searchQuery) {
+      const sq = searchQuery;
+      // Terms
+      if (sq.terms.length > 0) {
+        result = result.filter(a => {
+          const text = `${a.title} ${a.snippet || ""} ${(a.matched_keywords || []).join(" ")}`.toLowerCase();
+          return sq.terms.every(t => {
+            const val = t.exact ? `"${t.value.toLowerCase()}"` : t.value.toLowerCase();
+            const matches = t.exact ? text.includes(t.value.toLowerCase()) : text.includes(val);
+            return t.operator === "NOT" ? !matches : matches;
+          });
+        });
+      }
+      // Sources
+      if (sq.sources.length > 0) result = result.filter(a => sq.sources.includes((a.sources as any)?.name || a.source_name || ""));
+      // Countries
+      if (sq.countries.length > 0) result = result.filter(a => sq.countries.includes((a.sources as any)?.country_code || ""));
+      // Sentiments
+      if (sq.sentiments.length > 0) result = result.filter(a => sq.sentiments.includes(a.sentiment || ""));
+      // Date range
+      if (sq.dateRange !== "all") {
+        const now = new Date();
+        let cutoff: Date;
+        switch (sq.dateRange) {
+          case "1d": cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000); break;
+          case "7d": cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
+          case "30d": cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
+          case "3m": cutoff = subMonths(now, 3); break;
+          case "6m": cutoff = subMonths(now, 6); break;
+          case "1y": cutoff = subMonths(now, 12); break;
+          default: cutoff = new Date(0);
+        }
+        result = result.filter(a => new Date(a.published_at) >= cutoff);
+      }
+    }
     return result;
-  }, [articles, search, dateRange, selectedRegion, selectedCountry, selectedSource, selectedKeyword, sentiment, sortBy]);
+  }, [articles, quickSearch, searchQuery, showBookmarksOnly, bookmarks]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
-  const clearFilters = () => {
-    setSelectedRegion("all"); setSelectedCountry("all");
-    setSelectedKeyword("all"); setSelectedSource("all");
-    setSentiment("all"); setDateRange("all"); setSearch(""); setPage(0);
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    if (selectedIds.size === paged.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(paged.map(a => a.id)));
   };
 
   const exportCSV = () => {
-    const rows = [["Title", "Source", "Region", "Country", "Date", "Sentiment", "Keywords", "URL"]];
-    filtered.forEach(a => {
+    const toExport = selectedIds.size > 0 ? filtered.filter(a => selectedIds.has(a.id)) : filtered;
+    const rows = [["Title", "Source", "Domain", "Country", "Language", "Date", "Sentiment", "Keywords", "URL"]];
+    toExport.forEach(a => {
       const s = a.sources as any;
-      rows.push([a.title, s?.name || a.source_name || a.source_domain || "", s?.region || "", s?.country_code || "", format(new Date(a.published_at), "yyyy-MM-dd"), a.sentiment || "", (a.matched_keywords || []).join("; "), a.url]);
+      rows.push([a.title, s?.name || a.source_name || "", a.source_domain || "", s?.country_code || "", a.language || "", format(new Date(a.published_at), "yyyy-MM-dd"), a.sentiment || "", (a.matched_keywords || []).join("; "), a.url]);
     });
     const csv = rows.map(r => r.map(c => `"${(c || "").replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -130,6 +134,22 @@ export default function Mentions() {
     const link = document.createElement("a");
     link.href = url; link.download = "mentions-export.csv"; link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const highlightMatch = (text: string) => {
+    if (!searchQuery?.terms.length) return text;
+    let highlighted = text;
+    searchQuery.terms.forEach(t => {
+      if (t.operator === "NOT") return;
+      const regex = new RegExp(`(${t.value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi");
+      highlighted = highlighted.replace(regex, "⟨⟨$1⟩⟩");
+    });
+    return highlighted;
+  };
+
+  const renderHighlighted = (text: string) => {
+    const parts = highlightMatch(text).split(/⟨⟨|⟩⟩/);
+    return parts.map((part, i) => i % 2 === 1 ? <mark key={i} className="bg-primary/30 text-foreground rounded px-0.5">{part}</mark> : part);
   };
 
   const COUNTRY_NAMES: Record<string, string> = {
@@ -144,164 +164,156 @@ export default function Mentions() {
   if (error) return <ErrorBanner message="Failed to load mentions." />;
 
   return (
-    <div className="space-y-5 animate-fade-in">
+    <div className="space-y-4 animate-fade-in">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-light tracking-tight text-foreground">Mentions Feed</h1>
-          <span className="text-xs text-text-muted">({filtered.length} articles)</span>
+          <h1 className="text-xl font-light tracking-tight text-foreground">Mentions</h1>
+          <span className="text-xs text-text-muted">({filtered.length})</span>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowFilters(f => !f)}
+          {/* View toggle */}
+          <div className="segment-control" style={{ maxWidth: 100 }}>
+            <button className={`segment-btn ${viewMode === "list" ? "active" : ""}`} onClick={() => setViewMode("list")} style={{ padding: "4px 8px" }}>
+              <List className="w-3.5 h-3.5 mx-auto" />
+            </button>
+            <button className={`segment-btn ${viewMode === "table" ? "active" : ""}`} onClick={() => setViewMode("table")} style={{ padding: "4px 8px" }}>
+              <Table className="w-3.5 h-3.5 mx-auto" />
+            </button>
+          </div>
+          <button onClick={() => setShowBookmarksOnly(!showBookmarksOnly)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition ${showBookmarksOnly ? "bg-primary/20 text-primary" : "bg-bg-elevated text-text-secondary hover:bg-bg-subtle"}`}>
+            <Bookmark className="w-3.5 h-3.5" /> Saved
+          </button>
+          <button onClick={() => setShowSearch(!showSearch)}
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-bg-elevated text-text-secondary text-xs hover:bg-bg-subtle transition">
-            <Filter className="w-3.5 h-3.5" />
-            Filters {activeFilterCount > 0 && <span className="px-1.5 py-0.5 rounded-full bg-primary/20 text-primary text-[10px]">{activeFilterCount}</span>}
+            <Filter className="w-3.5 h-3.5" /> Advanced
           </button>
           <button onClick={exportCSV} className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-bg-elevated text-text-secondary text-xs hover:bg-bg-subtle transition">
-            <Download className="w-3.5 h-3.5" /> Export CSV
+            <Download className="w-3.5 h-3.5" /> Export{selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}
           </button>
         </div>
       </div>
 
-      {/* Search */}
+      {/* Quick search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-        <input value={search} onChange={e => { setSearch(e.target.value); setPage(0); }}
-          placeholder="Search articles…"
+        <input value={quickSearch} onChange={e => { setQuickSearch(e.target.value); setPage(0); }}
+          placeholder="Quick search…"
           className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-bg-elevated border border-bg-subtle text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition" />
       </div>
 
-      {/* Filters Panel */}
-      {showFilters && (
-        <div className="monitor-card space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="section-label">Filters</p>
-            {activeFilterCount > 0 && (
-              <button onClick={clearFilters} className="flex items-center gap-1 text-xs text-text-muted hover:text-foreground transition">
-                <X className="w-3 h-3" /> Clear all
-              </button>
-            )}
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            {/* Date Range */}
-            <div>
-              <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5">Date Range</p>
-              <select value={dateRange} onChange={e => { setDateRange(e.target.value); setPage(0); }}
-                className="w-full px-3 py-2 rounded-xl bg-bg-elevated border border-bg-subtle text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-primary/50">
-                {DATE_RANGES.map(d => (
-                  <option key={d.value} value={d.value}>{d.label}</option>
-                ))}
-              </select>
-            </div>
-            {/* Region */}
-            <div>
-              <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5">Region</p>
-              <select value={selectedRegion} onChange={e => { setSelectedRegion(e.target.value); setPage(0); }}
-                className="w-full px-3 py-2 rounded-xl bg-bg-elevated border border-bg-subtle text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-primary/50">
-                {filterOptions.regions.map(r => (
-                  <option key={r} value={r}>{r === "all" ? "All Regions" : r.charAt(0).toUpperCase() + r.slice(1)}</option>
-                ))}
-              </select>
-            </div>
-            {/* Country */}
-            <div>
-              <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5">Country</p>
-              <select value={selectedCountry} onChange={e => { setSelectedCountry(e.target.value); setPage(0); }}
-                className="w-full px-3 py-2 rounded-xl bg-bg-elevated border border-bg-subtle text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-primary/50">
-                {filterOptions.countries.map(c => (
-                  <option key={c} value={c}>{c === "all" ? "All Countries" : COUNTRY_NAMES[c] || c}</option>
-                ))}
-              </select>
-            </div>
-            {/* Keyword */}
-            <div>
-              <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5">Keyword</p>
-              <select value={selectedKeyword} onChange={e => { setSelectedKeyword(e.target.value); setPage(0); }}
-                className="w-full px-3 py-2 rounded-xl bg-bg-elevated border border-bg-subtle text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-primary/50">
-                {allKeywords.map(k => (
-                  <option key={k} value={k}>{k === "all" ? "All Keywords" : k}</option>
-                ))}
-              </select>
-            </div>
-            {/* Source */}
-            <div>
-              <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5">Source</p>
-              <select value={selectedSource} onChange={e => { setSelectedSource(e.target.value); setPage(0); }}
-                className="w-full px-3 py-2 rounded-xl bg-bg-elevated border border-bg-subtle text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-primary/50">
-                {filterOptions.sources.map(s => (
-                  <option key={s} value={s}>{s === "all" ? "All Sources" : s}</option>
-                ))}
-              </select>
-            </div>
-            {/* Sentiment */}
-            <div>
-              <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5">Sentiment</p>
-              <select value={sentiment} onChange={e => { setSentiment(e.target.value); setPage(0); }}
-                className="w-full px-3 py-2 rounded-xl bg-bg-elevated border border-bg-subtle text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-primary/50">
-                {SENTIMENTS.map(s => (
-                  <option key={s} value={s}>{s === "all" ? "All Sentiments" : s.charAt(0).toUpperCase() + s.slice(1)}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          {/* Sort */}
-          <div className="flex items-center gap-2">
-            <p className="text-[10px] uppercase tracking-wider text-text-muted">Sort:</p>
-            <div className="segment-control">
-              <button className={`segment-btn ${sortBy === 'newest' ? 'active' : ''}`} onClick={() => setSortBy("newest")}>Newest</button>
-              <button className={`segment-btn ${sortBy === 'oldest' ? 'active' : ''}`} onClick={() => setSortBy("oldest")}>Oldest</button>
-            </div>
-          </div>
-        </div>
+      {/* Advanced search builder */}
+      {showSearch && (
+        <SearchBuilder
+          onSearch={(q) => { setSearchQuery(q); setPage(0); }}
+          keywords={keywordTexts ?? []}
+          sources={allSources}
+          countries={allCountries}
+          initialQuery={searchQuery ?? undefined}
+        />
       )}
 
-      {/* Active filter pills */}
-      {activeFilterCount > 0 && !showFilters && (
-        <div className="flex items-center gap-2 flex-wrap">
-          {dateRange !== "all" && <span className="px-2.5 py-1 rounded-full bg-primary/10 text-primary text-[11px] flex items-center gap-1">{DATE_RANGES.find(d => d.value === dateRange)?.label} <X className="w-3 h-3 cursor-pointer" onClick={() => setDateRange("all")} /></span>}
-          {selectedRegion !== "all" && <span className="px-2.5 py-1 rounded-full bg-primary/10 text-primary text-[11px] flex items-center gap-1">{selectedRegion} <X className="w-3 h-3 cursor-pointer" onClick={() => setSelectedRegion("all")} /></span>}
-          {selectedCountry !== "all" && <span className="px-2.5 py-1 rounded-full bg-primary/10 text-primary text-[11px] flex items-center gap-1">{COUNTRY_NAMES[selectedCountry] || selectedCountry} <X className="w-3 h-3 cursor-pointer" onClick={() => setSelectedCountry("all")} /></span>}
-          {selectedKeyword !== "all" && <span className="px-2.5 py-1 rounded-full bg-primary/10 text-primary text-[11px] flex items-center gap-1">{selectedKeyword} <X className="w-3 h-3 cursor-pointer" onClick={() => setSelectedKeyword("all")} /></span>}
-          {selectedSource !== "all" && <span className="px-2.5 py-1 rounded-full bg-primary/10 text-primary text-[11px] flex items-center gap-1">{selectedSource} <X className="w-3 h-3 cursor-pointer" onClick={() => setSelectedSource("all")} /></span>}
-          {sentiment !== "all" && <span className="px-2.5 py-1 rounded-full bg-primary/10 text-primary text-[11px] flex items-center gap-1">{sentiment} <X className="w-3 h-3 cursor-pointer" onClick={() => setSentiment("all")} /></span>}
+      {/* Bulk action bar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-primary/10 border border-primary/20">
+          <span className="text-xs text-primary font-medium">{selectedIds.size} selected</span>
+          <button onClick={() => setSelectedIds(new Set())} className="text-xs text-text-muted hover:text-foreground transition">Clear</button>
+          <button onClick={exportCSV} className="text-xs text-primary hover:text-foreground transition flex items-center gap-1"><Download className="w-3 h-3" /> Export selected</button>
         </div>
       )}
 
       {/* Articles */}
       {isLoading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="monitor-card animate-pulse">
-              <div className="h-4 w-3/4 bg-bg-subtle rounded mb-2" />
-              <div className="h-3 w-1/2 bg-bg-subtle rounded" />
-            </div>
-          ))}
-        </div>
+        <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="monitor-card animate-pulse h-16" />)}</div>
       ) : paged.length === 0 ? (
-        <EmptyState message="No articles match your filters" />
+        <EmptyState message="No articles match your search" />
+      ) : viewMode === "table" ? (
+        /* Table view */
+        <div className="monitor-card overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left border-b border-bg-subtle">
+                <th className="py-2 pr-2"><input type="checkbox" checked={selectedIds.size === paged.length} onChange={selectAll} className="rounded" /></th>
+                <th className="py-2 pr-2 section-label">Title</th>
+                <th className="py-2 pr-2 section-label">Source</th>
+                <th className="py-2 pr-2 section-label">Country</th>
+                <th className="py-2 pr-2 section-label">Date</th>
+                <th className="py-2 pr-2 section-label">Sentiment</th>
+                <th className="py-2 pr-2 section-label">Keywords</th>
+                <th className="py-2 section-label"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {paged.map(a => {
+                const src = a.sources as any;
+                const displayName = src?.name || a.source_name || a.source_domain || "Unknown";
+                return (
+                  <tr key={a.id} className="border-b border-bg-subtle/50 hover:bg-bg-elevated/50 transition cursor-pointer" onClick={() => setSelectedArticle(a)}>
+                    <td className="py-2 pr-2" onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={selectedIds.has(a.id)} onChange={() => toggleSelect(a.id)} className="rounded" />
+                    </td>
+                    <td className="py-2 pr-2 text-foreground font-light max-w-[300px] truncate">{renderHighlighted(a.title)}</td>
+                    <td className="py-2 pr-2 text-text-secondary">{displayName}</td>
+                    <td className="py-2 pr-2 text-text-muted">{src?.country_code || ""}</td>
+                    <td className="py-2 pr-2 text-text-muted whitespace-nowrap">{format(new Date(a.published_at), "MMM d, yyyy")}</td>
+                    <td className="py-2 pr-2">
+                      <span className={`sentiment-badge text-[10px] ${a.sentiment === "positive" ? "sentiment-positive" : a.sentiment === "negative" ? "sentiment-negative" : "sentiment-neutral"}`}>{a.sentiment}</span>
+                    </td>
+                    <td className="py-2 pr-2">
+                      <div className="flex gap-1 flex-wrap">
+                        {a.matched_keywords?.slice(0, 2).map((kw: string) => (
+                          <span key={kw} className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[9px]">{kw}</span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="py-2" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => toggleBookmark(a.id)} className="p-1 rounded hover:bg-bg-subtle transition">
+                          <Bookmark className={`w-3 h-3 ${isBookmarked(a.id) ? "fill-primary text-primary" : "text-text-muted"}`} />
+                        </button>
+                        <a href={a.url} target="_blank" rel="noopener noreferrer" className="p-1 rounded hover:bg-bg-subtle transition">
+                          <ExternalLink className="w-3 h-3 text-text-muted" />
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       ) : (
+        /* List view */
         <div className="space-y-2">
           {paged.map(a => {
             const src = a.sources as any;
             const displayName = src?.name || a.source_name || a.source_domain || "Unknown";
             return (
-              <div key={a.id}
-                onClick={() => setSelectedArticle(a)}
-                className="monitor-card flex items-start gap-4 hover:bg-bg-elevated/80 transition group cursor-pointer">
+              <div key={a.id} className="monitor-card flex items-start gap-3 hover:bg-bg-elevated/80 transition group cursor-pointer" onClick={() => setSelectedArticle(a)}>
+                <div className="flex items-center gap-2 pt-1" onClick={e => e.stopPropagation()}>
+                  <input type="checkbox" checked={selectedIds.has(a.id)} onChange={() => toggleSelect(a.id)} className="rounded" />
+                  <button onClick={() => toggleBookmark(a.id)} className="p-0.5 rounded hover:bg-bg-subtle transition">
+                    <Bookmark className={`w-3.5 h-3.5 ${isBookmarked(a.id) ? "fill-primary text-primary" : "text-text-muted"}`} />
+                  </button>
+                </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-foreground font-light group-hover:text-primary transition">{a.title}</p>
-                  {a.snippet && <p className="text-xs text-text-muted mt-1 line-clamp-2">{a.snippet}</p>}
+                  <p className="text-sm text-foreground font-light group-hover:text-primary transition">{renderHighlighted(a.title)}</p>
+                  {a.snippet && <p className="text-xs text-text-muted mt-1 line-clamp-2">{renderHighlighted(a.snippet || "")}</p>}
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
                     {src?.country_code && <span className="text-xs">{src.country_code}</span>}
                     <span className="text-xs text-text-secondary">{displayName}</span>
+                    {a.source_domain && <span className="text-[10px] text-text-muted">({a.source_domain})</span>}
                     <span className="text-xs text-text-muted">·</span>
-                    <span className="text-xs text-text-muted">{format(new Date(a.published_at), "MMM d, yyyy")}</span>
+                    <span className="text-xs text-text-muted">{format(new Date(a.published_at), "MMM d, yyyy HH:mm")}</span>
+                    {a.language && <span className="px-1 py-0.5 rounded bg-bg-subtle text-text-muted text-[10px]">{a.language}</span>}
                     {src?.region && <span className="px-1.5 py-0.5 rounded bg-bg-subtle text-text-muted text-[10px]">{src.region}</span>}
                     {a.matched_keywords?.map((kw: string) => (
                       <span key={kw} className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px]">{kw}</span>
                     ))}
                   </div>
                 </div>
-                <span className={`sentiment-badge flex-shrink-0 ${a.sentiment === 'positive' ? 'sentiment-positive' : a.sentiment === 'negative' ? 'sentiment-negative' : 'sentiment-neutral'}`}>
+                <span className={`sentiment-badge flex-shrink-0 ${a.sentiment === "positive" ? "sentiment-positive" : a.sentiment === "negative" ? "sentiment-negative" : "sentiment-neutral"}`}>
                   {a.sentiment}
                 </span>
                 <Sparkles className="w-4 h-4 text-text-muted opacity-0 group-hover:opacity-100 transition mt-1" />
@@ -314,22 +326,18 @@ export default function Mentions() {
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-3 pt-2">
-          <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
-            className="p-2 rounded-xl bg-bg-elevated text-text-secondary hover:bg-bg-subtle disabled:opacity-30 transition">
+          <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="p-2 rounded-xl bg-bg-elevated text-text-secondary hover:bg-bg-subtle disabled:opacity-30 transition">
             <ChevronLeft className="w-4 h-4" />
           </button>
           <span className="text-xs text-text-muted">{page + 1} / {totalPages}</span>
-          <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
-            className="p-2 rounded-xl bg-bg-elevated text-text-secondary hover:bg-bg-subtle disabled:opacity-30 transition">
+          <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="p-2 rounded-xl bg-bg-elevated text-text-secondary hover:bg-bg-subtle disabled:opacity-30 transition">
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
       )}
 
       {/* Article Detail Drawer */}
-      {selectedArticle && (
-        <ArticleDetailDrawer article={selectedArticle} onClose={() => setSelectedArticle(null)} />
-      )}
+      {selectedArticle && <ArticleDetailDrawer article={selectedArticle} onClose={() => setSelectedArticle(null)} />}
     </div>
   );
 }
