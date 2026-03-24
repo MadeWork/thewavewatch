@@ -18,11 +18,39 @@ interface FetchTarget {
   isVirtual: boolean;
 }
 
-async function fetchWithTimeout(url: string, timeoutMs = 6000): Promise<Response> {
+async function fetchWithTimeout(url: string, timeoutMs = 15000): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try { return await fetch(url, { signal: controller.signal, headers: { "User-Agent": "MediaPulse/1.0 RSS Reader" } }); }
   finally { clearTimeout(timeout); }
+}
+
+async function fetchWithRetry(url: string, timeoutMs = 15000, maxRetries = 2, label = ""): Promise<{ response: Response | null; elapsed: number; attempts: number; error?: string }> {
+  let lastError = "";
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
+    const start = Date.now();
+    try {
+      const resp = await fetchWithTimeout(url, timeoutMs);
+      const elapsed = Date.now() - start;
+      if (resp.status >= 500 && attempt < maxRetries) {
+        await resp.text().catch(() => {});
+        console.log(`[retry] ${label || url.slice(0, 60)}: HTTP ${resp.status}, attempt ${attempt + 1} (${elapsed}ms)`);
+        lastError = `HTTP ${resp.status}`;
+        continue;
+      }
+      return { response: resp, elapsed, attempts: attempt + 1 };
+    } catch (e: any) {
+      const elapsed = Date.now() - start;
+      lastError = e.name === "AbortError" ? `timeout (${timeoutMs}ms)` : (e.message || "network error");
+      if (attempt < maxRetries) {
+        console.log(`[retry] ${label || url.slice(0, 60)}: ${lastError}, attempt ${attempt + 1} (${elapsed}ms)`);
+        continue;
+      }
+      return { response: null, elapsed, attempts: attempt + 1, error: lastError };
+    }
+  }
+  return { response: null, elapsed: 0, attempts: maxRetries + 1, error: lastError };
 }
 
 function normalizeUrl(url: string): string {
