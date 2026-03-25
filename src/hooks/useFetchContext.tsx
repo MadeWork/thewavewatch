@@ -109,7 +109,7 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       while (tier1HasMore) {
         setState(s => ({
           ...s,
-          progress: 5 + Math.min(tier1BatchNum * 2, 20),
+          progress: 18 + Math.min(tier1BatchNum * 2, 10),
           stage: { step: "discover", label: `Scanning major outlets (batch ${tier1BatchNum + 1})…` },
         }));
         const data = await invokeStage("tier1", { offset: tier1Offset, limit: TIER1_BATCH, body_scan_budget: 15 }, 90000);
@@ -124,7 +124,7 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       }
 
       // Step 2: Google News (expanded regions)
-      setState(s => ({ ...s, progress: 28, stage: { step: "discover", label: "Searching Google News (global)…" } }));
+      setState(s => ({ ...s, progress: 30, stage: { step: "discover", label: "Searching Google News (global)…" } }));
       const gnData = await invokeStage("google_news", {}, 90000);
       if (gnData) totalDiscovered += gnData.discovered || 0;
 
@@ -236,12 +236,14 @@ export function FetchProvider({ children }: { children: ReactNode }) {
 
       // Build result
       const parts: string[] = [];
-      if (totalDiscovered > 0) parts.push(`${totalDiscovered} articles discovered`);
+      if (benchmarkCount > 0) parts.push(`${benchmarkCount} from benchmark sources`);
+      if (totalDiscovered > benchmarkCount) parts.push(`${totalDiscovered - benchmarkCount} from other sources`);
       if (sitemapCount > 0) parts.push(`${sitemapCount} from sitemaps`);
       if (firecrawlCount > 0) parts.push(`${firecrawlCount} from web search`);
       if (aiDiscoverCount > 0) parts.push(`${aiDiscoverCount} from AI discovery`);
 
-      const resultText = parts.length > 0 ? parts.join(" · ") : "No new articles found";
+      const grandTotal = totalDiscovered + sitemapCount + firecrawlCount + aiDiscoverCount;
+      const resultText = grandTotal > 0 ? `${grandTotal} articles · ${parts.join(" · ")}` : "No new articles found";
 
       queryClient.invalidateQueries({ queryKey: ["articles"] });
       queryClient.invalidateQueries({ queryKey: ["mentions"] });
