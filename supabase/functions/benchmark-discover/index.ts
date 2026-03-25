@@ -217,7 +217,7 @@ function parseSitemapItems(xml: string, domain: string, name: string): Candidate
   const items: Candidate[] = [];
   const re = /<url>([\s\S]*?)<\/url>/gi;
   let m;
-  while ((m = re.exec(xml)) !== null && items.length < 300) {
+  while ((m = re.exec(xml)) !== null && items.length < 120) {
     const url = getXmlTag(m[1], "loc");
     if (!url) continue;
     const title = stripHtml(getXmlTag(m[1], "news:title") || extractTitleFromUrl(url)).slice(0, 220);
@@ -280,8 +280,8 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const batchOffset = Number(body.offset ?? 0);
-    const batchLimit = Number(body.limit ?? 5);
-    const bodyScanBudget = Number(body.body_scan_budget ?? 8);
+    const batchLimit = Math.min(Number(body.limit ?? 2), 2);
+    const bodyScanBudget = Math.min(Number(body.body_scan_budget ?? 4), 4);
 
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
     const activeKeywords = keywords || [];
@@ -379,8 +379,8 @@ serve(async (req) => {
       }
 
       log.methods_tried.push("sitemap_index");
-      const MAX_CHILD_SITEMAPS = 6;
-      for (const smUrl of sitemapUrls.slice(0, 8)) {
+      const MAX_CHILD_SITEMAPS = 3;
+      for (const smUrl of sitemapUrls.slice(0, 5)) {
         try {
           const resp = await fetchWithTimeout(smUrl, 15000);
           if (!resp.ok) { log.failed.push(`sitemap ${smUrl.split("/").pop()}: HTTP ${resp.status}`); continue; }
@@ -424,7 +424,7 @@ serve(async (req) => {
       }
 
       log.methods_tried.push("direct_paths");
-      const directPaths = ["/news", "/latest", "/world", "/business", "/technology", "/science"];
+      const directPaths = ["/news", "/latest", "/world", "/business"];
       let directCount = 0;
       for (const path of directPaths) {
         try {
@@ -441,7 +441,7 @@ serve(async (req) => {
 
       if (firecrawlApiKey) {
         log.methods_tried.push("firecrawl_site_search");
-        const primaryKeywords = activeKeywords.map((k: any) => k.text).slice(0, 3);
+        const primaryKeywords = activeKeywords.map((k: any) => k.text).slice(0, 2);
         let fcCount = 0;
         for (const kw of primaryKeywords) {
           try {
