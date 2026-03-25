@@ -920,6 +920,26 @@ async function insertArticles(
   if (allDiscovered.length === 0) return 0;
   console.log(`Inserting ${allDiscovered.length} new articles`);
 
+  // Extract published_at from HTML meta tags for articles missing dates
+  const needDate = allDiscovered.filter(a => !a.published_at);
+  if (needDate.length > 0) {
+    console.log(`Extracting dates for ${needDate.length} articles missing published_at`);
+    const DATE_CONC = 5;
+    for (let d = 0; d < needDate.length; d += DATE_CONC) {
+      await Promise.allSettled(needDate.slice(d, d + DATE_CONC).map(async (a) => {
+        try {
+          const resp = await fetchWithTimeout(a.url, 10000);
+          if (!resp?.ok) return;
+          const ct = resp.headers.get("content-type") || "";
+          if (!ct.includes("text/html") && !ct.includes("xhtml")) { await resp.text(); return; }
+          const html = await resp.text();
+          a.published_at = extractPublishedAtFromHtml(html) || extractDateFromUrl(a.url) || null;
+          if (!a.language) a.language = detectLanguage(html);
+        } catch { }
+      }));
+    }
+  }
+
   // Fetch sources for matching
   const { data: allSources } = await supabase.from("sources").select("id,domain,rss_url,name").eq("active", true).limit(1000);
   const sources = allSources || [];

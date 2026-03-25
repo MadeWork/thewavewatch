@@ -521,6 +521,25 @@ serve(async (req) => {
 
       log.matched = matched.length;
 
+      // Extract published_at from HTML for articles missing dates
+      const needDate = matched.filter(c => !c.published_at);
+      if (needDate.length > 0) {
+        const DATE_BATCH = 5;
+        for (let d = 0; d < needDate.length; d += DATE_BATCH) {
+          await Promise.allSettled(needDate.slice(d, d + DATE_BATCH).map(async (c) => {
+            try {
+              const resp = await fetchWithTimeout(c.url, 10000);
+              if (!resp.ok) return;
+              const ct = resp.headers.get("content-type") || "";
+              if (!ct.includes("text/html") && !ct.includes("xhtml")) { await resp.text(); return; }
+              const html = await resp.text();
+              c.published_at = extractPublishedAtFromHtml(html) || extractDateFromUrl(c.url);
+              if (!c.language) c.language = detectLanguage(html);
+            } catch { }
+          }));
+        }
+      }
+
       if (matched.length > 0) {
         const { data: sources } = await supabase.from("sources").select("id,domain").eq("domain", domain).limit(1);
         const sourceId = sources?.[0]?.id || null;
