@@ -65,9 +65,43 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       } catch {}
 
       let totalDiscovered = 0;
+      let benchmarkCount = 0;
+
+      // Step 0.5: Benchmark sources — always run first, never skipped
+      setState(s => ({ ...s, progress: 3, stage: { step: "discover", label: "Benchmark source discovery…" } }));
+      const BENCH_BATCH = 5;
+      let benchOffset = 0;
+      let benchHasMore = true;
+      let benchBatchNum = 0;
+      while (benchHasMore) {
+        setState(s => ({
+          ...s,
+          progress: 3 + Math.min(benchBatchNum * 1.5, 12),
+          stage: { step: "discover", label: `Benchmark sources (batch ${benchBatchNum + 1})…` },
+        }));
+        try {
+          const result = await withTimeout(
+            supabase.functions.invoke("benchmark-discover", {
+              body: { offset: benchOffset, limit: BENCH_BATCH, body_scan_budget: 8 },
+            }),
+            120000,
+          );
+          if (result && !result.error) {
+            benchmarkCount += result.data?.discovered || 0;
+            benchHasMore = result.data?.hasMore === true;
+            benchOffset += BENCH_BATCH;
+          } else {
+            benchHasMore = false;
+          }
+        } catch {
+          benchHasMore = false;
+        }
+        benchBatchNum++;
+      }
+      totalDiscovered += benchmarkCount;
 
       // Step 1: Tier 1 domains — no batch limit, iterate until exhausted
-      setState(s => ({ ...s, progress: 5, stage: { step: "discover", label: "Scanning major outlets…" } }));
+      setState(s => ({ ...s, progress: 18, stage: { step: "discover", label: "Scanning major outlets…" } }));
       const TIER1_BATCH = 10;
       let tier1Offset = 0;
       let tier1HasMore = true;
