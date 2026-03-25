@@ -69,7 +69,7 @@ export function FetchProvider({ children }: { children: ReactNode }) {
 
       // Step 0.5: Benchmark sources — always run first, never skipped
       setState(s => ({ ...s, progress: 3, stage: { step: "discover", label: "Benchmark source discovery…" } }));
-      const BENCH_BATCH = 5;
+      const BENCH_BATCH = 2;
       let benchOffset = 0;
       let benchHasMore = true;
       let benchBatchNum = 0;
