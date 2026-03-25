@@ -183,6 +183,8 @@ async function runAiDiscover(params: {
 
         const matchedSource = (sources || []).find((s: any) => normalizeDomain(s.domain || "") === domain);
 
+        const pubDate = parseDateValue(result.metadata?.ogArticlePublishedTime || result.metadata?.["article:published_time"] || result.metadata?.publishedTime || result.publishedDate || result.metadata?.publishedDate)
+          || extractDateFromUrl(url);
         toInsert.push({
           title: (result.title || "").slice(0, 220),
           snippet: (result.description || "").slice(0, 500),
@@ -190,7 +192,7 @@ async function runAiDiscover(params: {
           source_id: matchedSource?.id || null,
           source_name: domain,
           source_domain: domain,
-          published_at: extractDateFromUrl(url) || parseDateValue(result.publishedDate) || new Date().toISOString(),
+          published_at: pubDate || new Date().toISOString(),
           fetched_at: new Date().toISOString(),
           matched_keywords: matched.length > 0 ? matched : [q.source_keyword],
           sentiment: "neutral",

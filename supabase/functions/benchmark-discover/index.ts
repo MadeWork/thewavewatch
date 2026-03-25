@@ -456,11 +456,13 @@ serve(async (req) => {
               const results = data.data || [];
               for (const r of results) {
                 if (r.url) {
+                  const fcPubDate = parseDateValue(r.metadata?.ogArticlePublishedTime || r.metadata?.["article:published_time"] || r.metadata?.publishedTime || r.publishedDate || r.metadata?.publishedDate)
+                    || extractDateFromUrl(r.url);
                   allCandidates.push({
                     title: r.title || r.metadata?.title || extractTitleFromUrl(r.url),
                     url: normalizeUrl(r.url),
                     snippet: r.description || r.metadata?.description || "",
-                    published_at: null,
+                    published_at: fcPubDate,
                     source_domain: domain,
                     source_name: src.name,
                     discovery_method: "firecrawl_search",
@@ -521,21 +523,43 @@ serve(async (req) => {
 
       log.matched = matched.length;
 
-      // Extract published_at from HTML for articles missing dates
+      // Extract published_at from HTML for articles missing dates — use Firecrawl as fallback
       const needDate = matched.filter(c => !c.published_at);
       if (needDate.length > 0) {
-        const DATE_BATCH = 5;
-        for (let d = 0; d < needDate.length; d += DATE_BATCH) {
+        const DATE_BATCH = 3;
+        for (let d = 0; d < Math.min(needDate.length, 10); d += DATE_BATCH) {
           await Promise.allSettled(needDate.slice(d, d + DATE_BATCH).map(async (c) => {
+            // Try direct fetch first
             try {
               const resp = await fetchWithTimeout(c.url, 10000);
-              if (!resp.ok) return;
-              const ct = resp.headers.get("content-type") || "";
-              if (!ct.includes("text/html") && !ct.includes("xhtml")) { await resp.text(); return; }
-              const html = await resp.text();
-              c.published_at = extractPublishedAtFromHtml(html) || extractDateFromUrl(c.url);
-              if (!c.language) c.language = detectLanguage(html);
+              if (resp.ok) {
+                const ct = resp.headers.get("content-type") || "";
+                if (ct.includes("text/html") || ct.includes("xhtml")) {
+                  const html = await resp.text();
+                  c.published_at = extractPublishedAtFromHtml(html) || extractDateFromUrl(c.url);
+                  if (!c.language) c.language = detectLanguage(html);
+                  if (c.published_at) return;
+                }
+              }
             } catch { }
+            // Fallback: Firecrawl scrape
+            if (firecrawlApiKey) {
+              try {
+                const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${firecrawlApiKey}`, "Content-Type": "application/json" },
+                  body: JSON.stringify({ url: c.url, formats: ["html"], onlyMainContent: false, timeout: 10000 }),
+                });
+                if (resp.ok) {
+                  const data = await resp.json();
+                  const html = data.data?.html || "";
+                  const meta = data.data?.metadata || {};
+                  c.published_at = parseDateValue(meta.ogArticlePublishedTime || meta["article:published_time"] || meta.publishedTime)
+                    || extractPublishedAtFromHtml(html) || extractDateFromUrl(c.url);
+                  if (!c.language) c.language = meta.language?.split("-")[0] || detectLanguage(html);
+                }
+              } catch { }
+            }
           }));
         }
       }
