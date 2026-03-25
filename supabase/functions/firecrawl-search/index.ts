@@ -133,26 +133,56 @@ function extractReadableText(html: string): string {
     .trim();
 }
 
-async function fetchArticleMeta(url: string): Promise<{
+async function fetchArticleMeta(url: string, firecrawlKey?: string): Promise<{
   published_at: string | null; language: string | null; body_text: string;
   canonical_url: string; source_name: string | null;
 } | null> {
+  // Try direct fetch first
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
     try {
       const resp = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "Mozilla/5.0 (compatible; WaveWatch/1.0)" } });
-      if (!resp.ok) return null;
-      const html = await resp.text();
-      return {
-        published_at: extractPublishedAtFromHtml(html) || extractDateFromUrl(url),
-        language: extractLanguageFromHtml(html),
-        body_text: extractReadableText(html).slice(0, 15000),
-        canonical_url: extractCanonicalUrl(html, url),
-        source_name: extractSourceNameFromHtml(html),
-      };
+      if (resp.ok) {
+        const html = await resp.text();
+        const pubDate = extractPublishedAtFromHtml(html) || extractDateFromUrl(url);
+        if (pubDate) {
+          return {
+            published_at: pubDate,
+            language: extractLanguageFromHtml(html),
+            body_text: extractReadableText(html).slice(0, 15000),
+            canonical_url: extractCanonicalUrl(html, url),
+            source_name: extractSourceNameFromHtml(html),
+          };
+        }
+      }
     } finally { clearTimeout(timeout); }
-  } catch { return null; }
+  } catch {}
+  // Fallback: use Firecrawl scrape to bypass bot blocks
+  if (firecrawlKey) {
+    try {
+      const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ url, formats: ["html"], onlyMainContent: false, timeout: 10000 }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        const html = data.data?.html || "";
+        const meta = data.data?.metadata || {};
+        const pubDate = parseDateValue(meta.ogArticlePublishedTime || meta["article:published_time"] || meta.publishedTime)
+          || extractPublishedAtFromHtml(html) || extractDateFromUrl(url);
+        return {
+          published_at: pubDate,
+          language: meta.language?.split("-")[0] || extractLanguageFromHtml(html),
+          body_text: extractReadableText(html).slice(0, 15000),
+          canonical_url: normalizeUrl(meta.ogUrl || meta.canonicalUrl || url),
+          source_name: meta.ogSiteName || extractSourceNameFromHtml(html),
+        };
+      }
+    } catch {}
+  }
+  return null;
 }
 
 // ── Candidate type ───────────────────────────────────────
@@ -434,7 +464,7 @@ serve(async (req) => {
             snippet: (result.description || "").slice(0, 500),
             url,
             canonical_url: url,
-            published_at: extractDateFromUrl(url) || parseDateValue(result.publishedDate || result.metadata?.publishedDate) || null,
+            published_at: parseDateValue(result.metadata?.ogArticlePublishedTime || result.metadata?.["article:published_time"] || result.metadata?.publishedTime || result.publishedDate || result.metadata?.publishedDate) || extractDateFromUrl(url) || null,
             source_domain: domain,
             source_name: domain,
             matched_keywords: matched.length > 0 ? matched : [sq.keyword],
@@ -533,14 +563,14 @@ serve(async (req) => {
 
     console.log(`Final candidates to insert: ${strongMatches.length}`);
 
-    // ── Stage 5: Resolve dates ──────────────────────────
+    // ── Stage 5: Resolve dates via Firecrawl scrape ────
     const needMeta = strongMatches.filter(c => !c.published_at);
     if (needMeta.length > 0) {
-      console.log(`Resolving dates for ${needMeta.length} articles`);
-      for (let i = 0; i < needMeta.length; i += 3) {
+      console.log(`Resolving dates for ${needMeta.length} articles (using Firecrawl scrape fallback)`);
+      for (let i = 0; i < Math.min(needMeta.length, 15); i += 3) {
         const batch = needMeta.slice(i, i + 3);
         await Promise.allSettled(batch.map(async (c) => {
-          const meta = await fetchArticleMeta(c.url);
+          const meta = await fetchArticleMeta(c.url, firecrawlKey);
           if (meta) {
             c.published_at = c.published_at || meta.published_at;
             c.canonical_url = meta.canonical_url || c.canonical_url;
@@ -550,7 +580,7 @@ serve(async (req) => {
         }));
       }
     }
-    strongMatches.forEach(c => { if (!c.published_at) c.published_at = new Date().toISOString(); });
+    // Don't default to now() - leave null so DB uses fetched_at as a fallback display
 
     // Dedup
     const seenCanonical = new Set<string>();

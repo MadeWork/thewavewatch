@@ -456,11 +456,13 @@ serve(async (req) => {
               const results = data.data || [];
               for (const r of results) {
                 if (r.url) {
+                  const fcPubDate = parseDateValue(r.metadata?.ogArticlePublishedTime || r.metadata?.["article:published_time"] || r.metadata?.publishedTime || r.publishedDate || r.metadata?.publishedDate)
+                    || extractDateFromUrl(r.url);
                   allCandidates.push({
                     title: r.title || r.metadata?.title || extractTitleFromUrl(r.url),
                     url: normalizeUrl(r.url),
                     snippet: r.description || r.metadata?.description || "",
-                    published_at: null,
+                    published_at: fcPubDate,
                     source_domain: domain,
                     source_name: src.name,
                     discovery_method: "firecrawl_search",
