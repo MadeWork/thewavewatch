@@ -46,9 +46,10 @@ export default function Dashboard() {
   const weekStart = startOfWeek(now, { weekStartsOn: 1 });
   const monthStart = startOfMonth(now);
 
-  const todayCount = articles?.filter(a => new Date(a.published_at) >= todayStart).length ?? 0;
-  const weekCount = articles?.filter(a => new Date(a.published_at) >= weekStart).length ?? 0;
-  const monthCount = articles?.filter(a => new Date(a.published_at) >= monthStart).length ?? 0;
+  // Use fetched_at for metric cards — published_at is often unreliable / missing
+  const todayCount = articles?.filter(a => new Date(a.fetched_at) >= todayStart).length ?? 0;
+  const weekCount = articles?.filter(a => new Date(a.fetched_at) >= weekStart).length ?? 0;
+  const monthCount = articles?.filter(a => new Date(a.fetched_at) >= monthStart).length ?? 0;
 
   const lineData = Array.from({ length: 30 }, (_, i) => {
     const date = subDays(now, 29 - i);
