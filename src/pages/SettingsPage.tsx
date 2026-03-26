@@ -103,6 +103,7 @@ export default function SettingsPage() {
     digest_email: "",
     fetch_frequency_minutes: 60,
     timezone: "UTC",
+    fetch_schedule: "daily_2am",
   });
 
   useEffect(() => {
