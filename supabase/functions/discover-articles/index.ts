@@ -737,15 +737,29 @@ serve(async (req) => {
         }
       }
 
-      // Resolve Google News URLs (increased limit)
+      // Resolve Google News URLs — try to get real publisher URLs
       console.log(`Google News: ${allDiscovered.length} raw articles before resolution`);
-      const gnArticles = allDiscovered.filter(a => a.url.includes("news.google.com")).slice(0, 40);
+      
+      // Deduplicate by title before resolution (GN returns same article across regions)
+      const gnSeen = new Set<string>();
+      allDiscovered = allDiscovered.filter(a => {
+        const key = normalizeText(a.title).slice(0, 80);
+        if (gnSeen.has(key)) return false;
+        gnSeen.add(key);
+        return true;
+      });
+      console.log(`Google News: ${allDiscovered.length} unique articles after title dedup`);
+
+      // Resolve up to 60 GN URLs
+      const gnArticles = allDiscovered.filter(a => a.url.includes("news.google.com")).slice(0, 60);
+      let resolvedCount = 0;
       for (let i = 0; i < gnArticles.length; i += CONC) {
         const batch = gnArticles.slice(i, i + CONC);
         await Promise.allSettled(batch.map(async (article) => {
           const resolved = await resolveGoogleNewsUrl(article.url);
-          if (resolved !== article.url) {
+          if (resolved !== article.url && !resolved.includes("news.google.com") && !resolved.includes("consent.google.com")) {
             article.url = resolved;
+            resolvedCount++;
             try {
               const resolvedDomain = normalizeDomain(new URL(resolved).hostname);
               if (!isBlockedDomain(resolvedDomain)) article.source_domain = resolvedDomain;
@@ -753,9 +767,13 @@ serve(async (req) => {
           }
         }));
       }
+      console.log(`Google News: resolved ${resolvedCount}/${gnArticles.length} URLs`);
 
-      // Filter out any remaining unresolved google.com URLs
-      allDiscovered = allDiscovered.filter(a => !isBlockedUrl(a.url));
+      // Remove articles still on news.google.com (unresolvable) and blocked domains
+      allDiscovered = allDiscovered.filter(a => {
+        if (a.url.includes("news.google.com") || a.url.includes("consent.google.com")) return false;
+        return !isBlockedUrl(a.url);
+      });
       console.log(`Google News: ${allDiscovered.length} articles after resolution and filtering`);
 
       const inserted = await insertArticles(allDiscovered, existingUrlSet, activeKeywords, searchTerms, expandedTermMap, supabase, lovableApiKey);
