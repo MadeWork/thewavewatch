@@ -964,14 +964,16 @@ serve(async (req) => {
 
           if (!response.ok) {
             const txt = await response.text();
-            console.log(`Firecrawl search failed for ${q.domain}: ${response.status}`);
+            console.log(`Firecrawl search failed for ${q.domain}: ${response.status} ${txt.slice(0, 100)}`);
             continue;
           }
 
           const data = await response.json();
           searchedCount++;
+          const results = data.data || [];
+          let foundForQuery = 0;
 
-          for (const result of (data.data || [])) {
+          for (const result of results) {
             const url = normalizeUrl(result.url || "");
             if (!url || existingUrlSet.has(url) || isBlockedUrl(url)) continue;
 
