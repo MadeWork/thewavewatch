@@ -9,7 +9,14 @@ import { Bell, BellOff } from "lucide-react";
 function PushNotificationToggle() {
   const { supported, subscribed, loading, permission, subscribe, unsubscribe } = usePushSubscription();
 
-  if (!supported) return null;
+  if (!supported) return (
+    <div className="border-t border-border pt-5 mt-5">
+      <h2 className="text-sm font-medium text-foreground mb-2">Push Notifications</h2>
+      <p className="text-xs text-muted-foreground">
+        Push notifications are not supported in this browser. Open the app in Safari, Chrome, or Firefox to enable them.
+      </p>
+    </div>
+  );
 
   return (
     <div className="border-t border-border pt-5 mt-5">
