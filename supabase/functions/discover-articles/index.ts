@@ -732,6 +732,7 @@ serve(async (req) => {
       }
 
       // Resolve Google News URLs (increased limit)
+      console.log(`Google News: ${allDiscovered.length} raw articles before resolution`);
       const gnArticles = allDiscovered.filter(a => a.url.includes("news.google.com")).slice(0, 40);
       for (let i = 0; i < gnArticles.length; i += CONC) {
         const batch = gnArticles.slice(i, i + CONC);
@@ -746,6 +747,10 @@ serve(async (req) => {
           }
         }));
       }
+
+      // Filter out any remaining unresolved google.com URLs
+      allDiscovered = allDiscovered.filter(a => !isBlockedUrl(a.url));
+      console.log(`Google News: ${allDiscovered.length} articles after resolution and filtering`);
 
       const inserted = await insertArticles(allDiscovered, existingUrlSet, activeKeywords, searchTerms, expandedTermMap, supabase, lovableApiKey);
       return new Response(JSON.stringify({
