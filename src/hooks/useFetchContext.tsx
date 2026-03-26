@@ -82,7 +82,7 @@ export function FetchProvider({ children }: { children: ReactNode }) {
         try {
           const result = await withTimeout(
             supabase.functions.invoke("benchmark-discover", {
-              body: { offset: benchOffset, limit: BENCH_BATCH, body_scan_budget: 8 },
+              body: { offset: benchOffset, limit: BENCH_BATCH, body_scan_budget: 15 },
             }),
             120000,
           );
