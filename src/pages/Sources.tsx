@@ -473,7 +473,7 @@ export default function Sources() {
                   const meta = SOURCE_TYPE_META[sourceType] || SOURCE_TYPE_META.rss;
                   const Icon = meta.icon;
                   return (
-                    <div key={s.id} className="monitor-card flex items-center gap-3 py-3">
+                    <div key={s.id} className="monitor-card flex items-center gap-3 py-3 group">
                       <span className="text-lg">{FLAG[s.country_code ?? ""] ?? "🌐"}</span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
