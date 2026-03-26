@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Plus, Search, Loader2, Globe, Rss, FileText, Code, AlertTriangle,
-  Upload, Download, Radar, CheckCircle, XCircle, Filter
+  Upload, Download, Radar, CheckCircle, XCircle, Filter, Trash2
 } from "lucide-react";
 import ErrorBanner from "@/components/ErrorBanner";
 import EmptyState from "@/components/EmptyState";
@@ -124,6 +124,14 @@ export default function Sources() {
       if (error) throw error;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["approved_domains"] }),
+  });
+
+  const deleteSourceMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("sources").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["sources"] }),
   });
 
   // Promote domain to active source
@@ -485,6 +493,12 @@ export default function Sources() {
                       <button onClick={() => toggleMutation.mutate({ id: s.id, active: s.active })}
                         className={`px-2.5 py-1 rounded-lg text-xs transition ${s.active ? 'bg-positive/15 text-positive' : 'bg-bg-subtle text-text-muted'}`}>
                         {s.active ? "On" : "Off"}
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); if (confirm(`Delete "${s.name}"?`)) deleteSourceMutation.mutate(s.id); }}
+                        className="p-1.5 rounded-lg text-text-muted hover:text-negative hover:bg-negative/10 transition opacity-0 group-hover:opacity-100"
+                        title="Delete source">
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   );
