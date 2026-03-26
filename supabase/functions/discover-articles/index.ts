@@ -468,10 +468,12 @@ function parseGoogleNewsRSS(xml: string, keyword: string): DiscoveredArticle[] {
     const desc = stripHtml(getXmlTag(c, "description")).slice(0, 500);
     const pubDate = getXmlTag(c, "pubDate");
     const srcMatch = c.match(/<source[^>]+url=["']([^"']+)["'][^>]*>(.*?)<\/source>/i);
-    if (title && gnLink) {
-      let domain = "";
-      try { domain = normalizeDomain(srcMatch ? srcMatch[1] : gnLink); } catch {}
-      if (isBlockedDomain(domain) || isBlockedUrl(gnLink)) continue;
+     if (title && gnLink) {
+       let domain = "";
+       try { domain = normalizeDomain(srcMatch ? srcMatch[1] : gnLink); } catch {}
+       // Don't block news.google.com URLs here — they'll be resolved to real publisher URLs later
+       const isGnUrl = gnLink.includes("news.google.com");
+       if (!isGnUrl && (isBlockedDomain(domain) || isBlockedUrl(gnLink))) continue;
       articles.push({
         title, snippet: desc, url: gnLink,
         published_at: parseDateValue(pubDate) || extractDateFromUrl(gnLink),

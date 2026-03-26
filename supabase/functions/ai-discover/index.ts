@@ -272,15 +272,11 @@ serve(async (req) => {
     const maxResults = Math.min(Number(body.max_results || 5), 8);
     const relevanceThreshold = Number(body.relevance_threshold ?? 0.4);
 
-    // Run in background
-    EdgeRuntime.waitUntil(
-      runAiDiscover({ maxQueries, maxResults, relevanceThreshold }).catch(e => {
-        console.error("ai-discover background error:", e);
-      })
-    );
+    // Run synchronously so caller gets actual results
+    const result = await runAiDiscover({ maxQueries, maxResults, relevanceThreshold });
 
     return new Response(
-      JSON.stringify({ status: "processing", message: "AI discovery started in background" }),
+      JSON.stringify(result),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e) {
