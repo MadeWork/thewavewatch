@@ -15,33 +15,41 @@ interface BenchmarkSource {
 }
 
 const BENCHMARK_SOURCES: BenchmarkSource[] = [
-  { domain: "euronews.com", name: "Euronews", region: "EU", feed_url: "https://www.euronews.com/rss" },
-  { domain: "reuters.com", name: "Reuters", region: "EU", feed_url: "https://www.reuters.com/arc/outboundfeeds/rss/" },
+  // UK & Ireland
   { domain: "bbc.com", name: "BBC News", region: "UK", feed_url: "http://feeds.bbci.co.uk/news/rss.xml" },
   { domain: "theguardian.com", name: "The Guardian", region: "UK", feed_url: "https://www.theguardian.com/world/rss" },
   { domain: "ft.com", name: "Financial Times", region: "UK" },
-  { domain: "dw.com", name: "Deutsche Welle", region: "EU", feed_url: "https://rss.dw.com/rdf/rss-en-all" },
-  { domain: "france24.com", name: "France 24", region: "EU", feed_url: "https://www.france24.com/en/rss" },
-  { domain: "politico.eu", name: "Politico Europe", region: "EU", feed_url: "https://www.politico.eu/feed/" },
-  { domain: "euractiv.com", name: "EurActiv", region: "EU", feed_url: "https://www.euractiv.com/feed/" },
-  { domain: "thelocal.com", name: "The Local", region: "EU" },
-  { domain: "yle.fi", name: "YLE News", region: "FI", feed_url: "https://feeds.yle.fi/uutiset/v1/recent.rss?publisherIds=YLE_UUTISET" },
-  { domain: "svt.se", name: "SVT Nyheter", region: "SE" },
-  { domain: "nrk.no", name: "NRK", region: "NO" },
+  { domain: "telegraph.co.uk", name: "The Telegraph", region: "UK", feed_url: "https://www.telegraph.co.uk/rss.xml" },
+  { domain: "independent.co.uk", name: "The Independent", region: "UK", feed_url: "https://www.independent.co.uk/news/rss" },
   { domain: "theherald.co.uk", name: "The Herald", region: "UK", feed_url: "https://www.heraldscotland.com/news/rss/" },
   { domain: "heraldscotland.com", name: "Herald Scotland", region: "UK", feed_url: "https://www.heraldscotland.com/news/rss/" },
+  { domain: "scotsman.com", name: "The Scotsman", region: "UK", feed_url: "https://www.scotsman.com/news/rss" },
+  { domain: "irishtimes.com", name: "The Irish Times", region: "IE", feed_url: "https://www.irishtimes.com/cmlink/news-1.1319192" },
+  { domain: "rte.ie", name: "RTÉ News", region: "IE", feed_url: "https://www.rte.ie/news/rss/news-headlines.xml" },
+  // EU (English-language editions)
+  { domain: "euronews.com", name: "Euronews", region: "EU", feed_url: "https://www.euronews.com/rss" },
+  { domain: "reuters.com", name: "Reuters", region: "EU", feed_url: "https://www.reuters.com/arc/outboundfeeds/rss/" },
+  { domain: "politico.eu", name: "Politico Europe", region: "EU", feed_url: "https://www.politico.eu/feed/" },
+  { domain: "euractiv.com", name: "EurActiv", region: "EU", feed_url: "https://www.euractiv.com/feed/" },
+  { domain: "dw.com", name: "Deutsche Welle (EN)", region: "EU", feed_url: "https://rss.dw.com/rdf/rss-en-all" },
+  { domain: "france24.com", name: "France 24 (EN)", region: "EU", feed_url: "https://www.france24.com/en/rss" },
+  { domain: "thelocal.com", name: "The Local", region: "EU" },
+  // US
   { domain: "nytimes.com", name: "New York Times", region: "US", feed_url: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml" },
   { domain: "washingtonpost.com", name: "Washington Post", region: "US" },
   { domain: "apnews.com", name: "AP News", region: "US", feed_url: "https://rsshub.app/apnews/topics/apf-topnews" },
   { domain: "cnn.com", name: "CNN", region: "US", feed_url: "http://rss.cnn.com/rss/edition_world.rss" },
   { domain: "bloomberg.com", name: "Bloomberg", region: "US" },
   { domain: "wsj.com", name: "Wall Street Journal", region: "US" },
+  { domain: "npr.org", name: "NPR", region: "US", feed_url: "https://feeds.npr.org/1001/rss.xml" },
+  // Japan (English editions)
   { domain: "japantimes.co.jp", name: "Japan Times", region: "JP", feed_url: "https://www.japantimes.co.jp/feed/" },
-  { domain: "nhk.or.jp", name: "NHK World", region: "JP", feed_url: "https://www3.nhk.or.jp/rss/news/cat0.xml" },
   { domain: "asia.nikkei.com", name: "Nikkei Asia", region: "JP" },
+  // Australia
   { domain: "abc.net.au", name: "ABC News AU", region: "AU", feed_url: "https://www.abc.net.au/news/feed/2942460/rss.xml" },
   { domain: "smh.com.au", name: "Sydney Morning Herald", region: "AU", feed_url: "https://www.smh.com.au/rss/feed.xml" },
   { domain: "theaustralian.com.au", name: "The Australian", region: "AU" },
+  // New Zealand
   { domain: "nzherald.co.nz", name: "NZ Herald", region: "NZ", feed_url: "https://www.nzherald.co.nz/arc/outboundfeeds/rss/curate/78IFnsdMZOGLDhGMC3Enqg/?outputType=xml" },
   { domain: "stuff.co.nz", name: "Stuff NZ", region: "NZ", feed_url: "https://www.stuff.co.nz/rss" },
   { domain: "rnz.co.nz", name: "RNZ", region: "NZ", feed_url: "https://www.rnz.co.nz/rss/national.xml" },
