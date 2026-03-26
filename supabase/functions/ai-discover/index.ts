@@ -78,14 +78,14 @@ async function runAiDiscover(params: {
   const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
   const supabase = createClient(supabaseUrl, supabaseKey);
 
-  if (!firecrawlKey) { console.log("ai-discover: no Firecrawl key"); return; }
+  if (!firecrawlKey) { console.log("ai-discover: no Firecrawl key"); return { discovered: 0, searched: 0, candidates: 0 }; }
 
   const [{ data: keywords }, { data: settings }] = await Promise.all([
     supabase.from("keywords").select("*").eq("active", true),
     supabase.from("settings").select("company_name").limit(1).maybeSingle(),
   ]);
   const activeKeywords = keywords || [];
-  if (!activeKeywords.length) { console.log("ai-discover: no keywords"); return; }
+  if (!activeKeywords.length) { console.log("ai-discover: no keywords"); return { discovered: 0, searched: 0, candidates: 0 }; }
 
   const companyName = settings?.company_name && settings.company_name !== "My Company" ? settings.company_name : "";
 
@@ -149,7 +149,7 @@ async function runAiDiscover(params: {
     }
   } catch (e) { console.error("AI query gen failed:", e); }
 
-  if (!queries.length) { console.log("ai-discover: no queries generated"); return; }
+  if (!queries.length) { console.log("ai-discover: no queries generated"); return { discovered: 0, searched: 0, candidates: 0 }; }
   console.log(`ai-discover: ${queries.length} queries`);
 
   // Get existing URLs
@@ -259,6 +259,7 @@ async function runAiDiscover(params: {
   }
 
   console.log(`ai-discover complete: ${totalInserted} inserted from ${toInsert.length} candidates, ${maxSearches} searches`);
+  return { discovered: totalInserted, searched: maxSearches, candidates: toInsert.length };
 }
 
 // ── Handler ──────────────────────────────────────────────
