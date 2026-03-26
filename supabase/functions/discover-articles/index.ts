@@ -737,10 +737,8 @@ serve(async (req) => {
         }
       }
 
-      // Resolve Google News URLs — try to get real publisher URLs
-      console.log(`Google News: ${allDiscovered.length} raw articles before resolution`);
-      
-      // Deduplicate by title before resolution (GN returns same article across regions)
+      // Deduplicate by title (GN returns same article across regions)
+      console.log(`Google News: ${allDiscovered.length} raw articles before dedup`);
       const gnSeen = new Set<string>();
       allDiscovered = allDiscovered.filter(a => {
         const key = normalizeText(a.title).slice(0, 80);
@@ -748,30 +746,49 @@ serve(async (req) => {
         gnSeen.add(key);
         return true;
       });
-      console.log(`Google News: ${allDiscovered.length} unique articles after title dedup`);
+      
+      // Limit to top 30 most recent articles to stay within compute budget
+      allDiscovered = allDiscovered.slice(0, 30);
 
-      // Resolve up to 60 GN URLs
-      const gnArticles = allDiscovered.filter(a => a.url.includes("news.google.com")).slice(0, 60);
+      // Resolve GN URLs to real publisher URLs (fast: 5 concurrent, 6s timeout)
       let resolvedCount = 0;
-      for (let i = 0; i < gnArticles.length; i += CONC) {
-        const batch = gnArticles.slice(i, i + CONC);
+      const RESOLVE_CONC = 5;
+      for (let i = 0; i < allDiscovered.length; i += RESOLVE_CONC) {
+        const batch = allDiscovered.slice(i, i + RESOLVE_CONC);
         await Promise.allSettled(batch.map(async (article) => {
-          const resolved = await resolveGoogleNewsUrl(article.url);
-          if (resolved !== article.url && !resolved.includes("news.google.com") && !resolved.includes("consent.google.com")) {
-            article.url = resolved;
-            resolvedCount++;
+          if (!article.url.includes("news.google.com")) return;
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 6000);
             try {
-              const resolvedDomain = normalizeDomain(new URL(resolved).hostname);
-              if (!isBlockedDomain(resolvedDomain)) article.source_domain = resolvedDomain;
-            } catch {}
-          }
+              const resp = await fetch(article.url, {
+                signal: controller.signal,
+                headers: { "User-Agent": "Mozilla/5.0 (compatible; MediaPulse/1.0)" },
+                redirect: "follow",
+              });
+              const finalUrl = resp.url;
+              await resp.text().catch(() => {});
+              if (finalUrl && !finalUrl.includes("news.google.com") && !finalUrl.includes("consent.google.com")) {
+                article.url = normalizeUrl(finalUrl);
+                resolvedCount++;
+                try {
+                  const d = normalizeDomain(new URL(finalUrl).hostname);
+                  if (!isBlockedDomain(d)) article.source_domain = d;
+                } catch {}
+              }
+            } finally { clearTimeout(timeout); }
+          } catch {}
         }));
       }
-      console.log(`Google News: resolved ${resolvedCount}/${gnArticles.length} URLs`);
+      console.log(`Google News: resolved ${resolvedCount}/${allDiscovered.length}, keeping all with source domain`);
 
-      // Remove articles still on news.google.com (unresolvable) and blocked domains
+      // Keep resolved articles + unresolved ones (use source_domain from <source> tag)
+      // For unresolved, construct a pseudo-URL from title to enable dedup
       allDiscovered = allDiscovered.filter(a => {
-        if (a.url.includes("news.google.com") || a.url.includes("consent.google.com")) return false;
+        if (a.url.includes("news.google.com")) {
+          // Can't resolve — skip (no reliable URL for dedup)
+          return false;
+        }
         return !isBlockedUrl(a.url);
       });
       console.log(`Google News: ${allDiscovered.length} articles after resolution and filtering`);
