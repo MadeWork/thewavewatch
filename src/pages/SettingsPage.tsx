@@ -3,6 +3,38 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import ErrorBanner from "@/components/ErrorBanner";
+import { usePushSubscription } from "@/hooks/usePushSubscription";
+import { Bell, BellOff } from "lucide-react";
+
+function PushNotificationToggle() {
+  const { supported, subscribed, loading, permission, subscribe, unsubscribe } = usePushSubscription();
+
+  if (!supported) return null;
+
+  return (
+    <div className="border-t border-border pt-5 mt-5">
+      <h2 className="text-sm font-medium text-foreground mb-2">Push Notifications</h2>
+      <p className="text-xs text-muted-foreground mb-3">
+        Get notified when background fetch jobs complete, even when the app is closed.
+      </p>
+      {permission === "denied" ? (
+        <p className="text-xs text-destructive">Notifications are blocked in your browser settings.</p>
+      ) : subscribed ? (
+        <button onClick={unsubscribe} disabled={loading}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-sm text-muted-foreground hover:bg-muted transition disabled:opacity-50">
+          <BellOff className="w-4 h-4" />
+          {loading ? "Updating…" : "Disable push notifications"}
+        </button>
+      ) : (
+        <button onClick={subscribe} disabled={loading}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition disabled:opacity-50">
+          <Bell className="w-4 h-4" />
+          {loading ? "Enabling…" : "Enable push notifications"}
+        </button>
+      )}
+    </div>
+  );
+}
 
 const CLEAR_OPTIONS = [
   { key: "mentions", label: "Mentions", tables: ["article_enrichments", "article_bookmarks", "article_tags", "article_notes", "articles"] as const },
@@ -219,6 +251,8 @@ export default function SettingsPage() {
               ))}
             </div>
           </div>
+
+          <PushNotificationToggle />
 
           <div className="border-t border-border pt-5 mt-5">
             <h2 className="text-sm font-medium text-destructive mb-2">Danger Zone</h2>

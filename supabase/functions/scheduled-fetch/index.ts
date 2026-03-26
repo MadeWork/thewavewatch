@@ -143,12 +143,10 @@ serve(async (req) => {
       error_message: errors.length > 0 ? errors.join("; ") : null,
     }).eq("id", runId);
 
-    // Notify all users (for now, get distinct user_ids from notification_preferences or just use a broad approach)
+    // Notify all users with in-app notifications
     const { data: prefs } = await admin.from("notification_preferences").select("user_id").eq("in_app_fetch_complete", true);
     const userIds = prefs?.map((p: any) => p.user_id) || [];
 
-    // Also get users who don't have preferences (default is enabled)
-    // We'll notify the run initiator at minimum, or all authenticated users
     for (const uid of userIds) {
       await admin.from("app_notifications").insert({
         user_id: uid,
@@ -159,6 +157,22 @@ serve(async (req) => {
         payload: stats,
       });
     }
+
+    // Send Web Push notifications to all subscribed users
+    try {
+      await fetch(`${supabaseUrl}/functions/v1/send-push`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${anonKey}`,
+        },
+        body: JSON.stringify({
+          title: grandTotal > 0 ? `${grandTotal} articles discovered` : "Fetch complete",
+          body: summary,
+          data: { runId, total: grandTotal },
+        }),
+      });
+    } catch {}
 
     // 3-month retention: delete articles older than 90 days
     const cutoff = new Date();
