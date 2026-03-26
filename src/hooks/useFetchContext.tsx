@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, ReactNode, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -249,6 +249,20 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       queryClient.invalidateQueries({ queryKey: ["mentions"] });
       queryClient.invalidateQueries({ queryKey: ["analytics-articles"] });
       queryClient.invalidateQueries({ queryKey: ["keywords"] });
+
+      // Insert app notification
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await supabase.from("app_notifications").insert({
+            user_id: user.id,
+            kind: "fetch_complete",
+            title: grandTotal > 0 ? `Discovery complete: ${grandTotal} articles` : "Discovery complete",
+            body: resultText,
+            payload: { total: grandTotal, benchmark: benchmarkCount, sitemaps: sitemapCount, firecrawl: firecrawlCount, ai: aiDiscoverCount },
+          });
+        }
+      } catch {}
 
       setState({ fetching: false, progress: 100, stage: { step: "done", label: resultText }, result: resultText });
       setTimeout(() => setState(s => ({ ...s, progress: 0, stage: null })), 5000);

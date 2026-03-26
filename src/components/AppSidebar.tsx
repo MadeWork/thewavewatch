@@ -2,6 +2,7 @@ import { LayoutDashboard, List, Tag, Radio, BarChart3, Settings, LogOut, Bell, A
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useState, useEffect } from "react";
+import NotificationBell from "./NotificationBell";
 
 const links = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -37,6 +38,9 @@ export default function AppSidebar() {
             <Radio className="w-3 h-3 text-primary" />
           </div>
           <span className="text-sm font-light text-foreground tracking-tight">WaveWatch</span>
+        </div>
+        <div className="ml-auto">
+          <NotificationBell />
         </div>
       </div>
 
@@ -90,6 +94,9 @@ export default function AppSidebar() {
             <Radio className="w-4 h-4 text-primary" />
           </div>
           <span className="text-sm font-light text-foreground tracking-tight">WaveWatch</span>
+          <div className="ml-auto">
+            <NotificationBell />
+          </div>
         </div>
         <nav className="flex-1 px-3 py-2 space-y-0.5">
           {links.map(l => (
