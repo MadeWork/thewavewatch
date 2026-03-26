@@ -750,6 +750,8 @@ serve(async (req) => {
       // Google News URLs can't be reliably resolved (consent redirects).
       // Use the article as-is with the <source> domain. Store GN URL — it still links to the article.
       // Don't filter by isBlockedUrl since GN URLs are on news.google.com
+      // Limit to top 50 to stay within compute budget
+      allDiscovered = allDiscovered.slice(0, 50);
       console.log(`Google News: ${allDiscovered.length} unique articles ready for insert`);
 
       const inserted = await insertArticles(allDiscovered, existingUrlSet, activeKeywords, searchTerms, expandedTermMap, supabase, lovableApiKey);
