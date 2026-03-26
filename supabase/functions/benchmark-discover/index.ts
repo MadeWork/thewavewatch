@@ -281,7 +281,7 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const batchOffset = Number(body.offset ?? 0);
     const batchLimit = Math.min(Number(body.limit ?? 2), 2);
-    const bodyScanBudget = Math.min(Number(body.body_scan_budget ?? 4), 4);
+    const bodyScanBudget = Math.min(Number(body.body_scan_budget ?? 12), 20);
 
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
     const activeKeywords = keywords || [];
@@ -441,7 +441,7 @@ serve(async (req) => {
 
       if (firecrawlApiKey) {
         log.methods_tried.push("firecrawl_site_search");
-        const primaryKeywords = activeKeywords.map((k: any) => k.text).slice(0, 2);
+        const primaryKeywords = activeKeywords.map((k: any) => k.text).slice(0, 5);
         let fcCount = 0;
         for (const kw of primaryKeywords) {
           try {
