@@ -71,7 +71,7 @@ function extractDateFromUrl(url: string): string | null {
 
 async function runAiDiscover(params: {
   maxQueries: number; maxResults: number; relevanceThreshold: number;
-}) {
+}): Promise<{ discovered: number; searched: number; candidates: number }> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
