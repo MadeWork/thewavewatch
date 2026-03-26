@@ -273,11 +273,17 @@ serve(async (req) => {
     const maxResults = Math.min(Number(body.max_results || 5), 8);
     const relevanceThreshold = Number(body.relevance_threshold ?? 0.4);
 
-    // Run synchronously so caller gets actual results
-    const result = await runAiDiscover({ maxQueries, maxResults, relevanceThreshold });
+    // Count articles before to measure what gets inserted
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    const { count: beforeCount } = await supabase.from("articles").select("id", { count: "exact", head: true }).eq("discovery_method", "ai_discover");
+
+    // Run synchronously but with reduced scope for speed
+    const result = await runAiDiscover({ maxQueries: Math.min(maxQueries, 4), maxResults: Math.min(maxResults, 3), relevanceThreshold });
 
     return new Response(
-      JSON.stringify(result),
+      JSON.stringify({ ...result, method: "ai_discover" }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e) {
