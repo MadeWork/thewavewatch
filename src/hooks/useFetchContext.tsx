@@ -124,9 +124,10 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       }
 
       // Step 2: Google News (expanded regions)
+      let gnCount = 0;
       setState(s => ({ ...s, progress: 30, stage: { step: "discover", label: "Searching Google News (global)…" } }));
       const gnData = await invokeStage("google_news", {}, 90000);
-      if (gnData) totalDiscovered += gnData.discovered || 0;
+      if (gnData) { gnCount = gnData.discovered || 0; totalDiscovered += gnCount; }
 
       // Step 3: Source feeds — no batch limit, iterate until exhausted
       setState(s => ({ ...s, progress: 38, stage: { step: "rss", label: "Fetching RSS feeds…" } }));
@@ -236,11 +237,12 @@ export function FetchProvider({ children }: { children: ReactNode }) {
 
       // Build result
       const parts: string[] = [];
-      if (benchmarkCount > 0) parts.push(`${benchmarkCount} from benchmark sources`);
-      if (totalDiscovered > benchmarkCount) parts.push(`${totalDiscovered - benchmarkCount} from other sources`);
-      if (sitemapCount > 0) parts.push(`${sitemapCount} from sitemaps`);
-      if (firecrawlCount > 0) parts.push(`${firecrawlCount} from web search`);
-      if (aiDiscoverCount > 0) parts.push(`${aiDiscoverCount} from AI discovery`);
+      if (benchmarkCount > 0) parts.push(`${benchmarkCount} benchmark`);
+      if (gnCount > 0) parts.push(`${gnCount} Google News`);
+      if (totalDiscovered - benchmarkCount - gnCount > 0) parts.push(`${totalDiscovered - benchmarkCount - gnCount} sources/domains`);
+      if (sitemapCount > 0) parts.push(`${sitemapCount} sitemaps`);
+      if (firecrawlCount > 0) parts.push(`${firecrawlCount} web search`);
+      if (aiDiscoverCount > 0) parts.push(`${aiDiscoverCount} AI discovery`);
 
       const grandTotal = totalDiscovered + sitemapCount + firecrawlCount + aiDiscoverCount;
       const resultText = grandTotal > 0 ? `${grandTotal} articles · ${parts.join(" · ")}` : "No new articles found";
