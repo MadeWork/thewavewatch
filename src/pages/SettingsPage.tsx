@@ -103,6 +103,7 @@ export default function SettingsPage() {
     digest_email: "",
     fetch_frequency_minutes: 60,
     timezone: "UTC",
+    fetch_schedule: "daily_2am",
   });
 
   useEffect(() => {
@@ -113,6 +114,7 @@ export default function SettingsPage() {
         digest_email: settings.digest_email || "",
         fetch_frequency_minutes: settings.fetch_frequency_minutes || 60,
         timezone: settings.timezone || "UTC",
+        fetch_schedule: (settings as any).fetch_schedule || "daily_2am",
       });
     }
   }, [settings]);
@@ -200,8 +202,27 @@ export default function SettingsPage() {
           </div>
 
           <div className="border-t border-border pt-5 mt-5">
+            <h2 className="text-sm font-medium text-foreground mb-2">Scheduled Fetching</h2>
+            <p className="text-xs text-muted-foreground mb-3">Discovery runs automatically in the background. Articles are kept for 3 months.</p>
+            <div className="segment-control max-w-lg">
+              {[
+                { value: "manual", label: "Manual only" },
+                { value: "every_6h", label: "Every 6 hours" },
+                { value: "daily_2am", label: "Daily 2 AM" },
+                { value: "daily_6am", label: "Daily 6 AM" },
+                { value: "twice_daily", label: "Twice daily" },
+              ].map(s => (
+                <button key={s.value} className={`segment-btn ${form.fetch_schedule === s.value ? 'active' : ''}`}
+                  onClick={() => setForm(prev => ({ ...prev, fetch_schedule: s.value }))}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t border-border pt-5 mt-5">
             <h2 className="text-sm font-medium text-destructive mb-2">Danger Zone</h2>
-            <p className="text-xs text-muted-foreground mb-3">This will permanently delete all articles, enrichments, and sources. Keywords and settings will be kept.</p>
+            <p className="text-xs text-muted-foreground mb-3">This will permanently delete selected data categories.</p>
             <ClearDataButton />
           </div>
         </div>
