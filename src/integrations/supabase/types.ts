@@ -597,6 +597,7 @@ export type Database = {
           created_at: string
           digest_email: string | null
           fetch_frequency_minutes: number | null
+          fetch_schedule: string | null
           id: string
           language_filter: string[] | null
           timezone: string | null
@@ -608,6 +609,7 @@ export type Database = {
           created_at?: string
           digest_email?: string | null
           fetch_frequency_minutes?: number | null
+          fetch_schedule?: string | null
           id?: string
           language_filter?: string[] | null
           timezone?: string | null
@@ -619,6 +621,7 @@ export type Database = {
           created_at?: string
           digest_email?: string | null
           fetch_frequency_minutes?: number | null
+          fetch_schedule?: string | null
           id?: string
           language_filter?: string[] | null
           timezone?: string | null
