@@ -720,14 +720,20 @@ serve(async (req) => {
           try {
             const q = encodeURIComponent(term);
             const url = `https://news.google.com/rss/search?q=${q}&hl=${reg.hl}&gl=${reg.gl}&ceid=${reg.ceid}`;
-            const { response: resp } = await fetchWithRetry(url, { type: "google_news", maxRetries: 1, label: `GN "${term}" ${reg.gl}` });
+            const { response: resp, error } = await fetchWithRetry(url, { type: "google_news", maxRetries: 1, label: `GN "${term}" ${reg.gl}` });
             if (resp?.ok) {
               const xml = await resp.text();
               const articles = parseGoogleNewsRSS(xml, term);
+              console.log(`GN "${term}" ${reg.gl}: ${articles.length} articles parsed from ${xml.length} bytes`);
               allDiscovered.push(...articles);
+            } else {
+              console.log(`GN "${term}" ${reg.gl}: failed (status=${resp?.status}, error=${error})`);
+              if (resp) await resp.text().catch(() => {});
             }
             await new Promise(r => setTimeout(r, 150));
-          } catch {}
+          } catch (e: any) {
+            console.log(`GN "${term}" ${reg.gl}: exception: ${e.message}`);
+          }
         }
       }
 
