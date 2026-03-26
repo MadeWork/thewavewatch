@@ -105,12 +105,20 @@ function getXmlTag(content: string, tag: string): string {
 function extractDateFromUrl(url: string): string | null {
   try {
     const path = new URL(url).pathname;
+    // /2024/03/15/ style
     const slashMatch = path.match(/\/(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\/|$)/);
+    // -2024-03-15 slug style (Reuters modern)
     const slugMatch = path.match(/(?:-|\/)(\d{4})-(\d{2})-(\d{2})(?:\/|$)/);
     const match = slashMatch || slugMatch;
     if (match) {
       const d = new Date(`${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}T12:00:00Z`);
       if (!isNaN(d.getTime()) && d.getTime() > new Date("2000-01-01").getTime()) return d.toISOString();
+    }
+    // Reuters legacy /article/...-YYYYMMDD or embedded 8-digit date
+    const compactMatch = path.match(/[/-](\d{4})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?:[/-]|$)/);
+    if (compactMatch) {
+      const d = new Date(`${compactMatch[1]}-${compactMatch[2]}-${compactMatch[3]}T12:00:00Z`);
+      if (!isNaN(d.getTime()) && d.getTime() > new Date("2000-01-01").getTime() && d.getTime() < Date.now() + 86400000) return d.toISOString();
     }
   } catch { }
   return null;
