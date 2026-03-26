@@ -905,6 +905,129 @@ serve(async (req) => {
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    // ═══════════════════════════════════════════════════════
+    // STAGE: tier1_search — Targeted site-specific search via Firecrawl
+    // This is the PRIMARY discovery method for Tier 1 sources.
+    // For each top domain × keyword, searches site:domain.com "keyword"
+    // ═══════════════════════════════════════════════════════
+    if (stage === "tier1_search") {
+      const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
+      if (!firecrawlKey) {
+        return new Response(JSON.stringify({ discovered: 0, stage: "tier1_search", error: "No Firecrawl key" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Get top Tier 1 domains (priority >= 80, most important publishers)
+      const { data: topDomains } = await supabase
+        .from("approved_domains")
+        .select("domain, name, priority")
+        .eq("active", true)
+        .eq("approval_status", "approved")
+        .gte("priority", 80)
+        .order("priority", { ascending: false })
+        .range(offset, offset + limit - 1);
+
+      const domains = topDomains || [];
+      const primaryKeywords = activeKeywords.map((k: any) => k.text).slice(0, 5);
+      console.log(`Stage tier1_search: ${domains.length} domains × ${primaryKeywords.length} keywords (offset=${offset})`);
+
+      // Build search queries: site:domain.com "keyword"
+      const queries: { query: string; domain: string; name: string; keyword: string }[] = [];
+      for (const dom of domains) {
+        for (const kw of primaryKeywords) {
+          queries.push({
+            query: `site:${dom.domain} "${kw}"`,
+            domain: dom.domain,
+            name: dom.name,
+            keyword: kw,
+          });
+        }
+      }
+
+      // Execute searches (limit to avoid Firecrawl rate limits)
+      const MAX_SEARCHES = Math.min(queries.length, 20);
+      let searchedCount = 0;
+
+      for (let i = 0; i < MAX_SEARCHES; i++) {
+        const q = queries[i];
+        try {
+          const response = await fetch("https://api.firecrawl.dev/v1/search", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              query: q.query,
+              limit: 5,
+              tbs: "qdr:m", // Last month
+            }),
+          });
+
+          if (!response.ok) {
+            const txt = await response.text();
+            console.log(`Firecrawl search failed for ${q.domain}: ${response.status}`);
+            continue;
+          }
+
+          const data = await response.json();
+          searchedCount++;
+
+          for (const result of (data.data || [])) {
+            const url = normalizeUrl(result.url || "");
+            if (!url || existingUrlSet.has(url) || isBlockedUrl(url)) continue;
+
+            const title = (result.title || "").slice(0, 220);
+            const snippet = (result.description || "").slice(0, 500);
+            const text = `${title} ${snippet} ${url}`;
+            const kws = matchKeywordsExpanded(text, searchTerms);
+
+            // Use the search keyword if no explicit match found
+            const matchedKws = kws.length > 0 ? kws : [q.keyword];
+
+            let domain = q.domain;
+            try { domain = normalizeDomain(new URL(url).hostname); } catch {}
+
+            const pubDate = parseDateValue(
+              result.metadata?.ogArticlePublishedTime ||
+              result.metadata?.["article:published_time"] ||
+              result.metadata?.publishedTime
+            ) || extractDateFromUrl(url);
+
+            allDiscovered.push({
+              title, snippet, url,
+              published_at: pubDate,
+              source_domain: domain,
+              source_name: result.metadata?.ogSiteName || q.name,
+              matched_keywords: matchedKws,
+              discovery_method: "tier1_search",
+              matched_via: kws.length > 0 ? "title_snippet" : "site_search",
+            });
+            existingUrlSet.add(url);
+          }
+
+          // Small delay between searches to avoid rate limits
+          await new Promise(r => setTimeout(r, 200));
+        } catch (e: any) {
+          console.log(`Search error for ${q.domain}: ${e.message}`);
+        }
+      }
+
+      const { count: totalHighPri } = await supabase
+        .from("approved_domains")
+        .select("id", { count: "exact", head: true })
+        .eq("active", true)
+        .eq("approval_status", "approved")
+        .gte("priority", 80);
+
+      const hasMore = (totalHighPri || 0) > offset + limit;
+      console.log(`Tier 1 search: ${allDiscovered.length} found from ${searchedCount} searches (hasMore=${hasMore})`);
+
+      const inserted = await insertArticles(allDiscovered, existingUrlSet, activeKeywords, searchTerms, expandedTermMap, supabase, lovableApiKey);
+      return new Response(JSON.stringify({
+        discovered: inserted, stage: "tier1_search", offset, limit, hasMore,
+        searched: searchedCount, totalDomains: totalHighPri || 0,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     return new Response(JSON.stringify({ error: "Unknown stage", stage }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     console.error("discover-articles error:", e);
