@@ -926,7 +926,9 @@ async function insertArticles(
   // Dedup
   const seen = new Set<string>();
   allDiscovered = allDiscovered.filter(a => {
-    if (isBlockedDomain(a.source_domain) || isBlockedUrl(a.url)) return false;
+    // Allow Google News URLs (they have valid source_domain from <source> tag)
+    const isGnUrl = a.url.includes("news.google.com/rss/articles");
+    if (!isGnUrl && (isBlockedDomain(a.source_domain) || isBlockedUrl(a.url))) return false;
     const n = normalizeUrl(a.url);
     if (seen.has(n) || existingUrlSet.has(n)) return false;
     seen.add(n);
