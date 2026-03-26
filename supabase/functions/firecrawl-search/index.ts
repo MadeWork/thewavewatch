@@ -65,9 +65,11 @@ function normalizeText(t: string): string {
 function extractDateFromUrl(url: string): string | null {
   try {
     const path = new URL(url).pathname;
-    const m = path.match(/\/(\d{4})\/(\d{1,2})\/(\d{1,2})\//);
-    if (m) {
-      const d = new Date(`${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}T12:00:00Z`);
+    const slashMatch = path.match(/\/(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\/|$)/);
+    const slugMatch = path.match(/(?:-|\/)(\d{4})-(\d{2})-(\d{2})(?:\/|$)/);
+    const match = slashMatch || slugMatch;
+    if (match) {
+      const d = new Date(`${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}T12:00:00Z`);
       if (!isNaN(d.getTime()) && d.getTime() > new Date("2000-01-01").getTime()) return d.toISOString();
     }
   } catch {}
@@ -564,10 +566,12 @@ serve(async (req) => {
     console.log(`Final candidates to insert: ${strongMatches.length}`);
 
     // ── Stage 5: Resolve dates via Firecrawl scrape ────
-    const needMeta = strongMatches.filter(c => !c.published_at);
+    const needMeta = strongMatches
+      .filter(c => !c.published_at)
+      .sort((a, b) => Number(b.source_domain === "reuters.com") - Number(a.source_domain === "reuters.com"));
     if (needMeta.length > 0) {
       console.log(`Resolving dates for ${needMeta.length} articles (using Firecrawl scrape fallback)`);
-      for (let i = 0; i < Math.min(needMeta.length, 15); i += 3) {
+      for (let i = 0; i < Math.min(needMeta.length, 30); i += 3) {
         const batch = needMeta.slice(i, i + 3);
         await Promise.allSettled(batch.map(async (c) => {
           const meta = await fetchArticleMeta(c.url, firecrawlKey);

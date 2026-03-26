@@ -105,9 +105,11 @@ function getXmlTag(content: string, tag: string): string {
 function extractDateFromUrl(url: string): string | null {
   try {
     const path = new URL(url).pathname;
-    const m = path.match(/\/(\d{4})\/(\d{1,2})\/(\d{1,2})\//);
-    if (m) {
-      const d = new Date(`${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}T12:00:00Z`);
+    const slashMatch = path.match(/\/(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\/|$)/);
+    const slugMatch = path.match(/(?:-|\/)(\d{4})-(\d{2})-(\d{2})(?:\/|$)/);
+    const match = slashMatch || slugMatch;
+    if (match) {
+      const d = new Date(`${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}T12:00:00Z`);
       if (!isNaN(d.getTime()) && d.getTime() > new Date("2000-01-01").getTime()) return d.toISOString();
     }
   } catch { }
@@ -524,10 +526,12 @@ serve(async (req) => {
       log.matched = matched.length;
 
       // Extract published_at from HTML for articles missing dates — use Firecrawl as fallback
-      const needDate = matched.filter(c => !c.published_at);
+      const needDate = matched
+        .filter(c => !c.published_at)
+        .sort((a, b) => Number(b.source_domain === "reuters.com") - Number(a.source_domain === "reuters.com"));
       if (needDate.length > 0) {
         const DATE_BATCH = 3;
-        for (let d = 0; d < Math.min(needDate.length, 10); d += DATE_BATCH) {
+        for (let d = 0; d < Math.min(needDate.length, 20); d += DATE_BATCH) {
           await Promise.allSettled(needDate.slice(d, d + DATE_BATCH).map(async (c) => {
             // Try direct fetch first
             try {
