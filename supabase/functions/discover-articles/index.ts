@@ -468,10 +468,12 @@ function parseGoogleNewsRSS(xml: string, keyword: string): DiscoveredArticle[] {
     const desc = stripHtml(getXmlTag(c, "description")).slice(0, 500);
     const pubDate = getXmlTag(c, "pubDate");
     const srcMatch = c.match(/<source[^>]+url=["']([^"']+)["'][^>]*>(.*?)<\/source>/i);
-    if (title && gnLink) {
-      let domain = "";
-      try { domain = normalizeDomain(srcMatch ? srcMatch[1] : gnLink); } catch {}
-      if (isBlockedDomain(domain) || isBlockedUrl(gnLink)) continue;
+     if (title && gnLink) {
+       let domain = "";
+       try { domain = normalizeDomain(srcMatch ? srcMatch[1] : gnLink); } catch {}
+       // Don't block news.google.com URLs here — they'll be resolved to real publisher URLs later
+       const isGnUrl = gnLink.includes("news.google.com");
+       if (!isGnUrl && (isBlockedDomain(domain) || isBlockedUrl(gnLink))) continue;
       articles.push({
         title, snippet: desc, url: gnLink,
         published_at: parseDateValue(pubDate) || extractDateFromUrl(gnLink),
@@ -718,32 +720,39 @@ serve(async (req) => {
           try {
             const q = encodeURIComponent(term);
             const url = `https://news.google.com/rss/search?q=${q}&hl=${reg.hl}&gl=${reg.gl}&ceid=${reg.ceid}`;
-            const { response: resp } = await fetchWithRetry(url, { type: "google_news", maxRetries: 1, label: `GN "${term}" ${reg.gl}` });
+            const { response: resp, error } = await fetchWithRetry(url, { type: "google_news", maxRetries: 1, label: `GN "${term}" ${reg.gl}` });
             if (resp?.ok) {
               const xml = await resp.text();
               const articles = parseGoogleNewsRSS(xml, term);
+              console.log(`GN "${term}" ${reg.gl}: ${articles.length} articles parsed from ${xml.length} bytes`);
               allDiscovered.push(...articles);
+            } else {
+              console.log(`GN "${term}" ${reg.gl}: failed (status=${resp?.status}, error=${error})`);
+              if (resp) await resp.text().catch(() => {});
             }
             await new Promise(r => setTimeout(r, 150));
-          } catch {}
+          } catch (e: any) {
+            console.log(`GN "${term}" ${reg.gl}: exception: ${e.message}`);
+          }
         }
       }
 
-      // Resolve Google News URLs (increased limit)
-      const gnArticles = allDiscovered.filter(a => a.url.includes("news.google.com")).slice(0, 40);
-      for (let i = 0; i < gnArticles.length; i += CONC) {
-        const batch = gnArticles.slice(i, i + CONC);
-        await Promise.allSettled(batch.map(async (article) => {
-          const resolved = await resolveGoogleNewsUrl(article.url);
-          if (resolved !== article.url) {
-            article.url = resolved;
-            try {
-              const resolvedDomain = normalizeDomain(new URL(resolved).hostname);
-              if (!isBlockedDomain(resolvedDomain)) article.source_domain = resolvedDomain;
-            } catch {}
-          }
-        }));
-      }
+      // Deduplicate by title (GN returns same article across regions)
+      console.log(`Google News: ${allDiscovered.length} raw articles before dedup`);
+      const gnSeen = new Set<string>();
+      allDiscovered = allDiscovered.filter(a => {
+        const key = normalizeText(a.title).slice(0, 80);
+        if (gnSeen.has(key)) return false;
+        gnSeen.add(key);
+        return true;
+      });
+
+      // Google News URLs can't be reliably resolved (consent redirects).
+      // Use the article as-is with the <source> domain. Store GN URL — it still links to the article.
+      // Don't filter by isBlockedUrl since GN URLs are on news.google.com
+      // Limit to top 50 to stay within compute budget
+      allDiscovered = allDiscovered.slice(0, 50);
+      console.log(`Google News: ${allDiscovered.length} unique articles ready for insert`);
 
       const inserted = await insertArticles(allDiscovered, existingUrlSet, activeKeywords, searchTerms, expandedTermMap, supabase, lovableApiKey);
       return new Response(JSON.stringify({
@@ -917,7 +926,9 @@ async function insertArticles(
   // Dedup
   const seen = new Set<string>();
   allDiscovered = allDiscovered.filter(a => {
-    if (isBlockedDomain(a.source_domain) || isBlockedUrl(a.url)) return false;
+    // Allow Google News URLs (they have valid source_domain from <source> tag)
+    const isGnUrl = a.url.includes("news.google.com/rss/articles");
+    if (!isGnUrl && (isBlockedDomain(a.source_domain) || isBlockedUrl(a.url))) return false;
     const n = normalizeUrl(a.url);
     if (seen.has(n) || existingUrlSet.has(n)) return false;
     seen.add(n);

@@ -71,21 +71,21 @@ function extractDateFromUrl(url: string): string | null {
 
 async function runAiDiscover(params: {
   maxQueries: number; maxResults: number; relevanceThreshold: number;
-}) {
+}): Promise<{ discovered: number; searched: number; candidates: number }> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
   const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
   const supabase = createClient(supabaseUrl, supabaseKey);
 
-  if (!firecrawlKey) { console.log("ai-discover: no Firecrawl key"); return; }
+  if (!firecrawlKey) { console.log("ai-discover: no Firecrawl key"); return { discovered: 0, searched: 0, candidates: 0 }; }
 
   const [{ data: keywords }, { data: settings }] = await Promise.all([
     supabase.from("keywords").select("*").eq("active", true),
     supabase.from("settings").select("company_name").limit(1).maybeSingle(),
   ]);
   const activeKeywords = keywords || [];
-  if (!activeKeywords.length) { console.log("ai-discover: no keywords"); return; }
+  if (!activeKeywords.length) { console.log("ai-discover: no keywords"); return { discovered: 0, searched: 0, candidates: 0 }; }
 
   const companyName = settings?.company_name && settings.company_name !== "My Company" ? settings.company_name : "";
 
@@ -149,7 +149,7 @@ async function runAiDiscover(params: {
     }
   } catch (e) { console.error("AI query gen failed:", e); }
 
-  if (!queries.length) { console.log("ai-discover: no queries generated"); return; }
+  if (!queries.length) { console.log("ai-discover: no queries generated"); return { discovered: 0, searched: 0, candidates: 0 }; }
   console.log(`ai-discover: ${queries.length} queries`);
 
   // Get existing URLs
@@ -259,6 +259,7 @@ async function runAiDiscover(params: {
   }
 
   console.log(`ai-discover complete: ${totalInserted} inserted from ${toInsert.length} candidates, ${maxSearches} searches`);
+  return { discovered: totalInserted, searched: maxSearches, candidates: toInsert.length };
 }
 
 // ── Handler ──────────────────────────────────────────────
@@ -272,15 +273,17 @@ serve(async (req) => {
     const maxResults = Math.min(Number(body.max_results || 5), 8);
     const relevanceThreshold = Number(body.relevance_threshold ?? 0.4);
 
-    // Run in background
-    EdgeRuntime.waitUntil(
-      runAiDiscover({ maxQueries, maxResults, relevanceThreshold }).catch(e => {
-        console.error("ai-discover background error:", e);
-      })
-    );
+    // Count articles before to measure what gets inserted
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    const { count: beforeCount } = await supabase.from("articles").select("id", { count: "exact", head: true }).eq("discovery_method", "ai_discover");
+
+    // Run synchronously but with reduced scope for speed
+    const result = await runAiDiscover({ maxQueries: Math.min(maxQueries, 4), maxResults: Math.min(maxResults, 3), relevanceThreshold });
 
     return new Response(
-      JSON.stringify({ status: "processing", message: "AI discovery started in background" }),
+      JSON.stringify({ ...result, method: "ai_discover" }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e) {
