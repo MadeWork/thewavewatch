@@ -41,18 +41,20 @@ serve(async (req) => {
     const allKeywordTexts = keywords.map(k => k.text);
 
     const prompt = `You are a media monitoring expert for ${companyName}. For each keyword below, generate 5-10 semantically related search terms that would help find relevant articles. Include:
-- Synonyms and alternative phrasings
+- Synonyms and alternative phrasings (e.g. "wave energy" → "wave power", "ocean wave power")
 - Related industry/technical terms
 - Abbreviations and acronyms
 - Broader and narrower terms
 - Common variations and alternative spellings
+
+IMPORTANT: All terms must be in English only. No characters from other languages.
 
 Keywords to expand:
 ${toExpand.map(k => `- "${k.text}"`).join("\n")}
 
 All existing keywords (don't duplicate these exactly): ${allKeywordTexts.join(", ")}
 
-Each expansion should be 1-4 words. Focus on terms that would appear in news articles.`;
+Each expansion should be 1-4 words in English. Focus on terms that would appear in news articles.`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
