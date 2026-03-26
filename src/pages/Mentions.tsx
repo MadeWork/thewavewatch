@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { format, subMonths } from "date-fns";
-import { Search, Download, ExternalLink, ChevronLeft, ChevronRight, X, Filter, Sparkles, Bookmark, List, Table, Tag, StickyNote, CheckSquare } from "lucide-react";
+import { Search, Download, ExternalLink, ChevronLeft, ChevronRight, X, Filter, Sparkles, Bookmark, List, Table, Tag, StickyNote, CheckSquare, Calendar } from "lucide-react";
 import ErrorBanner from "@/components/ErrorBanner";
 import EmptyState from "@/components/EmptyState";
 import ArticleDetailDrawer from "@/components/ArticleDetailDrawer";
@@ -20,6 +20,7 @@ export default function Mentions() {
   const [selectedArticle, setSelectedArticle] = useState<any>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBookmarksOnly, setShowBookmarksOnly] = useState(false);
+  const [dateField, setDateField] = useState<"published_at" | "fetched_at">("published_at");
 
   const { bookmarks, toggleBookmark, isBookmarked } = useBookmarks();
 
@@ -27,6 +28,7 @@ export default function Mentions() {
     queryKey: ["mentions"],
     queryFn: async () => {
       const { data, error } = await supabase.from("articles").select("*, sources(name, region, country_code)").order("published_at", { ascending: false }).limit(1000);
+      // Note: we always fetch ordered by published_at, but re-sort client-side based on dateField
       if (error) throw error;
       return data as any[];
     },
@@ -102,8 +104,10 @@ export default function Mentions() {
         result = result.filter(a => new Date(a.published_at) >= cutoff);
       }
     }
+    // Sort by selected date field
+    result = [...result].sort((a, b) => new Date(b[dateField]).getTime() - new Date(a[dateField]).getTime());
     return result;
-  }, [articles, quickSearch, searchQuery, showBookmarksOnly, bookmarks]);
+  }, [articles, quickSearch, searchQuery, showBookmarksOnly, bookmarks, dateField]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -186,6 +190,15 @@ export default function Mentions() {
             className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition ${showBookmarksOnly ? "bg-primary/20 text-primary" : "bg-bg-elevated text-text-secondary hover:bg-bg-subtle"}`}>
             <Bookmark className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Saved</span>
           </button>
+          {/* Date field toggle */}
+          <div className="segment-control" style={{ maxWidth: 180 }}>
+            <button className={`segment-btn ${dateField === "published_at" ? "active" : ""}`} onClick={() => { setDateField("published_at"); setPage(0); }} style={{ padding: "4px 8px", fontSize: 10 }}>
+              <Calendar className="w-3 h-3 inline mr-1" />Published
+            </button>
+            <button className={`segment-btn ${dateField === "fetched_at" ? "active" : ""}`} onClick={() => { setDateField("fetched_at"); setPage(0); }} style={{ padding: "4px 8px", fontSize: 10 }}>
+              <Calendar className="w-3 h-3 inline mr-1" />Imported
+            </button>
+          </div>
           <button onClick={() => setShowSearch(!showSearch)}
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-bg-elevated text-text-secondary text-xs hover:bg-bg-subtle transition">
             <Filter className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Advanced</span>
@@ -257,7 +270,7 @@ export default function Mentions() {
                     <td className="py-2 pr-2 text-foreground font-light max-w-[300px] truncate">{renderHighlighted(a.title)}</td>
                     <td className="py-2 pr-2 text-text-secondary">{displayName}</td>
                     <td className="py-2 pr-2 text-text-muted">{src?.country_code || ""}</td>
-                    <td className="py-2 pr-2 text-text-muted whitespace-nowrap">{format(new Date(a.published_at), "MMM d, yyyy")}</td>
+                    <td className="py-2 pr-2 text-text-muted whitespace-nowrap">{format(new Date(a[dateField]), "MMM d, yyyy")}</td>
                     <td className="py-2 pr-2">
                       <span className={`sentiment-badge text-[10px] ${a.sentiment === "positive" ? "sentiment-positive" : a.sentiment === "negative" ? "sentiment-negative" : "sentiment-neutral"}`}>{a.sentiment}</span>
                     </td>
@@ -306,7 +319,13 @@ export default function Mentions() {
                     <span className="text-xs text-text-secondary">{displayName}</span>
                     {a.source_domain && <span className="text-[10px] text-text-muted">({a.source_domain})</span>}
                     <span className="text-xs text-text-muted">·</span>
-                    <span className="text-xs text-text-muted">{format(new Date(a.published_at), "MMM d, yyyy HH:mm")}</span>
+                    <span className="text-xs text-text-muted">{format(new Date(a[dateField]), "MMM d, yyyy HH:mm")}</span>
+                    {dateField === "fetched_at" && a.published_at !== a.fetched_at && (
+                      <span className="text-[9px] text-text-muted opacity-60">pub: {format(new Date(a.published_at), "MMM d")}</span>
+                    )}
+                    {dateField === "published_at" && a.fetched_at && (
+                      <span className="text-[9px] text-text-muted opacity-60">imp: {format(new Date(a.fetched_at), "MMM d")}</span>
+                    )}
                     {a.language && <span className="px-1 py-0.5 rounded bg-bg-subtle text-text-muted text-[10px]">{a.language}</span>}
                     {src?.region && <span className="px-1.5 py-0.5 rounded bg-bg-subtle text-text-muted text-[10px]">{src.region}</span>}
                     {a.matched_keywords?.map((kw: string) => (
