@@ -114,6 +114,7 @@ export default function SettingsPage() {
         digest_email: settings.digest_email || "",
         fetch_frequency_minutes: settings.fetch_frequency_minutes || 60,
         timezone: settings.timezone || "UTC",
+        fetch_schedule: (settings as any).fetch_schedule || "daily_2am",
       });
     }
   }, [settings]);
