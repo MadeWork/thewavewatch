@@ -256,10 +256,12 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       } catch {}
 
       // Build result
+      const otherSourceCount = totalDiscovered - benchmarkCount - gnCount - tier1SearchCount;
       const parts: string[] = [];
+      if (tier1SearchCount > 0) parts.push(`${tier1SearchCount} from publishers`);
       if (benchmarkCount > 0) parts.push(`${benchmarkCount} benchmark`);
       if (gnCount > 0) parts.push(`${gnCount} Google News`);
-      if (totalDiscovered - benchmarkCount - gnCount > 0) parts.push(`${totalDiscovered - benchmarkCount - gnCount} sources/domains`);
+      if (otherSourceCount > 0) parts.push(`${otherSourceCount} other sources`);
       if (sitemapCount > 0) parts.push(`${sitemapCount} sitemaps`);
       if (firecrawlCount > 0) parts.push(`${firecrawlCount} web search`);
       if (aiDiscoverCount > 0) parts.push(`${aiDiscoverCount} AI discovery`);
