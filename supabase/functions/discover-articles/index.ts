@@ -1004,7 +1004,10 @@ serve(async (req) => {
               matched_via: kws.length > 0 ? "title_snippet" : "site_search",
             });
             existingUrlSet.add(url);
+            foundForQuery++;
           }
+
+          console.log(`  ${q.domain} "${q.keyword}": ${results.length} results, ${foundForQuery} new`);
 
           // Small delay between searches to avoid rate limits
           await new Promise(r => setTimeout(r, 200));
