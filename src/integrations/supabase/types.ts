@@ -56,6 +56,50 @@ export type Database = {
         }
         Relationships: []
       }
+      app_notifications: {
+        Row: {
+          body: string
+          created_at: string
+          fetch_run_id: string | null
+          id: string
+          kind: string
+          payload: Json
+          read_at: string | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          fetch_run_id?: string | null
+          id?: string
+          kind?: string
+          payload?: Json
+          read_at?: string | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          fetch_run_id?: string | null
+          id?: string
+          kind?: string
+          payload?: Json
+          read_at?: string | null
+          title?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_notifications_fetch_run_id_fkey"
+            columns: ["fetch_run_id"]
+            isOneToOne: false
+            referencedRelation: "fetch_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       approved_domains: {
         Row: {
           active: boolean | null
@@ -336,6 +380,51 @@ export type Database = {
           },
         ]
       }
+      fetch_runs: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          finished_at: string | null
+          id: string
+          initiated_by: string | null
+          result_stats: Json
+          scheduled_for: string | null
+          started_at: string | null
+          status: string
+          summary: string | null
+          trigger_type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          initiated_by?: string | null
+          result_stats?: Json
+          scheduled_for?: string | null
+          started_at?: string | null
+          status?: string
+          summary?: string | null
+          trigger_type?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          initiated_by?: string | null
+          result_stats?: Json
+          scheduled_for?: string | null
+          started_at?: string | null
+          status?: string
+          summary?: string | null
+          trigger_type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       keyword_groups: {
         Row: {
           created_at: string
@@ -399,6 +488,33 @@ export type Database = {
           logic_operator?: string
           match_count?: number
           text?: string
+        }
+        Relationships: []
+      }
+      notification_preferences: {
+        Row: {
+          created_at: string
+          email_fetch_complete: boolean
+          id: string
+          in_app_fetch_complete: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          email_fetch_complete?: boolean
+          id?: string
+          in_app_fetch_complete?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          email_fetch_complete?: boolean
+          id?: string
+          in_app_fetch_complete?: boolean
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
