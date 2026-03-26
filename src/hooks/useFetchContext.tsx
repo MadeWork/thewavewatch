@@ -100,19 +100,39 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       }
       totalDiscovered += benchmarkCount;
 
-      // Step 1: Tier 1 domains — no batch limit, iterate until exhausted
-      setState(s => ({ ...s, progress: 18, stage: { step: "discover", label: "Scanning major outlets…" } }));
+      // Step 1: Tier 1 site-specific search (PRIMARY — uses Firecrawl site: queries)
+      let tier1SearchCount = 0;
+      setState(s => ({ ...s, progress: 15, stage: { step: "discover", label: "Searching major outlets…" } }));
+      const T1S_BATCH = 5;
+      let t1sOffset = 0;
+      let t1sHasMore = true;
+      let t1sBatchNum = 0;
+      while (t1sHasMore) {
+        setState(s => ({
+          ...s,
+          progress: 15 + Math.min(t1sBatchNum * 3, 12),
+          stage: { step: "discover", label: `Searching major outlets (batch ${t1sBatchNum + 1})…` },
+        }));
+        const data = await invokeStage("tier1_search", { offset: t1sOffset, limit: T1S_BATCH }, 90000);
+        if (data) {
+          tier1SearchCount += data.discovered || 0;
+          totalDiscovered += data.discovered || 0;
+          t1sHasMore = data.hasMore === true;
+          t1sOffset += T1S_BATCH;
+        } else {
+          t1sHasMore = false;
+        }
+        t1sBatchNum++;
+      }
+
+      // Step 1b: Tier 1 RSS feeds — supplementary scan
+      setState(s => ({ ...s, progress: 28, stage: { step: "discover", label: "Scanning RSS feeds from major outlets…" } }));
       const TIER1_BATCH = 10;
       let tier1Offset = 0;
       let tier1HasMore = true;
       let tier1BatchNum = 0;
       while (tier1HasMore) {
-        setState(s => ({
-          ...s,
-          progress: 18 + Math.min(tier1BatchNum * 2, 10),
-          stage: { step: "discover", label: `Scanning major outlets (batch ${tier1BatchNum + 1})…` },
-        }));
-        const data = await invokeStage("tier1", { offset: tier1Offset, limit: TIER1_BATCH, body_scan_budget: 15 }, 90000);
+        const data = await invokeStage("tier1", { offset: tier1Offset, limit: TIER1_BATCH, body_scan_budget: 10 }, 90000);
         if (data) {
           totalDiscovered += data.discovered || 0;
           tier1HasMore = data.hasMore === true;
