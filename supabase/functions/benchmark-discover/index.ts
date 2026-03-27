@@ -660,32 +660,6 @@ serve(async (req) => {
             };
           });
 
-          try {
-            const prompt = toInsert.map((it, i) => `[${i}] Title: ${it.title}\nSnippet: ${it.snippet}`).join("\n\n");
-            const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-              method: "POST",
-              headers: { Authorization: `Bearer ${lovableApiKey}`, "Content-Type": "application/json" },
-              body: JSON.stringify({
-                model: "google/gemini-2.5-flash-lite",
-                tools: [{ type: "function", function: { name: "classify_sentiments", description: "Classify sentiment", parameters: { type: "object", properties: { results: { type: "array", items: { type: "object", properties: { index: { type: "number" }, sentiment: { type: "string", enum: ["positive", "neutral", "negative"] }, score: { type: "number" } }, required: ["index", "sentiment", "score"] } } }, required: ["results"] } } }],
-                tool_choice: { type: "function", function: { name: "classify_sentiments" } },
-                messages: [{ role: "system", content: "Classify the sentiment of each news article." }, { role: "user", content: prompt }],
-              }),
-            });
-            if (r.ok) {
-              const d = JSON.parse(await r.text());
-              const tc = d.choices?.[0]?.message?.tool_calls?.[0];
-              if (tc?.function?.arguments) {
-                const p = JSON.parse(tc.function.arguments);
-                const res = p.results || [];
-                toInsert.forEach((a, i) => {
-                  const x = res.find((r: any) => r.index === i);
-                  if (x) { a.sentiment = x.sentiment; a.sentiment_score = x.score; }
-                });
-              }
-            }
-          } catch { }
-
           const { data: ins, error } = await supabase.from("articles").upsert(toInsert, { onConflict: "url", ignoreDuplicates: true }).select("id");
           if (error) console.error(`Benchmark insert error for ${src.name}:`, error);
           const count = ins?.length || 0;
