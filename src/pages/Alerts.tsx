@@ -34,6 +34,7 @@ export default function Alerts() {
     addRule({
       name: form.name.trim(),
       rule_type: form.rule_type,
+      alert_category: form.alert_category,
       conditions: {
         keywords: form.keywords,
         sentiments: form.sentiments,
