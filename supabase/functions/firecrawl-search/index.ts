@@ -541,6 +541,85 @@ serve(async (req) => {
 
     console.log(`After body scan: ${strongMatches.length} strong, ${weakCandidates.length} still weak`);
 
+    // ── Stage 3.5: Firecrawl Crawl/Map for priority domains ──
+    if (enableCrawl && firecrawlKey) {
+      const priorityDomains = (approvedDomains || [])
+        .filter((d: any) => (d.priority || 0) >= 80)
+        .sort((a: any, b: any) => (b.priority || 0) - (a.priority || 0))
+        .slice(0, crawlDomainLimit);
+
+      if (priorityDomains.length > 0) {
+        console.log(`Stage 3.5: Crawling ${priorityDomains.length} priority domains via Firecrawl Map`);
+        for (const dom of priorityDomains) {
+          const domain = normalizeDomain(dom.domain);
+          try {
+            // Use Firecrawl Map (fast URL discovery)
+            const mapResp = await fetch("https://api.firecrawl.dev/v1/map", {
+              method: "POST",
+              headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
+              body: JSON.stringify({
+                url: `https://${domain}`,
+                search: activeKeywords.slice(0, 3).map((k: any) => k.text).join(" "),
+                limit: 50,
+                includeSubdomains: false,
+              }),
+            });
+            if (!mapResp.ok) continue;
+            const mapData = await mapResp.json();
+            const discoveredUrls = (mapData.links || []).filter((u: string) => {
+              const nu = normalizeUrl(u);
+              return !existingUrlSet.has(nu) && !isBlockedUrl(u);
+            }).slice(0, 20);
+
+            console.log(`  ${domain}: ${discoveredUrls.length} new URLs from map`);
+
+            // Scrape discovered URLs for keyword matching
+            for (const url of discoveredUrls.slice(0, 10)) {
+              try {
+                const scrapeResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
+                  body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: true, timeout: 8000 }),
+                });
+                if (!scrapeResp.ok) continue;
+                const scrapeData = await scrapeResp.json();
+                const md = scrapeData.data?.markdown || "";
+                const meta = scrapeData.data?.metadata || {};
+                const title = meta.title || meta.ogTitle || "";
+                const desc = meta.description || meta.ogDescription || "";
+                const fullText = `${title} ${desc} ${md}`;
+                const matched = matchKeywordsExpanded(fullText);
+                if (matched.length > 0 || md.length > 100) {
+                  const nu = normalizeUrl(url);
+                  if (!existingUrlSet.has(nu)) {
+                    strongMatches.push({
+                      title: (title || "").slice(0, 220),
+                      snippet: (desc || "").slice(0, 500),
+                      url: nu,
+                      canonical_url: normalizeUrl(meta.ogUrl || meta.canonicalUrl || url),
+                      published_at: parseDateValue(meta.ogArticlePublishedTime || meta["article:published_time"]) || extractDateFromUrl(url) || null,
+                      source_domain: domain,
+                      source_name: meta.ogSiteName || domain,
+                      matched_keywords: matched.length > 0 ? matched : [activeKeywords[0]?.text || ""],
+                      matched_via: matched.length > 0 ? "crawl_body" : "crawl_discover",
+                      discovery_method: "firecrawl_crawl",
+                      body_text: md.slice(0, 8000),
+                      language: meta.language?.split("-")[0] || null,
+                    });
+                    existingUrlSet.add(nu);
+                  }
+                }
+              } catch {}
+              await new Promise(r => setTimeout(r, 200));
+            }
+          } catch (e: any) {
+            console.error(`Crawl error for ${domain}:`, e.message);
+          }
+        }
+        console.log(`After crawl: ${strongMatches.length} total strong matches`);
+      }
+    }
+
     // ── Stage 4: AI classification for remaining weak ───
     if (enableAiClassify && weakCandidates.length > 0) {
       const classifyLimit = Math.min(weakCandidates.length, 20);
