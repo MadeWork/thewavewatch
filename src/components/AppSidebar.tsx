@@ -1,4 +1,4 @@
-import { LayoutDashboard, List, Tag, Radio, BarChart3, Settings, LogOut, Bell, Archive, FileText, Menu, X } from "lucide-react";
+import { LayoutDashboard, List, Tag, Radio, BarChart3, Settings, LogOut, Bell, Archive, FileText, Menu, X, MessageCircle } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useState, useEffect } from "react";
@@ -12,6 +12,7 @@ const links = [
   { to: "/sources", label: "Sources", icon: Radio },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/alerts", label: "Alerts", icon: Bell },
+  { to: "/social", label: "Social", icon: MessageCircle },
   { to: "/reports", label: "Reports", icon: FileText },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
