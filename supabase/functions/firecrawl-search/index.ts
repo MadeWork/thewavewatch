@@ -238,27 +238,29 @@ async function classifyRelevanceBatch(
             name: "classify_articles",
             description: "Classify relevance and sentiment of candidate articles",
             parameters: {
-              type: "object",
-              properties: {
-                results: {
-                  type: "array",
-                  items: {
                     type: "object",
                     properties: {
-                      index: { type: "number" },
-                      relevant: { type: "boolean" },
-                      relevance_score: { type: "number" },
-                      primary_entity: { type: "string" },
-                      matched_reason: { type: "string" },
-                      sentiment: { type: "string", enum: ["positive", "neutral", "negative"] },
-                      sentiment_score: { type: "number" },
-                      summary: { type: "string" },
+                      results: {
+                        type: "array",
+                        items: {
+                          type: "object",
+                          properties: {
+                            index: { type: "number" },
+                            relevant: { type: "boolean" },
+                            relevance_score: { type: "number" },
+                            importance: { type: "string", enum: ["high", "medium", "low"] },
+                            confidence: { type: "number" },
+                            primary_entity: { type: "string" },
+                            matched_reason: { type: "string" },
+                            sentiment: { type: "string", enum: ["positive", "neutral", "negative"] },
+                            sentiment_score: { type: "number" },
+                            summary: { type: "string" },
+                          },
+                          required: ["index", "relevant", "relevance_score", "importance", "confidence", "primary_entity", "matched_reason", "sentiment", "sentiment_score", "summary"],
+                        },
+                      },
                     },
-                    required: ["index", "relevant", "relevance_score", "primary_entity", "matched_reason", "sentiment", "sentiment_score", "summary"],
-                  },
-                },
-              },
-              required: ["results"],
+                    required: ["results"],
             },
           },
         }],
