@@ -1184,6 +1184,8 @@ async function insertArticles(
         matched_keywords: a.matched_keywords,
         language: a.language || null,
         sentiment: "neutral" as string, sentiment_score: 0.5,
+        importance: "medium" as string, confidence: 0.5 as number,
+        matched_reason: null as string | null,
         discovery_method: a.discovery_method || "rss",
         matched_via: a.matched_via || "title_snippet",
         relevance_score: a.relevance_score ?? null,
@@ -1192,8 +1194,21 @@ async function insertArticles(
       };
     });
 
-    const sentiments = await analyzeSentimentBatch(toInsert.map(a => ({ title: a.title, snippet: a.snippet || "" })), lovableApiKey);
-    toInsert.forEach((a, i) => { a.sentiment = sentiments[i].sentiment; a.sentiment_score = sentiments[i].score; });
+    const companyContext = settings?.company_name && settings.company_name !== "My Company" ? settings.company_name : "";
+    const classifications = await classifyArticlesBatch(
+      batch.map(a => ({ title: a.title, snippet: a.snippet || "", keyword: (a.matched_keywords || [])[0] || "" })),
+      lovableApiKey, companyContext
+    );
+    toInsert.forEach((a, i) => {
+      const c = classifications[i];
+      a.sentiment = c.sentiment;
+      a.sentiment_score = c.sentiment_score;
+      a.importance = c.importance;
+      a.confidence = c.confidence;
+      a.matched_reason = c.matched_reason || null;
+      a.primary_entity = c.primary_entity || a.primary_entity;
+      a.ai_summary = c.ai_summary || a.ai_summary;
+    });
 
     const { data: ins, error } = await supabase.from("articles").upsert(toInsert, { onConflict: "url", ignoreDuplicates: true }).select("id");
     if (error) console.error("Insert error:", error);
