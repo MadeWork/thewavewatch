@@ -62,11 +62,11 @@ serve(async (req) => {
     let benchOffset = 0;
     let benchMore = true;
     while (benchMore) {
-      const r = await callStage("benchmark-discover", { offset: benchOffset, limit: 2, body_scan_budget: 8 }, 120000);
+      const r = await callStage("benchmark-discover", { offset: benchOffset, limit: 3, body_scan_budget: 20 }, 150000);
       if (r) {
         benchmarkCount += r.discovered || 0;
         benchMore = r.hasMore === true;
-        benchOffset += 2;
+        benchOffset += 3;
       } else {
         benchMore = false;
       }
@@ -121,13 +121,17 @@ serve(async (req) => {
     }
     stats.sitemaps = smCount;
 
-    // Stage 6: Firecrawl
-    const fc = await callStage("firecrawl-search", { max_results: 5, max_queries: 50, enable_scrape: true, enable_ai_classify: true }, 120000);
+    // Stage 6: Firecrawl (search + crawl for priority domains)
+    const fc = await callStage("firecrawl-search", { max_results: 5, max_queries: 50, enable_scrape: true, enable_ai_classify: true, enable_crawl: true, crawl_domains: 5 }, 150000);
     stats.firecrawl = fc?.discovered || 0;
 
     // Stage 7: AI discovery
     const ai = await callStage("ai-discover", { max_queries: 8, max_results: 10, relevance_threshold: 0.35 }, 120000);
     stats.ai = ai?.discovered || 0;
+
+    // Stage 8: Story clustering
+    const cluster = await callStage("cluster-stories", { max_articles: 200 }, 60000);
+    stats.clustered = cluster?.clustered || 0;
 
     const grandTotal = Object.values(stats).reduce((a, b) => a + b, 0);
     const summary = grandTotal > 0
