@@ -17,6 +17,7 @@ export type Database = {
       alert_rules: {
         Row: {
           active: boolean
+          alert_category: string
           conditions: Json
           created_at: string
           digest_schedule: string | null
@@ -30,6 +31,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          alert_category?: string
           conditions?: Json
           created_at?: string
           digest_schedule?: string | null
@@ -43,6 +45,7 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          alert_category?: string
           conditions?: Json
           created_at?: string
           digest_schedule?: string | null
@@ -318,6 +321,7 @@ export type Database = {
           sentiment: string | null
           sentiment_score: number | null
           snippet: string | null
+          source_category: string
           source_domain: string | null
           source_id: string | null
           source_name: string | null
@@ -341,6 +345,7 @@ export type Database = {
           sentiment?: string | null
           sentiment_score?: number | null
           snippet?: string | null
+          source_category?: string
           source_domain?: string | null
           source_id?: string | null
           source_name?: string | null
@@ -364,6 +369,7 @@ export type Database = {
           sentiment?: string | null
           sentiment_score?: number | null
           snippet?: string | null
+          source_category?: string
           source_domain?: string | null
           source_id?: string | null
           source_name?: string | null
@@ -465,6 +471,8 @@ export type Database = {
           id: string
           logic_operator: string
           match_count: number
+          monitor_in_media: boolean
+          monitor_in_social: boolean
           text: string
         }
         Insert: {
@@ -476,6 +484,8 @@ export type Database = {
           id?: string
           logic_operator?: string
           match_count?: number
+          monitor_in_media?: boolean
+          monitor_in_social?: boolean
           text: string
         }
         Update: {
@@ -487,6 +497,8 @@ export type Database = {
           id?: string
           logic_operator?: string
           match_count?: number
+          monitor_in_media?: boolean
+          monitor_in_social?: boolean
           text?: string
         }
         Relationships: []
