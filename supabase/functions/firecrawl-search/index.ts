@@ -644,6 +644,9 @@ serve(async (req) => {
         c.sentiment = r.sentiment;
         c.sentiment_score = r.sentiment_score;
         c.ai_summary = r.summary;
+        (c as any).importance = r.importance;
+        (c as any).confidence = r.confidence;
+        (c as any).matched_reason = r.matched_reason;
         if (r.relevant && r.relevance_score >= relevanceThreshold) {
           c.matched_via = "ai_classified";
           strongMatches.push(c);
