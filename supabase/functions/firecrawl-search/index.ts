@@ -709,7 +709,10 @@ serve(async (req) => {
           sentiment: c.sentiment || "neutral", sentiment_score: c.sentiment_score ?? 0.5,
           discovery_method: c.discovery_method,
           relevance_score: c.relevance_score ?? null,
+          importance: (c as any).importance ?? "medium",
+          confidence: (c as any).confidence ?? null,
           primary_entity: c.primary_entity ?? null,
+          matched_reason: (c as any).matched_reason ?? null,
           matched_via: c.matched_via,
           ai_summary: c.ai_summary ?? null,
         };
