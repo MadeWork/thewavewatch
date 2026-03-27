@@ -35,9 +35,13 @@ export default function Social() {
       const { data, error } = await supabase
         .from("articles")
         .select("*")
-        .eq("source_category" as any, "social")
+        .eq("source_category", "social" as any)
         .order("published_at", { ascending: false })
         .limit(500);
+      if (error) throw error;
+      return data as any[];
+    },
+  });
       if (error) throw error;
       return data as any[];
     },
