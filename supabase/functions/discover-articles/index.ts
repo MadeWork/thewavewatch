@@ -486,32 +486,104 @@ function parseGoogleNewsRSS(xml: string, keyword: string): DiscoveredArticle[] {
   return articles;
 }
 
-// ── Sentiment ────────────────────────────────────────────
+// ── AI Relevance + Sentiment Classification ─────────────
 
-async function analyzeSentimentBatch(items: { title: string; snippet: string }[], apiKey: string): Promise<{ sentiment: string; score: number }[]> {
+interface ArticleClassification {
+  sentiment: string; sentiment_score: number;
+  importance: string; confidence: number; matched_reason: string;
+  primary_entity: string; ai_summary: string;
+}
+
+const DEFAULT_CLASSIFICATION: ArticleClassification = {
+  sentiment: "neutral", sentiment_score: 0.5,
+  importance: "medium", confidence: 0.5, matched_reason: "",
+  primary_entity: "", ai_summary: "",
+};
+
+async function classifyArticlesBatch(
+  items: { title: string; snippet: string; keyword: string }[],
+  apiKey: string, companyContext: string
+): Promise<ArticleClassification[]> {
   if (!items.length) return [];
-  const prompt = items.map((it, i) => `[${i}] Title: ${it.title}\nSnippet: ${it.snippet}`).join("\n\n");
+  const prompt = items.map((it, i) =>
+    `[${i}] Keyword: "${it.keyword}"\nTitle: ${it.title}\nSnippet: ${it.snippet}`
+  ).join("\n\n");
+
   try {
     const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "google/gemini-2.5-flash-lite",
-        tools: [{ type: "function", function: { name: "classify_sentiments", description: "Classify sentiment", parameters: { type: "object", properties: { results: { type: "array", items: { type: "object", properties: { index: { type: "number" }, sentiment: { type: "string", enum: ["positive", "neutral", "negative"] }, score: { type: "number" } }, required: ["index", "sentiment", "score"] } } }, required: ["results"] } } }],
-        tool_choice: { type: "function", function: { name: "classify_sentiments" } },
-        messages: [{ role: "system", content: "Classify the sentiment of each news article." }, { role: "user", content: prompt }],
+        tools: [{
+          type: "function",
+          function: {
+            name: "classify_articles",
+            description: "Classify relevance, importance, and sentiment of articles",
+            parameters: {
+              type: "object",
+              properties: {
+                results: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      index: { type: "number" },
+                      importance: { type: "string", enum: ["high", "medium", "low"] },
+                      confidence: { type: "number" },
+                      primary_entity: { type: "string" },
+                      matched_reason: { type: "string" },
+                      sentiment: { type: "string", enum: ["positive", "neutral", "negative"] },
+                      sentiment_score: { type: "number" },
+                      summary: { type: "string" },
+                    },
+                    required: ["index", "importance", "confidence", "primary_entity", "matched_reason", "sentiment", "sentiment_score", "summary"],
+                  },
+                },
+              },
+              required: ["results"],
+            },
+          },
+        }],
+        tool_choice: { type: "function", function: { name: "classify_articles" } },
+        messages: [
+          {
+            role: "system",
+            content: `You are a media monitoring analyst. For each article, determine:
+- importance: "high" if the tracked entity is central to the story, "medium" if significantly mentioned, "low" if peripheral
+- confidence: 0.0-1.0 how confident you are in the classification
+- primary_entity: the main subject of the article
+- matched_reason: brief explanation of why this article is relevant
+- sentiment: positive/neutral/negative toward the tracked entity
+- sentiment_score: 0.0-1.0 (0=very negative, 0.5=neutral, 1=very positive)
+- summary: one-sentence summary of the article
+${companyContext ? `Context: monitoring for "${companyContext}".` : ""}`,
+          },
+          { role: "user", content: prompt },
+        ],
       }),
     });
-    if (!r.ok) return items.map(() => ({ sentiment: "neutral", score: 0.5 }));
-    const d = JSON.parse(await r.text());
+    if (!r.ok) return items.map(() => ({ ...DEFAULT_CLASSIFICATION }));
+    const d = await r.json();
     const tc = d.choices?.[0]?.message?.tool_calls?.[0];
     if (tc?.function?.arguments) {
       const p = JSON.parse(tc.function.arguments);
       const res = p.results || [];
-      return items.map((_, i) => { const x = res.find((r: any) => r.index === i); return x ? { sentiment: x.sentiment, score: x.score } : { sentiment: "neutral", score: 0.5 }; });
+      return items.map((_, i) => {
+        const x = res.find((r: any) => r.index === i);
+        return x ? {
+          sentiment: x.sentiment || "neutral",
+          sentiment_score: x.sentiment_score ?? 0.5,
+          importance: x.importance || "medium",
+          confidence: x.confidence ?? 0.5,
+          matched_reason: x.matched_reason || "",
+          primary_entity: x.primary_entity || "",
+          ai_summary: x.summary || "",
+        } : { ...DEFAULT_CLASSIFICATION };
+      });
     }
-    return items.map(() => ({ sentiment: "neutral", score: 0.5 }));
-  } catch { return items.map(() => ({ sentiment: "neutral", score: 0.5 })); }
+    return items.map(() => ({ ...DEFAULT_CLASSIFICATION }));
+  } catch { return items.map(() => ({ ...DEFAULT_CLASSIFICATION })); }
 }
 
 // ── Main ─────────────────────────────────────────────────
