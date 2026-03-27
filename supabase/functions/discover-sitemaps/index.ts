@@ -399,9 +399,13 @@ serve(async (req) => {
 
     console.log(`Sitemap discovery: ${discovered.length} new articles to insert`);
 
-    // Insert with sentiment
+    // Insert with AI relevance + sentiment classification
     let totalInserted = 0;
     const keywordMatchUpdates: Record<string, number> = {};
+
+    // Get company context for AI
+    const { data: settings } = await supabase.from("settings").select("company_name").limit(1).maybeSingle();
+    const companyContext = settings?.company_name && settings.company_name !== "My Company" ? settings.company_name : "";
 
     for (let b = 0; b < discovered.length; b += 10) {
       const batch = discovered.slice(b, b + 10);
@@ -419,10 +423,25 @@ serve(async (req) => {
           published_at: a.published_at, fetched_at: new Date().toISOString(),
           matched_keywords: a.matched_keywords, language: null,
           sentiment: "neutral" as string, sentiment_score: 0.5,
+          importance: "medium" as string, confidence: 0.5 as number,
+          matched_reason: null as string | null,
+          primary_entity: null as string | null,
+          ai_summary: null as string | null,
+          discovery_method: "sitemap" as string,
         };
       });
-      const sentiments = await analyzeSentimentBatch(toInsert.map(a => ({ title: a.title, snippet: a.snippet || "" })), lovableApiKey);
-      toInsert.forEach((a, i) => { a.sentiment = sentiments[i].sentiment; a.sentiment_score = sentiments[i].score; });
+      const classifications = await classifyArticlesBatch(
+        batch.map(a => ({ title: a.title, snippet: a.snippet || "", keyword: (a.matched_keywords || [])[0] || "" })),
+        lovableApiKey, companyContext
+      );
+      toInsert.forEach((a, i) => {
+        const c = classifications[i];
+        a.sentiment = c.sentiment; a.sentiment_score = c.sentiment_score;
+        a.importance = c.importance; a.confidence = c.confidence;
+        a.matched_reason = c.matched_reason || null;
+        a.primary_entity = c.primary_entity || null;
+        a.ai_summary = c.ai_summary || null;
+      });
       const { data: ins, error } = await supabase.from("articles").upsert(toInsert, { onConflict: "url", ignoreDuplicates: true }).select("id");
       if (error) console.error("Insert error:", error); else totalInserted += ins?.length || 0;
     }
