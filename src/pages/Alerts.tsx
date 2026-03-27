@@ -161,6 +161,9 @@ export default function Alerts() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-foreground font-light">{rule.name}</p>
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${(rule as any).alert_category === 'social' ? 'bg-sky-500/15 text-sky-400' : 'bg-primary/15 text-primary'}`}>
+                      {(rule as any).alert_category === 'social' ? 'Social' : 'Media'}
+                    </span>
                     <span className="px-1.5 py-0.5 rounded text-[10px] text-text-muted bg-bg-subtle">{rule.rule_type}</span>
                     {rule.digest_schedule && <span className="px-1.5 py-0.5 rounded text-[10px] text-text-muted bg-bg-subtle">{rule.digest_schedule}</span>}
                     {conditions.keywords?.map((kw: string) => (
