@@ -762,7 +762,7 @@ serve(async (req) => {
       const hasMore = (count || 0) > offset + limit;
       console.log(`Tier 1 batch: ${allDiscovered.length} matched (${bodyScanResults.length} from body scan, hasMore=${hasMore})`);
 
-      const inserted = await insertArticles(allDiscovered, existingUrlSet, activeKeywords, searchTerms, expandedTermMap, supabase, lovableApiKey);
+      const inserted = await insertArticles(allDiscovered, existingUrlSet, activeKeywords, searchTerms, expandedTermMap, supabase, lovableApiKey, settings);
       return new Response(JSON.stringify({
         discovered: inserted, stage: "tier1", offset, limit,
         hasMore, totalTier1: count || 0,
@@ -826,7 +826,7 @@ serve(async (req) => {
       allDiscovered = allDiscovered.slice(0, 50);
       console.log(`Google News: ${allDiscovered.length} unique articles ready for insert`);
 
-      const inserted = await insertArticles(allDiscovered, existingUrlSet, activeKeywords, searchTerms, expandedTermMap, supabase, lovableApiKey);
+      const inserted = await insertArticles(allDiscovered, existingUrlSet, activeKeywords, searchTerms, expandedTermMap, supabase, lovableApiKey, settings);
       return new Response(JSON.stringify({
         discovered: inserted, stage: "google_news",
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -893,7 +893,7 @@ serve(async (req) => {
         .eq("active", true);
 
       const hasMore = (count || 0) > offset + limit;
-      const inserted = await insertArticles(allDiscovered, existingUrlSet, activeKeywords, searchTerms, expandedTermMap, supabase, lovableApiKey);
+      const inserted = await insertArticles(allDiscovered, existingUrlSet, activeKeywords, searchTerms, expandedTermMap, supabase, lovableApiKey, settings);
       return new Response(JSON.stringify({
         discovered: inserted, stage: "sources", offset, hasMore,
         bodyScanned: bodyScanResults.length,
@@ -970,7 +970,7 @@ serve(async (req) => {
         .lt("priority", 70);
 
       const hasMore = (count || 0) > offset + limit;
-      const inserted = await insertArticles(allDiscovered, existingUrlSet, activeKeywords, searchTerms, expandedTermMap, supabase, lovableApiKey);
+      const inserted = await insertArticles(allDiscovered, existingUrlSet, activeKeywords, searchTerms, expandedTermMap, supabase, lovableApiKey, settings);
       return new Response(JSON.stringify({
         discovered: inserted, stage: "tier2", offset, hasMore,
         bodyScanned: bodyScanResults.length,
@@ -1098,7 +1098,7 @@ serve(async (req) => {
       const hasMore = (totalHighPri || 0) > offset + limit;
       console.log(`Tier 1 search: ${allDiscovered.length} found from ${searchedCount} searches (hasMore=${hasMore})`);
 
-      const inserted = await insertArticles(allDiscovered, existingUrlSet, activeKeywords, searchTerms, expandedTermMap, supabase, lovableApiKey);
+      const inserted = await insertArticles(allDiscovered, existingUrlSet, activeKeywords, searchTerms, expandedTermMap, supabase, lovableApiKey, settings);
       return new Response(JSON.stringify({
         discovered: inserted, stage: "tier1_search", offset, limit, hasMore,
         searched: searchedCount, totalDomains: totalHighPri || 0,
