@@ -11,6 +11,7 @@ export default function Alerts() {
   const [form, setForm] = useState({
     name: "",
     rule_type: "instant",
+    alert_category: "media",
     keywords: [] as string[],
     sentiments: [] as string[],
     sources: [] as string[],
@@ -33,6 +34,7 @@ export default function Alerts() {
     addRule({
       name: form.name.trim(),
       rule_type: form.rule_type,
+      alert_category: form.alert_category,
       conditions: {
         keywords: form.keywords,
         sentiments: form.sentiments,
@@ -42,7 +44,7 @@ export default function Alerts() {
       digest_schedule: form.rule_type === "digest" ? form.digest_schedule : undefined,
       webhook_url: form.webhook_url || undefined,
     });
-    setForm({ name: "", rule_type: "instant", keywords: [], sentiments: [], sources: [], countries: [], digest_schedule: "daily", webhook_url: "" });
+    setForm({ name: "", rule_type: "instant", alert_category: "media", keywords: [], sentiments: [], sources: [], countries: [], digest_schedule: "daily", webhook_url: "" });
     setShowCreate(false);
   };
 
@@ -75,6 +77,15 @@ export default function Alerts() {
             <div className="segment-control max-w-sm">
               {[{ v: "instant", l: "Instant" }, { v: "digest", l: "Digest" }, { v: "webhook", l: "Webhook" }].map(t => (
                 <button key={t.v} className={`segment-btn ${form.rule_type === t.v ? "active" : ""}`} onClick={() => setForm(f => ({ ...f, rule_type: t.v }))}>{t.l}</button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-text-muted mb-2">Alert Category</p>
+            <div className="segment-control max-w-xs">
+              {[{ v: "media", l: "Media" }, { v: "social", l: "Social" }].map(c => (
+                <button key={c.v} className={`segment-btn ${form.alert_category === c.v ? "active" : ""}`} onClick={() => setForm(f => ({ ...f, alert_category: c.v }))}>{c.l}</button>
               ))}
             </div>
           </div>
@@ -150,6 +161,9 @@ export default function Alerts() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-foreground font-light">{rule.name}</p>
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${(rule as any).alert_category === 'social' ? 'bg-sky-500/15 text-sky-400' : 'bg-primary/15 text-primary'}`}>
+                      {(rule as any).alert_category === 'social' ? 'Social' : 'Media'}
+                    </span>
                     <span className="px-1.5 py-0.5 rounded text-[10px] text-text-muted bg-bg-subtle">{rule.rule_type}</span>
                     {rule.digest_schedule && <span className="px-1.5 py-0.5 rounded text-[10px] text-text-muted bg-bg-subtle">{rule.digest_schedule}</span>}
                     {conditions.keywords?.map((kw: string) => (

@@ -15,6 +15,7 @@ import Analytics from "@/pages/Analytics";
 import Alerts from "@/pages/Alerts";
 import Archive from "@/pages/Archive";
 import Reports from "@/pages/Reports";
+import Social from "@/pages/Social";
 import SettingsPage from "@/pages/SettingsPage";
 import NotFound from "@/pages/NotFound";
 
@@ -39,6 +40,7 @@ const App = () => (
                 <Route path="/analytics" element={<Analytics />} />
                 <Route path="/alerts" element={<Alerts />} />
                 <Route path="/reports" element={<Reports />} />
+                <Route path="/social" element={<Social />} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Route>
               <Route path="*" element={<NotFound />} />
