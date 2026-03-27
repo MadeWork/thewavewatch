@@ -20,6 +20,7 @@ interface Props {
 }
 
 export default function WorldMap({ articles }: Props) {
+  const isMobile = useIsMobile();
   const [zoom, setZoom] = useState(1);
   const [center, setCenter] = useState<[number, number]>([10, 30]);
 
