@@ -1122,6 +1122,7 @@ async function insertArticles(
   expandedTermMap: Map<string, string>,
   supabase: any,
   lovableApiKey: string,
+  settings?: { company_name: string | null } | null,
 ): Promise<number> {
   // Dedup
   const seen = new Set<string>();
