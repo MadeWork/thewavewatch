@@ -374,6 +374,8 @@ serve(async (req) => {
     const relevanceThreshold = Number(body.relevance_threshold ?? 0.4);
     const enableScrape = body.enable_scrape !== false;
     const enableAiClassify = body.enable_ai_classify !== false;
+    const enableCrawl = body.enable_crawl === true;
+    const crawlDomainLimit = Math.min(Number(body.crawl_domains || 3), 5);
     const maxQueries = Math.min(Number(body.max_queries || 50), 80);
 
     // Get ALL active keywords (no min_threshold gating)
