@@ -149,20 +149,91 @@ async function fetchArticleText(url: string): Promise<string | null> {
   } catch { return null; }
 }
 
-async function analyzeSentimentBatch(items: { title: string; snippet: string }[], apiKey: string): Promise<{ sentiment: string; score: number }[]> {
+interface ArticleClassification {
+  sentiment: string; sentiment_score: number;
+  importance: string; confidence: number; matched_reason: string;
+  primary_entity: string; ai_summary: string;
+}
+
+const DEFAULT_CLASSIFICATION: ArticleClassification = {
+  sentiment: "neutral", sentiment_score: 0.5,
+  importance: "medium", confidence: 0.5, matched_reason: "",
+  primary_entity: "", ai_summary: "",
+};
+
+async function classifyArticlesBatch(
+  items: { title: string; snippet: string; keyword: string }[],
+  apiKey: string, companyContext: string
+): Promise<ArticleClassification[]> {
   if (!items.length) return [];
-  const prompt = items.map((it, i) => `[${i}] Title: ${it.title}\nSnippet: ${it.snippet}`).join("\n\n");
+  const prompt = items.map((it, i) =>
+    `[${i}] Keyword: "${it.keyword}"\nTitle: ${it.title}\nSnippet: ${it.snippet}`
+  ).join("\n\n");
+
   try {
     const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "google/gemini-2.5-flash-lite", tools: [{ type: "function", function: { name: "classify_sentiments", description: "Classify sentiment", parameters: { type: "object", properties: { results: { type: "array", items: { type: "object", properties: { index: { type: "number" }, sentiment: { type: "string", enum: ["positive", "neutral", "negative"] }, score: { type: "number" } }, required: ["index", "sentiment", "score"] } } }, required: ["results"] } } }], tool_choice: { type: "function", function: { name: "classify_sentiments" } }, messages: [{ role: "system", content: "Classify the sentiment of each news article." }, { role: "user", content: prompt }] }),
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash-lite",
+        tools: [{
+          type: "function",
+          function: {
+            name: "classify_articles",
+            description: "Classify relevance, importance, and sentiment of articles",
+            parameters: {
+              type: "object",
+              properties: {
+                results: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      index: { type: "number" },
+                      importance: { type: "string", enum: ["high", "medium", "low"] },
+                      confidence: { type: "number" },
+                      primary_entity: { type: "string" },
+                      matched_reason: { type: "string" },
+                      sentiment: { type: "string", enum: ["positive", "neutral", "negative"] },
+                      sentiment_score: { type: "number" },
+                      summary: { type: "string" },
+                    },
+                    required: ["index", "importance", "confidence", "primary_entity", "matched_reason", "sentiment", "sentiment_score", "summary"],
+                  },
+                },
+              },
+              required: ["results"],
+            },
+          },
+        }],
+        tool_choice: { type: "function", function: { name: "classify_articles" } },
+        messages: [
+          {
+            role: "system",
+            content: `You are a media monitoring analyst. For each article classify importance (high/medium/low based on whether the tracked entity is central), confidence (0-1), primary_entity, matched_reason, sentiment, sentiment_score (0-1), and a one-sentence summary.${companyContext ? ` Context: monitoring for "${companyContext}".` : ""}`,
+          },
+          { role: "user", content: prompt },
+        ],
+      }),
     });
-    if (!r.ok) return items.map(() => ({ sentiment: "neutral", score: 0.5 }));
+    if (!r.ok) return items.map(() => ({ ...DEFAULT_CLASSIFICATION }));
     const d = JSON.parse(await r.text());
     const tc = d.choices?.[0]?.message?.tool_calls?.[0];
-    if (tc?.function?.arguments) { const p = JSON.parse(tc.function.arguments); const res = p.results || []; return items.map((_, i) => { const x = res.find((r: any) => r.index === i); return x ? { sentiment: x.sentiment, score: x.score } : { sentiment: "neutral", score: 0.5 }; }); }
-    return items.map(() => ({ sentiment: "neutral", score: 0.5 }));
-  } catch { return items.map(() => ({ sentiment: "neutral", score: 0.5 })); }
+    if (tc?.function?.arguments) {
+      const p = JSON.parse(tc.function.arguments);
+      const res = p.results || [];
+      return items.map((_, i) => {
+        const x = res.find((r: any) => r.index === i);
+        return x ? {
+          sentiment: x.sentiment || "neutral", sentiment_score: x.sentiment_score ?? 0.5,
+          importance: x.importance || "medium", confidence: x.confidence ?? 0.5,
+          matched_reason: x.matched_reason || "", primary_entity: x.primary_entity || "",
+          ai_summary: x.summary || "",
+        } : { ...DEFAULT_CLASSIFICATION };
+      });
+    }
+    return items.map(() => ({ ...DEFAULT_CLASSIFICATION }));
+  } catch { return items.map(() => ({ ...DEFAULT_CLASSIFICATION })); }
 }
 
 // ── Paginated fetch ──────────────────────────────────────
@@ -328,9 +399,13 @@ serve(async (req) => {
 
     console.log(`Sitemap discovery: ${discovered.length} new articles to insert`);
 
-    // Insert with sentiment
+    // Insert with AI relevance + sentiment classification
     let totalInserted = 0;
     const keywordMatchUpdates: Record<string, number> = {};
+
+    // Get company context for AI
+    const { data: settings } = await supabase.from("settings").select("company_name").limit(1).maybeSingle();
+    const companyContext = settings?.company_name && settings.company_name !== "My Company" ? settings.company_name : "";
 
     for (let b = 0; b < discovered.length; b += 10) {
       const batch = discovered.slice(b, b + 10);
@@ -348,10 +423,25 @@ serve(async (req) => {
           published_at: a.published_at, fetched_at: new Date().toISOString(),
           matched_keywords: a.matched_keywords, language: null,
           sentiment: "neutral" as string, sentiment_score: 0.5,
+          importance: "medium" as string, confidence: 0.5 as number,
+          matched_reason: null as string | null,
+          primary_entity: null as string | null,
+          ai_summary: null as string | null,
+          discovery_method: "sitemap" as string,
         };
       });
-      const sentiments = await analyzeSentimentBatch(toInsert.map(a => ({ title: a.title, snippet: a.snippet || "" })), lovableApiKey);
-      toInsert.forEach((a, i) => { a.sentiment = sentiments[i].sentiment; a.sentiment_score = sentiments[i].score; });
+      const classifications = await classifyArticlesBatch(
+        batch.map(a => ({ title: a.title, snippet: a.snippet || "", keyword: (a.matched_keywords || [])[0] || "" })),
+        lovableApiKey, companyContext
+      );
+      toInsert.forEach((a, i) => {
+        const c = classifications[i];
+        a.sentiment = c.sentiment; a.sentiment_score = c.sentiment_score;
+        a.importance = c.importance; a.confidence = c.confidence;
+        a.matched_reason = c.matched_reason || null;
+        a.primary_entity = c.primary_entity || null;
+        a.ai_summary = c.ai_summary || null;
+      });
       const { data: ins, error } = await supabase.from("articles").upsert(toInsert, { onConflict: "url", ignoreDuplicates: true }).select("id");
       if (error) console.error("Insert error:", error); else totalInserted += ins?.length || 0;
     }

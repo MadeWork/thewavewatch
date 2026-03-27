@@ -686,17 +686,35 @@ serve(async (req) => {
       return true;
     });
 
-    // ── Stage 6: Insert ─────────────────────────────────
+    // ── Stage 6: Insert with AI classification ────────
     let totalInserted = 0;
     for (let b = 0; b < deduped.length; b += 10) {
       const batch = deduped.slice(b, b + 10);
 
-      const needSentiment = batch.filter(c => !c.sentiment);
-      if (needSentiment.length > 0) {
-        const sentiments = await sentimentBatch(
-          needSentiment.map(c => ({ title: c.title, snippet: c.snippet })), lovableApiKey
-        );
-        needSentiment.forEach((c, i) => { c.sentiment = sentiments[i].sentiment; c.sentiment_score = sentiments[i].score; });
+      // Classify ALL articles (not just unclassified) for importance/confidence
+      const needClassify = batch.filter(c => !(c as any).confidence);
+      if (needClassify.length > 0) {
+        const classifyItems = needClassify.map((c, i) => ({
+          index: i,
+          title: c.title,
+          snippet: c.snippet,
+          body_excerpt: c.body_text || "",
+          search_keyword: c.matched_keywords[0] || "",
+        }));
+        const results = await classifyRelevanceBatch(classifyItems, lovableApiKey, companyName);
+        needClassify.forEach((c, i) => {
+          const r = results.get(i);
+          if (r) {
+            c.sentiment = r.sentiment;
+            c.sentiment_score = r.sentiment_score;
+            c.relevance_score = r.relevance_score;
+            c.primary_entity = r.primary_entity;
+            c.ai_summary = r.summary;
+            (c as any).importance = r.importance;
+            (c as any).confidence = r.confidence;
+            (c as any).matched_reason = r.matched_reason;
+          }
+        });
       }
 
       const toInsert = batch.map(c => {
