@@ -42,10 +42,6 @@ export default function Social() {
       return data as any[];
     },
   });
-      if (error) throw error;
-      return data as any[];
-    },
-  });
 
   const filtered = useMemo(() => {
     let result = articles ?? [];
