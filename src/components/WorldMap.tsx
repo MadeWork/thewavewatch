@@ -1,5 +1,6 @@
 import { ComposableMap, Geographies, Geography, Marker, ZoomableGroup } from "react-simple-maps";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback, useRef } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
 
 const GEO_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
@@ -19,6 +20,7 @@ interface Props {
 }
 
 export default function WorldMap({ articles }: Props) {
+  const isMobile = useIsMobile();
   const [zoom, setZoom] = useState(1);
   const [center, setCenter] = useState<[number, number]>([10, 30]);
 
@@ -40,7 +42,7 @@ export default function WorldMap({ articles }: Props) {
   const handleReset = () => { setZoom(1); setCenter([10, 30]); };
 
   return (
-    <div className="monitor-card">
+    <div className="monitor-card" style={{ touchAction: "pan-y" }}>
       <div className="flex items-center justify-between mb-2">
         <p className="section-label">Global Coverage</p>
         <div className="flex items-center gap-1">
@@ -63,9 +65,10 @@ export default function WorldMap({ articles }: Props) {
         <ZoomableGroup
           zoom={zoom}
           center={center}
-          onMoveEnd={({ coordinates, zoom: z }) => { setCenter(coordinates as [number, number]); setZoom(z); }}
+          onMoveEnd={isMobile ? undefined : ({ coordinates, zoom: z }) => { setCenter(coordinates as [number, number]); setZoom(z); }}
           minZoom={1}
-          maxZoom={8}
+          maxZoom={isMobile ? 1 : 8}
+          filterZoomEvent={isMobile ? () => false : undefined}
         >
           <Geographies geography={GEO_URL}>
             {({ geographies }) =>
