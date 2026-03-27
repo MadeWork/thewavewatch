@@ -328,6 +328,10 @@ export default function Mentions() {
                     )}
                     {a.language && <span className="px-1 py-0.5 rounded bg-bg-subtle text-text-muted text-[10px]">{a.language}</span>}
                     {src?.region && <span className="px-1.5 py-0.5 rounded bg-bg-subtle text-text-muted text-[10px]">{src.region}</span>}
+                    {(a as any).importance === "high" && <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 text-[10px] font-medium">High</span>}
+                    {(a as any).importance === "low" && <span className="px-1.5 py-0.5 rounded bg-bg-subtle text-text-muted text-[10px]">Low</span>}
+                    {(a as any).story_cluster_id && <span className="px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 text-[10px]">📰 Cluster</span>}
+                    {(a as any).discovery_method && <span className="px-1 py-0.5 rounded bg-bg-subtle text-text-muted text-[9px]">{(a as any).discovery_method}</span>}
                     {a.matched_keywords?.map((kw: string) => (
                       <span key={kw} className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px]">{kw}</span>
                     ))}
