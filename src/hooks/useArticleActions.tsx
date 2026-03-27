@@ -137,7 +137,7 @@ export function useAlertRules() {
   });
 
   const addRule = useMutation({
-    mutationFn: async (rule: { name: string; rule_type: string; conditions: any; digest_schedule?: string; webhook_url?: string }) => {
+    mutationFn: async (rule: { name: string; rule_type: string; alert_category?: string; conditions: any; digest_schedule?: string; webhook_url?: string }) => {
       if (!user) return;
       await supabase.from("alert_rules").insert({ user_id: user.id, ...rule });
     },
