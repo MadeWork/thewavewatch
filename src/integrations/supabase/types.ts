@@ -309,11 +309,14 @@ export type Database = {
           author_email: string | null
           author_name: string | null
           author_url: string | null
+          confidence: number | null
           discovery_method: string | null
           fetched_at: string
           id: string
+          importance: string | null
           language: string | null
           matched_keywords: string[] | null
+          matched_reason: string | null
           matched_via: string | null
           primary_entity: string | null
           published_at: string
@@ -325,6 +328,7 @@ export type Database = {
           source_domain: string | null
           source_id: string | null
           source_name: string | null
+          story_cluster_id: string | null
           title: string
           url: string
         }
@@ -333,11 +337,14 @@ export type Database = {
           author_email?: string | null
           author_name?: string | null
           author_url?: string | null
+          confidence?: number | null
           discovery_method?: string | null
           fetched_at?: string
           id?: string
+          importance?: string | null
           language?: string | null
           matched_keywords?: string[] | null
+          matched_reason?: string | null
           matched_via?: string | null
           primary_entity?: string | null
           published_at?: string
@@ -349,6 +356,7 @@ export type Database = {
           source_domain?: string | null
           source_id?: string | null
           source_name?: string | null
+          story_cluster_id?: string | null
           title: string
           url: string
         }
@@ -357,11 +365,14 @@ export type Database = {
           author_email?: string | null
           author_name?: string | null
           author_url?: string | null
+          confidence?: number | null
           discovery_method?: string | null
           fetched_at?: string
           id?: string
+          importance?: string | null
           language?: string | null
           matched_keywords?: string[] | null
+          matched_reason?: string | null
           matched_via?: string | null
           primary_entity?: string | null
           published_at?: string
@@ -373,6 +384,7 @@ export type Database = {
           source_domain?: string | null
           source_id?: string | null
           source_name?: string | null
+          story_cluster_id?: string | null
           title?: string
           url?: string
         }
