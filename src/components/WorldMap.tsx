@@ -42,7 +42,7 @@ export default function WorldMap({ articles }: Props) {
   const handleReset = () => { setZoom(1); setCenter([10, 30]); };
 
   return (
-    <div className="monitor-card">
+    <div className="monitor-card" style={{ touchAction: "pan-y" }}>
       <div className="flex items-center justify-between mb-2">
         <p className="section-label">Global Coverage</p>
         <div className="flex items-center gap-1">
