@@ -248,6 +248,27 @@ export default function Keywords() {
                     className={`px-2.5 py-1 rounded-lg text-xs transition ${kw.active ? 'bg-positive/15 text-positive' : 'bg-bg-subtle text-text-muted'}`}>
                     {kw.active ? "Active" : "Paused"}
                   </button>
+                  {/* Media / Social toggles */}
+                  <button
+                    onClick={() => {
+                      const val = !(kw as any).monitor_in_media;
+                      supabase.from("keywords").update({ monitor_in_media: val } as any).eq("id", kw.id).then(() => queryClient.invalidateQueries({ queryKey: ["keywords"] }));
+                    }}
+                    className={`px-2 py-1 rounded-lg text-[10px] transition ${(kw as any).monitor_in_media !== false ? 'bg-primary/15 text-primary' : 'bg-bg-subtle text-text-muted'}`}
+                    title="Monitor in main media feed"
+                  >
+                    Media
+                  </button>
+                  <button
+                    onClick={() => {
+                      const val = !(kw as any).monitor_in_social;
+                      supabase.from("keywords").update({ monitor_in_social: val } as any).eq("id", kw.id).then(() => queryClient.invalidateQueries({ queryKey: ["keywords"] }));
+                    }}
+                    className={`px-2 py-1 rounded-lg text-[10px] transition ${(kw as any).monitor_in_social ? 'bg-sky-500/15 text-sky-400' : 'bg-bg-subtle text-text-muted'}`}
+                    title="Monitor in social mentions"
+                  >
+                    Social
+                  </button>
                   <button onClick={() => deleteMutation.mutate(kw.id)}
                     className="p-2 rounded-lg text-text-muted hover:text-negative hover:bg-negative/10 transition">
                     <Trash2 className="w-3.5 h-3.5" />

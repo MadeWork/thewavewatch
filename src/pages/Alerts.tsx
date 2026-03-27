@@ -11,6 +11,7 @@ export default function Alerts() {
   const [form, setForm] = useState({
     name: "",
     rule_type: "instant",
+    alert_category: "media",
     keywords: [] as string[],
     sentiments: [] as string[],
     sources: [] as string[],
@@ -42,7 +43,7 @@ export default function Alerts() {
       digest_schedule: form.rule_type === "digest" ? form.digest_schedule : undefined,
       webhook_url: form.webhook_url || undefined,
     });
-    setForm({ name: "", rule_type: "instant", keywords: [], sentiments: [], sources: [], countries: [], digest_schedule: "daily", webhook_url: "" });
+    setForm({ name: "", rule_type: "instant", alert_category: "media", keywords: [], sentiments: [], sources: [], countries: [], digest_schedule: "daily", webhook_url: "" });
     setShowCreate(false);
   };
 
@@ -75,6 +76,15 @@ export default function Alerts() {
             <div className="segment-control max-w-sm">
               {[{ v: "instant", l: "Instant" }, { v: "digest", l: "Digest" }, { v: "webhook", l: "Webhook" }].map(t => (
                 <button key={t.v} className={`segment-btn ${form.rule_type === t.v ? "active" : ""}`} onClick={() => setForm(f => ({ ...f, rule_type: t.v }))}>{t.l}</button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-text-muted mb-2">Alert Category</p>
+            <div className="segment-control max-w-xs">
+              {[{ v: "media", l: "Media" }, { v: "social", l: "Social" }].map(c => (
+                <button key={c.v} className={`segment-btn ${form.alert_category === c.v ? "active" : ""}`} onClick={() => setForm(f => ({ ...f, alert_category: c.v }))}>{c.l}</button>
               ))}
             </div>
           </div>

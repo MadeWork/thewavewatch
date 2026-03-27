@@ -27,7 +27,7 @@ export default function Mentions() {
   const { data: articles, isLoading, error } = useQuery({
     queryKey: ["mentions"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("articles").select("*, sources(name, region, country_code)").order("published_at", { ascending: false }).limit(1000);
+      const { data, error } = await supabase.from("articles").select("*, sources(name, region, country_code)").neq("source_category", "social" as any).order("published_at", { ascending: false }).limit(1000);
       // Note: we always fetch ordered by published_at, but re-sort client-side based on dateField
       if (error) throw error;
       return data as any[];
