@@ -298,8 +298,8 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const batchOffset = Number(body.offset ?? 0);
-    const batchLimit = Math.min(Number(body.limit ?? 2), 2);
-    const bodyScanBudget = Math.min(Number(body.body_scan_budget ?? 12), 20);
+    const batchLimit = Math.min(Number(body.limit ?? 2), 3);
+    const bodyScanBudget = Math.min(Number(body.body_scan_budget ?? 20), 30);
 
     const { data: keywords } = await supabase.from("keywords").select("*").eq("active", true);
     const activeKeywords = keywords || [];
@@ -588,51 +588,77 @@ serve(async (req) => {
         const { data: sources } = await supabase.from("sources").select("id,domain").eq("domain", domain).limit(1);
         const sourceId = sources?.[0]?.id || null;
 
+        // AI relevance + sentiment classification for matched articles
+        const classifyItems = matched.slice(0, 20).map((c, i) => ({
+          index: i, title: c.title, snippet: c.snippet || "",
+          body_excerpt: "", search_keyword: (c.matched_keywords || [])[0] || "",
+        }));
+
+        let classResults = new Map<number, any>();
+        try {
+          const classPrompt = classifyItems.map(it =>
+            `[${it.index}] Keyword: "${it.search_keyword}"\nTitle: ${it.title}\nSnippet: ${it.snippet}`
+          ).join("\n\n");
+          const cr = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${lovableApiKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: "google/gemini-2.5-flash",
+              tools: [{ type: "function", function: { name: "classify", description: "Classify relevance, importance, sentiment",
+                parameters: { type: "object", properties: { results: { type: "array", items: { type: "object", properties: {
+                  index: { type: "number" }, relevant: { type: "boolean" }, relevance_score: { type: "number" },
+                  importance: { type: "string", enum: ["high", "medium", "low"] },
+                  confidence: { type: "number" },
+                  primary_entity: { type: "string" }, matched_reason: { type: "string" },
+                  sentiment: { type: "string", enum: ["positive", "neutral", "negative"] },
+                  sentiment_score: { type: "number" }, summary: { type: "string" },
+                }, required: ["index", "relevant", "relevance_score", "importance", "confidence", "primary_entity", "sentiment", "sentiment_score", "summary"] } } }, required: ["results"] } } }],
+              tool_choice: { type: "function", function: { name: "classify" } },
+              messages: [
+                { role: "system", content: `Media monitoring analyst. Classify articles for relevance to tracked keywords. importance: high=entity central; medium=significantly related; low=tangential mention. confidence: 0.0-1.0.` },
+                { role: "user", content: classPrompt },
+              ],
+            }),
+          });
+          if (cr.ok) {
+            const cd = await cr.json();
+            const tc = cd.choices?.[0]?.message?.tool_calls?.[0];
+            if (tc?.function?.arguments) {
+              const p = JSON.parse(tc.function.arguments);
+              for (const item of (p.results || [])) classResults.set(item.index, item);
+            }
+          }
+        } catch {}
+
         const BATCH_SIZE = 10;
         for (let b = 0; b < matched.length; b += BATCH_SIZE) {
           const batch = matched.slice(b, b + BATCH_SIZE);
-          const toInsert = batch.map(a => ({
-            title: stripHtml(a.title).slice(0, 300),
-            snippet: stripHtml(a.snippet || "").slice(0, 500),
-            url: normalizeUrl(a.url),
-            source_id: sourceId,
-            source_name: a.source_name || src.name,
-            source_domain: domain,
-            published_at: a.published_at || new Date().toISOString(),
-            fetched_at: new Date().toISOString(),
-            matched_keywords: a.matched_keywords || [],
-            language: a.language || null,
-            sentiment: "neutral",
-            sentiment_score: 0.5,
-            discovery_method: a.discovery_method || "benchmark",
-            matched_via: a.matched_via || "title_snippet_url",
-          }));
-
-          try {
-            const prompt = toInsert.map((it, i) => `[${i}] Title: ${it.title}\nSnippet: ${it.snippet}`).join("\n\n");
-            const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-              method: "POST",
-              headers: { Authorization: `Bearer ${lovableApiKey}`, "Content-Type": "application/json" },
-              body: JSON.stringify({
-                model: "google/gemini-2.5-flash-lite",
-                tools: [{ type: "function", function: { name: "classify_sentiments", description: "Classify sentiment", parameters: { type: "object", properties: { results: { type: "array", items: { type: "object", properties: { index: { type: "number" }, sentiment: { type: "string", enum: ["positive", "neutral", "negative"] }, score: { type: "number" } }, required: ["index", "sentiment", "score"] } } }, required: ["results"] } } }],
-                tool_choice: { type: "function", function: { name: "classify_sentiments" } },
-                messages: [{ role: "system", content: "Classify the sentiment of each news article." }, { role: "user", content: prompt }],
-              }),
-            });
-            if (r.ok) {
-              const d = JSON.parse(await r.text());
-              const tc = d.choices?.[0]?.message?.tool_calls?.[0];
-              if (tc?.function?.arguments) {
-                const p = JSON.parse(tc.function.arguments);
-                const res = p.results || [];
-                toInsert.forEach((a, i) => {
-                  const x = res.find((r: any) => r.index === i);
-                  if (x) { a.sentiment = x.sentiment; a.sentiment_score = x.score; }
-                });
-              }
-            }
-          } catch { }
+          const toInsert = batch.map((a, bi) => {
+            const ci = b + bi;
+            const cr = classResults.get(ci);
+            return {
+              title: stripHtml(a.title).slice(0, 300),
+              snippet: stripHtml(a.snippet || "").slice(0, 500),
+              url: normalizeUrl(a.url),
+              source_id: sourceId,
+              source_name: a.source_name || src.name,
+              source_domain: domain,
+              published_at: a.published_at || new Date().toISOString(),
+              fetched_at: new Date().toISOString(),
+              matched_keywords: a.matched_keywords || [],
+              language: a.language || null,
+              sentiment: cr?.sentiment || "neutral",
+              sentiment_score: cr?.sentiment_score ?? 0.5,
+              discovery_method: a.discovery_method || "benchmark",
+              matched_via: a.matched_via || "title_snippet_url",
+              relevance_score: cr?.relevance_score ?? null,
+              importance: cr?.importance ?? "medium",
+              confidence: cr?.confidence ?? null,
+              primary_entity: cr?.primary_entity ?? null,
+              matched_reason: cr?.matched_reason ?? null,
+              ai_summary: cr?.summary ?? null,
+            };
+          });
 
           const { data: ins, error } = await supabase.from("articles").upsert(toInsert, { onConflict: "url", ignoreDuplicates: true }).select("id");
           if (error) console.error(`Benchmark insert error for ${src.name}:`, error);
