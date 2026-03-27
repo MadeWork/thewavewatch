@@ -65,9 +65,10 @@ export default function WorldMap({ articles }: Props) {
         <ZoomableGroup
           zoom={zoom}
           center={center}
-          onMoveEnd={({ coordinates, zoom: z }) => { setCenter(coordinates as [number, number]); setZoom(z); }}
+          onMoveEnd={isMobile ? undefined : ({ coordinates, zoom: z }) => { setCenter(coordinates as [number, number]); setZoom(z); }}
           minZoom={1}
-          maxZoom={8}
+          maxZoom={isMobile ? 1 : 8}
+          filterZoomEvent={isMobile ? () => false : undefined}
         >
           <Geographies geography={GEO_URL}>
             {({ geographies }) =>
