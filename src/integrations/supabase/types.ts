@@ -319,7 +319,7 @@ export type Database = {
           matched_reason: string | null
           matched_via: string | null
           primary_entity: string | null
-          published_at: string
+          published_at: string | null
           relevance_score: number | null
           sentiment: string | null
           sentiment_score: number | null
@@ -347,7 +347,7 @@ export type Database = {
           matched_reason?: string | null
           matched_via?: string | null
           primary_entity?: string | null
-          published_at?: string
+          published_at?: string | null
           relevance_score?: number | null
           sentiment?: string | null
           sentiment_score?: number | null
@@ -375,7 +375,7 @@ export type Database = {
           matched_reason?: string | null
           matched_via?: string | null
           primary_entity?: string | null
-          published_at?: string
+          published_at?: string | null
           relevance_score?: number | null
           sentiment?: string | null
           sentiment_score?: number | null
