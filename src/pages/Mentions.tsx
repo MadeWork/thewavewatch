@@ -104,8 +104,12 @@ export default function Mentions() {
         result = result.filter(a => new Date(a.published_at) >= cutoff);
       }
     }
-    // Sort by selected date field
-    result = [...result].sort((a, b) => new Date(b[dateField]).getTime() - new Date(a[dateField]).getTime());
+    // Sort: use published_at if available, fall back to fetched_at
+    result = [...result].sort((a, b) => {
+      const dateA = a.published_at || a.fetched_at;
+      const dateB = b.published_at || b.fetched_at;
+      return new Date(dateB).getTime() - new Date(dateA).getTime();
+    });
     return result;
   }, [articles, quickSearch, searchQuery, showBookmarksOnly, bookmarks, dateField]);
 
@@ -270,7 +274,7 @@ export default function Mentions() {
                     <td className="py-2 pr-2 text-foreground font-light max-w-[300px] truncate">{renderHighlighted(a.title)}</td>
                     <td className="py-2 pr-2 text-text-secondary">{displayName}</td>
                     <td className="py-2 pr-2 text-text-muted">{src?.country_code || ""}</td>
-                    <td className="py-2 pr-2 text-text-muted whitespace-nowrap">{format(new Date(a[dateField]), "MMM d, yyyy")}</td>
+                    <td className="py-2 pr-2 text-text-muted whitespace-nowrap">{a.published_at ? format(new Date(a.published_at), "MMM d, yyyy") : <span className="italic opacity-60">no date</span>}</td>
                     <td className="py-2 pr-2">
                       <span className={`sentiment-badge text-[10px] ${a.sentiment === "positive" ? "sentiment-positive" : a.sentiment === "negative" ? "sentiment-negative" : "sentiment-neutral"}`}>{a.sentiment}</span>
                     </td>
@@ -319,12 +323,13 @@ export default function Mentions() {
                     <span className="text-xs text-text-secondary">{displayName}</span>
                     {a.source_domain && <span className="text-[10px] text-text-muted">({a.source_domain})</span>}
                     <span className="text-xs text-text-muted">·</span>
-                    <span className="text-xs text-text-muted">{format(new Date(a[dateField]), "MMM d, yyyy HH:mm")}</span>
-                    {dateField === "fetched_at" && a.published_at !== a.fetched_at && (
-                      <span className="text-[9px] text-text-muted opacity-60">pub: {format(new Date(a.published_at), "MMM d")}</span>
+                    {a.published_at ? (
+                      <span className="text-xs text-text-muted">{format(new Date(a.published_at), "MMM d, yyyy HH:mm")}</span>
+                    ) : (
+                      <span className="text-xs text-text-muted italic opacity-60">imported {format(new Date(a.fetched_at), "MMM d")}</span>
                     )}
-                    {dateField === "published_at" && a.fetched_at && (
-                      <span className="text-[9px] text-text-muted opacity-60">imp: {format(new Date(a.fetched_at), "MMM d")}</span>
+                    {a.published_at && dateField === "fetched_at" && (
+                      <span className="text-[9px] text-text-muted opacity-60">pub: {format(new Date(a.published_at), "MMM d")}</span>
                     )}
                     {a.language && <span className="px-1 py-0.5 rounded bg-bg-subtle text-text-muted text-[10px]">{a.language}</span>}
                     {src?.region && <span className="px-1.5 py-0.5 rounded bg-bg-subtle text-text-muted text-[10px]">{src.region}</span>}

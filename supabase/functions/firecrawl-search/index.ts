@@ -725,7 +725,7 @@ serve(async (req) => {
           title: c.title, snippet: c.snippet, url: c.canonical_url || c.url,
           source_id: matchedSource?.id || null,
           source_name: c.source_name, source_domain: c.source_domain,
-          published_at: c.published_at || new Date().toISOString(), fetched_at: new Date().toISOString(),
+          published_at: c.published_at || null, fetched_at: new Date().toISOString(),
           matched_keywords: c.matched_keywords, language: c.language || null,
           sentiment: c.sentiment || "neutral", sentiment_score: c.sentiment_score ?? 0.5,
           discovery_method: c.discovery_method,

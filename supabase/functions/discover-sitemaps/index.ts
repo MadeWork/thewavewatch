@@ -116,7 +116,7 @@ function parseSitemapIndex(xml: string, limit = 5): string[] {
   return urls;
 }
 
-interface SitemapItem { title: string; url: string; snippet: string; published_at: string; source_domain: string; source_name: string; }
+interface SitemapItem { title: string; url: string; snippet: string; published_at: string | null; source_domain: string; source_name: string; }
 
 function parseSitemapItems(xml: string, domain: string, name: string, limit = 50): SitemapItem[] {
   const items: SitemapItem[] = [];
@@ -127,7 +127,9 @@ function parseSitemapItems(xml: string, domain: string, name: string, limit = 50
     const title = stripHtml(getXmlTag(m[1], "news:title") || extractTitleFromUrl(url)).slice(0, 220);
     const snippet = stripHtml(getXmlTag(m[1], "news:keywords")).slice(0, 500);
     const pubDate = getXmlTag(m[1], "news:publication_date") || getXmlTag(m[1], "lastmod");
-    items.push({ title, url, snippet, published_at: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(), source_domain: normalizeDomain(domain), source_name: name });
+    const parsedPubDate = pubDate ? new Date(pubDate) : null;
+    const pubIso = parsedPubDate && !isNaN(parsedPubDate.getTime()) ? parsedPubDate.toISOString() : null;
+    items.push({ title, url, snippet, published_at: pubIso, source_domain: normalizeDomain(domain), source_name: name });
   }
   return items;
 }

@@ -1159,6 +1159,14 @@ async function insertArticles(
     }
   }
 
+  // Filter out articles older than 30 days (when date is known)
+  const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+  const ageFloor = new Date(Date.now() - MAX_AGE_MS).toISOString();
+  allDiscovered = allDiscovered.filter(a => {
+    if (!a.published_at) return true; // unknown date — keep, will show as "date unknown"
+    return a.published_at >= ageFloor;
+  });
+
   // Fetch sources for matching
   const { data: allSources } = await supabase.from("sources").select("id,domain,rss_url,name").eq("active", true).limit(1000);
   const sources = allSources || [];
@@ -1181,7 +1189,7 @@ async function insertArticles(
         source_id: matchedSource?.id || null,
         source_name: a.source_name || null,
         source_domain: a.source_domain || null,
-        published_at: a.published_at || new Date().toISOString(), fetched_at: new Date().toISOString(),
+        published_at: a.published_at || null, fetched_at: new Date().toISOString(),
         matched_keywords: a.matched_keywords,
         language: a.language || null,
         sentiment: "neutral" as string, sentiment_score: 0.5,
