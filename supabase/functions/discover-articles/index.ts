@@ -1181,7 +1181,7 @@ async function insertArticles(
         source_id: matchedSource?.id || null,
         source_name: a.source_name || null,
         source_domain: a.source_domain || null,
-        published_at: a.published_at || new Date().toISOString(), fetched_at: new Date().toISOString(),
+        published_at: a.published_at || null, fetched_at: new Date().toISOString(),
         matched_keywords: a.matched_keywords,
         language: a.language || null,
         sentiment: "neutral" as string, sentiment_score: 0.5,

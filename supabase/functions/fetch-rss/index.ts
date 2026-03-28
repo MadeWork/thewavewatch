@@ -489,9 +489,7 @@ serve(async (req) => {
             }
           }
 
-          withKeywords.forEach((article: any) => {
-            article.published_at = article.published_at || new Date().toISOString();
-          });
+          // Don't default published_at to now() — leave null so UI can show fetched_at as fallback
           console.log(`Source ${sourceName}: ${withKeywords.length} keyword-matched / ${items.length} total`);
           const BATCH_SIZE = 10;
           for (let b = 0; b < withKeywords.length; b += BATCH_SIZE) {

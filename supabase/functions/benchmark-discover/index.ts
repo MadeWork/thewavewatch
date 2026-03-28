@@ -643,7 +643,7 @@ serve(async (req) => {
               source_id: sourceId,
               source_name: a.source_name || src.name,
               source_domain: domain,
-              published_at: a.published_at || new Date().toISOString(),
+              published_at: a.published_at || null,
               fetched_at: new Date().toISOString(),
               matched_keywords: a.matched_keywords || [],
               language: a.language || null,

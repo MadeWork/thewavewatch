@@ -200,7 +200,7 @@ async function runAiDiscover(params: {
           source_id: matchedSource?.id || null,
           source_name: domain,
           source_domain: domain,
-          published_at: pubDate || new Date().toISOString(),
+          published_at: pubDate || null,
           fetched_at: new Date().toISOString(),
           matched_keywords: matched.length > 0 ? matched : [q.source_keyword],
           sentiment: "neutral",
