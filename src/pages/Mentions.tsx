@@ -104,8 +104,12 @@ export default function Mentions() {
         result = result.filter(a => new Date(a.published_at) >= cutoff);
       }
     }
-    // Sort by selected date field
-    result = [...result].sort((a, b) => new Date(b[dateField]).getTime() - new Date(a[dateField]).getTime());
+    // Sort: use published_at if available, fall back to fetched_at
+    result = [...result].sort((a, b) => {
+      const dateA = a.published_at || a.fetched_at;
+      const dateB = b.published_at || b.fetched_at;
+      return new Date(dateB).getTime() - new Date(dateA).getTime();
+    });
     return result;
   }, [articles, quickSearch, searchQuery, showBookmarksOnly, bookmarks, dateField]);
 
