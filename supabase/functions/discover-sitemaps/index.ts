@@ -116,7 +116,7 @@ function parseSitemapIndex(xml: string, limit = 5): string[] {
   return urls;
 }
 
-interface SitemapItem { title: string; url: string; snippet: string; published_at: string; source_domain: string; source_name: string; }
+interface SitemapItem { title: string; url: string; snippet: string; published_at: string | null; source_domain: string; source_name: string; }
 
 function parseSitemapItems(xml: string, domain: string, name: string, limit = 50): SitemapItem[] {
   const items: SitemapItem[] = [];
