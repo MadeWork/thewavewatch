@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, ReactNode, useRef } from "react";
+import { createContext, useContext, useState, useCallback, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -56,7 +56,7 @@ export function FetchProvider({ children }: { children: ReactNode }) {
   const startFetch = useCallback(async () => {
     if (state.fetching) return;
 
-    setState({ fetching: true, progress: 2, stage: { step: "discover", label: "Expanding keywords with AI…" }, result: null });
+    setState({ fetching: true, progress: 2, stage: { step: "discover", label: "Expanding keywords…" }, result: null });
 
     try {
       // Step 0: Expand keywords
@@ -64,174 +64,161 @@ export function FetchProvider({ children }: { children: ReactNode }) {
         await withTimeout(supabase.functions.invoke("expand-keywords", { body: { force: false } }), 30000);
       } catch {}
 
-      let totalDiscovered = 0;
-      let benchmarkCount = 0;
+      const counts: Record<string, number> = {};
 
-      // Step 0.5: Benchmark sources — always run first, never skipped
-      setState(s => ({ ...s, progress: 3, stage: { step: "discover", label: "Benchmark source discovery…" } }));
-      const BENCH_BATCH = 2;
-      let benchOffset = 0;
-      let benchHasMore = true;
-      let benchBatchNum = 0;
-      while (benchHasMore) {
+      // ══════════════════════════════════════════════════════
+      // PRIORITY 1: Tier 1 Search (Firecrawl site: queries)
+      // Most important — finds articles from major publishers
+      // ══════════════════════════════════════════════════════
+      setState(s => ({ ...s, progress: 5, stage: { step: "discover", label: "Searching major publishers…" } }));
+      let t1sOff = 0;
+      let t1sMore = true;
+      let t1sBatch = 0;
+      counts.tier1_search = 0;
+      while (t1sMore) {
         setState(s => ({
           ...s,
-          progress: 3 + Math.min(benchBatchNum * 1.5, 12),
-          stage: { step: "discover", label: `Benchmark sources (batch ${benchBatchNum + 1})…` },
+          progress: 5 + Math.min(t1sBatch * 3, 15),
+          stage: { step: "discover", label: `Searching publishers (batch ${t1sBatch + 1})…` },
+        }));
+        const data = await invokeStage("tier1_search", { offset: t1sOff, limit: 5 }, 90000);
+        if (data) {
+          counts.tier1_search += data.discovered || 0;
+          t1sMore = data.hasMore === true;
+          t1sOff += 5;
+        } else {
+          t1sMore = false;
+        }
+        t1sBatch++;
+      }
+
+      // PRIORITY 2: Tier 1 RSS/Sitemap
+      setState(s => ({ ...s, progress: 22, stage: { step: "rss", label: "Scanning publisher feeds…" } }));
+      let t1Off = 0;
+      let t1More = true;
+      let t1Batch = 0;
+      counts.tier1_rss = 0;
+      while (t1More) {
+        const data = await invokeStage("tier1", { offset: t1Off, limit: 10, body_scan_budget: 10 }, 90000);
+        if (data) {
+          counts.tier1_rss += data.discovered || 0;
+          t1More = data.hasMore === true;
+          t1Off += 10;
+        } else {
+          t1More = false;
+        }
+        t1Batch++;
+      }
+
+      // PRIORITY 3: Google News
+      setState(s => ({ ...s, progress: 32, stage: { step: "discover", label: "Searching Google News…" } }));
+      counts.google_news = 0;
+      const gnData = await invokeStage("google_news", {}, 90000);
+      if (gnData) counts.google_news = gnData.discovered || 0;
+
+      // PRIORITY 4: Source feeds (industry RSS)
+      setState(s => ({ ...s, progress: 40, stage: { step: "rss", label: "Fetching industry feeds…" } }));
+      let srcOff = 0;
+      let srcMore = true;
+      let srcBatch = 0;
+      counts.sources = 0;
+      while (srcMore) {
+        setState(s => ({
+          ...s,
+          progress: 40 + Math.min(srcBatch * 1.5, 10),
+          stage: { step: "rss", label: `Fetching feeds (batch ${srcBatch + 1})…` },
+        }));
+        const data = await invokeStage("sources", { offset: srcOff, limit: 20, body_scan_budget: 8 }, 90000);
+        if (data) {
+          counts.sources += data.discovered || 0;
+          srcMore = data.hasMore === true;
+          srcOff += 20;
+        } else {
+          srcMore = false;
+        }
+        srcBatch++;
+      }
+
+      // PRIORITY 5: Benchmark sources
+      setState(s => ({ ...s, progress: 52, stage: { step: "discover", label: "Benchmark source discovery…" } }));
+      let benchOff = 0;
+      let benchMore = true;
+      let benchBatch = 0;
+      counts.benchmark = 0;
+      while (benchMore) {
+        setState(s => ({
+          ...s,
+          progress: 52 + Math.min(benchBatch * 1.5, 8),
+          stage: { step: "discover", label: `Benchmark sources (batch ${benchBatch + 1})…` },
         }));
         try {
           const result = await withTimeout(
             supabase.functions.invoke("benchmark-discover", {
-              body: { offset: benchOffset, limit: BENCH_BATCH, body_scan_budget: 15 },
+              body: { offset: benchOff, limit: 2, body_scan_budget: 15 },
             }),
             120000,
           );
           if (result && !result.error) {
-            benchmarkCount += result.data?.discovered || 0;
-            benchHasMore = result.data?.hasMore === true;
-            benchOffset += BENCH_BATCH;
+            counts.benchmark += result.data?.discovered || 0;
+            benchMore = result.data?.hasMore === true;
+            benchOff += 2;
           } else {
-            benchHasMore = false;
+            benchMore = false;
           }
         } catch {
-          benchHasMore = false;
+          benchMore = false;
         }
-        benchBatchNum++;
+        benchBatch++;
       }
-      totalDiscovered += benchmarkCount;
 
-      // Step 1: Tier 1 site-specific search (PRIMARY — uses Firecrawl site: queries)
-      let tier1SearchCount = 0;
-      setState(s => ({ ...s, progress: 15, stage: { step: "discover", label: "Searching major outlets…" } }));
-      const T1S_BATCH = 5;
-      let t1sOffset = 0;
-      let t1sHasMore = true;
-      let t1sBatchNum = 0;
-      while (t1sHasMore) {
-        setState(s => ({
-          ...s,
-          progress: 15 + Math.min(t1sBatchNum * 3, 12),
-          stage: { step: "discover", label: `Searching major outlets (batch ${t1sBatchNum + 1})…` },
-        }));
-        const data = await invokeStage("tier1_search", { offset: t1sOffset, limit: T1S_BATCH }, 90000);
+      // PRIORITY 6: Tier 2
+      setState(s => ({ ...s, progress: 62, stage: { step: "discover", label: "Scanning Tier 2 domains…" } }));
+      let t2Off = 0;
+      let t2More = true;
+      let t2Batch = 0;
+      counts.tier2 = 0;
+      while (t2More) {
+        const data = await invokeStage("tier2", { offset: t2Off, limit: 15, body_scan_budget: 6 }, 90000);
         if (data) {
-          tier1SearchCount += data.discovered || 0;
-          totalDiscovered += data.discovered || 0;
-          t1sHasMore = data.hasMore === true;
-          t1sOffset += T1S_BATCH;
+          counts.tier2 += data.discovered || 0;
+          t2More = data.hasMore === true;
+          t2Off += 15;
         } else {
-          t1sHasMore = false;
+          t2More = false;
         }
-        t1sBatchNum++;
+        t2Batch++;
       }
 
-      // Step 1b: Tier 1 RSS feeds — supplementary scan
-      setState(s => ({ ...s, progress: 28, stage: { step: "discover", label: "Scanning RSS feeds from major outlets…" } }));
-      const TIER1_BATCH = 10;
-      let tier1Offset = 0;
-      let tier1HasMore = true;
-      let tier1BatchNum = 0;
-      while (tier1HasMore) {
-        const data = await invokeStage("tier1", { offset: tier1Offset, limit: TIER1_BATCH, body_scan_budget: 10 }, 90000);
-        if (data) {
-          totalDiscovered += data.discovered || 0;
-          tier1HasMore = data.hasMore === true;
-          tier1Offset += TIER1_BATCH;
-        } else {
-          tier1HasMore = false;
-        }
-        tier1BatchNum++;
-      }
-
-      // Step 2: Google News (expanded regions)
-      let gnCount = 0;
-      setState(s => ({ ...s, progress: 30, stage: { step: "discover", label: "Searching Google News (global)…" } }));
-      const gnData = await invokeStage("google_news", {}, 90000);
-      if (gnData) { gnCount = gnData.discovered || 0; totalDiscovered += gnCount; }
-
-      // Step 3: Source feeds — no batch limit, iterate until exhausted
-      setState(s => ({ ...s, progress: 38, stage: { step: "rss", label: "Fetching RSS feeds…" } }));
-      const SRC_BATCH = 20;
-      let srcOffset = 0;
-      let srcHasMore = true;
-      let srcBatchNum = 0;
-      while (srcHasMore) {
-        setState(s => ({
-          ...s,
-          progress: 38 + Math.min(srcBatchNum * 1.5, 12),
-          stage: { step: "rss", label: `Fetching RSS feeds (batch ${srcBatchNum + 1})…` },
-        }));
-        const data = await invokeStage("sources", { offset: srcOffset, limit: SRC_BATCH, body_scan_budget: 10 }, 90000);
-        if (data) {
-          totalDiscovered += data.discovered || 0;
-          srcHasMore = data.hasMore === true;
-          srcOffset += SRC_BATCH;
-        } else {
-          srcHasMore = false;
-        }
-        srcBatchNum++;
-      }
-
-      // Step 4: Tier 2 domains — no batch limit
-      setState(s => ({ ...s, progress: 52, stage: { step: "discover", label: "Scanning Tier 2 domains…" } }));
-      const T2_BATCH = 15;
-      let t2Offset = 0;
-      let t2HasMore = true;
-      let t2BatchNum = 0;
-      while (t2HasMore) {
-        setState(s => ({
-          ...s,
-          progress: 52 + Math.min(t2BatchNum * 1, 8),
-          stage: { step: "discover", label: `Scanning Tier 2 domains (batch ${t2BatchNum + 1})…` },
-        }));
-        const data = await invokeStage("tier2", { offset: t2Offset, limit: T2_BATCH, body_scan_budget: 8 }, 90000);
-        if (data) {
-          totalDiscovered += data.discovered || 0;
-          t2HasMore = data.hasMore === true;
-          t2Offset += T2_BATCH;
-        } else {
-          t2HasMore = false;
-        }
-        t2BatchNum++;
-      }
-
-      // Step 5: Discover sitemaps in batches — no fixed limit
-      setState(s => ({ ...s, progress: 62, stage: { step: "sitemaps", label: "Scanning sitemaps…" } }));
-      const SITEMAP_BATCH = 20;
-      let sitemapOffset = 0;
-      let sitemapCount = 0;
-      let sitemapBatchNum = 0;
-      let sitemapHasMore = true;
-      while (sitemapHasMore) {
-        setState(s => ({
-          ...s,
-          progress: 62 + Math.min(sitemapBatchNum * 1, 8),
-          stage: { step: "sitemaps", label: `Scanning sitemaps (batch ${sitemapBatchNum + 1})…` },
-        }));
+      // PRIORITY 7: Sitemaps
+      setState(s => ({ ...s, progress: 70, stage: { step: "sitemaps", label: "Scanning sitemaps…" } }));
+      let smOff = 0;
+      let smMore = true;
+      let smBatch = 0;
+      counts.sitemaps = 0;
+      while (smMore) {
         try {
-          const sitemapResult = await withTimeout(
+          const result = await withTimeout(
             supabase.functions.invoke("discover-sitemaps", {
-              body: { max_domains: SITEMAP_BATCH, deep_scan_limit: 20, offset: sitemapOffset },
+              body: { max_domains: 20, deep_scan_limit: 20, offset: smOff },
             }),
             90000,
           );
-          if (sitemapResult && !sitemapResult.error) {
-            sitemapCount += sitemapResult.data?.discovered ?? 0;
-            const domainsScanned = sitemapResult.data?.domainsScanned ?? 0;
-            sitemapHasMore = domainsScanned >= SITEMAP_BATCH;
-            sitemapOffset += SITEMAP_BATCH;
+          if (result && !result.error) {
+            counts.sitemaps += result.data?.discovered ?? 0;
+            smMore = (result.data?.domainsScanned ?? 0) >= 20;
+            smOff += 20;
           } else {
-            sitemapHasMore = false;
+            smMore = false;
           }
         } catch {
-          sitemapHasMore = false;
+          smMore = false;
         }
-        sitemapBatchNum++;
+        smBatch++;
       }
 
-      // Step 6: Firecrawl search (global, all keywords, multi-angle)
-      setState(s => ({ ...s, progress: 72, stage: { step: "firecrawl", label: "Firecrawl global search…" } }));
-      let firecrawlCount = 0;
+      // PRIORITY 8: Firecrawl global search
+      setState(s => ({ ...s, progress: 78, stage: { step: "firecrawl", label: "Web search…" } }));
+      counts.firecrawl = 0;
       try {
         const fcResult = await withTimeout(
           supabase.functions.invoke("firecrawl-search", {
@@ -239,12 +226,12 @@ export function FetchProvider({ children }: { children: ReactNode }) {
           }),
           120000,
         );
-        if (fcResult && !fcResult.error) firecrawlCount = fcResult.data?.discovered ?? 0;
+        if (fcResult && !fcResult.error) counts.firecrawl = fcResult.data?.discovered ?? 0;
       } catch {}
 
-      // Step 7: AI discovery (smart multi-angle queries)
-      setState(s => ({ ...s, progress: 88, stage: { step: "firecrawl", label: "AI smart discovery…" } }));
-      let aiDiscoverCount = 0;
+      // PRIORITY 9: AI discovery
+      setState(s => ({ ...s, progress: 90, stage: { step: "firecrawl", label: "AI smart discovery…" } }));
+      counts.ai = 0;
       try {
         const aiResult = await withTimeout(
           supabase.functions.invoke("ai-discover", {
@@ -252,21 +239,22 @@ export function FetchProvider({ children }: { children: ReactNode }) {
           }),
           90000,
         );
-        if (aiResult && !aiResult.error) aiDiscoverCount = aiResult.data?.discovered ?? 0;
+        if (aiResult && !aiResult.error) counts.ai = aiResult.data?.discovered ?? 0;
       } catch {}
 
       // Build result
-      const otherSourceCount = totalDiscovered - benchmarkCount - gnCount - tier1SearchCount;
+      const grandTotal = Object.values(counts).reduce((a, b) => a + b, 0);
       const parts: string[] = [];
-      if (tier1SearchCount > 0) parts.push(`${tier1SearchCount} from publishers`);
-      if (benchmarkCount > 0) parts.push(`${benchmarkCount} benchmark`);
-      if (gnCount > 0) parts.push(`${gnCount} Google News`);
-      if (otherSourceCount > 0) parts.push(`${otherSourceCount} other sources`);
-      if (sitemapCount > 0) parts.push(`${sitemapCount} sitemaps`);
-      if (firecrawlCount > 0) parts.push(`${firecrawlCount} web search`);
-      if (aiDiscoverCount > 0) parts.push(`${aiDiscoverCount} AI discovery`);
+      if (counts.tier1_search > 0) parts.push(`${counts.tier1_search} publisher search`);
+      if (counts.tier1_rss > 0) parts.push(`${counts.tier1_rss} publisher feeds`);
+      if (counts.google_news > 0) parts.push(`${counts.google_news} Google News`);
+      if (counts.sources > 0) parts.push(`${counts.sources} industry feeds`);
+      if (counts.benchmark > 0) parts.push(`${counts.benchmark} benchmark`);
+      if (counts.tier2 > 0) parts.push(`${counts.tier2} tier 2`);
+      if (counts.sitemaps > 0) parts.push(`${counts.sitemaps} sitemaps`);
+      if (counts.firecrawl > 0) parts.push(`${counts.firecrawl} web search`);
+      if (counts.ai > 0) parts.push(`${counts.ai} AI`);
 
-      const grandTotal = totalDiscovered + sitemapCount + firecrawlCount + aiDiscoverCount;
       const resultText = grandTotal > 0 ? `${grandTotal} articles · ${parts.join(" · ")}` : "No new articles found";
 
       queryClient.invalidateQueries({ queryKey: ["articles"] });
@@ -281,9 +269,9 @@ export function FetchProvider({ children }: { children: ReactNode }) {
           await supabase.from("app_notifications").insert({
             user_id: user.id,
             kind: "fetch_complete",
-            title: grandTotal > 0 ? `Discovery complete: ${grandTotal} articles` : "Discovery complete",
+            title: grandTotal > 0 ? `Discovery: ${grandTotal} articles` : "Discovery complete",
             body: resultText,
-            payload: { total: grandTotal, benchmark: benchmarkCount, sitemaps: sitemapCount, firecrawl: firecrawlCount, ai: aiDiscoverCount },
+            payload: counts,
           });
         }
       } catch {}
