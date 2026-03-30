@@ -13,8 +13,8 @@ const supabase = createClient(
 // ─── KEYWORD EXPANSION ──────────────────────────────────────────────────────
 
 const KEYWORD_EXPANSIONS: Record<string, string[]> = {
-  'marine energy':      ['wave energy', 'wave power', 'tidal energy', 'tidal power', 'ocean energy', 'ocean power', 'offshore energy', 'WEC', 'wave energy converter'],
-  'wave energy':        ['wave power', 'marine energy', 'ocean energy', 'tidal energy', 'WEC', 'offshore renewables'],
+  'marine energy':      ['wave energy', 'wave power', 'tidal energy', 'tidal power', 'ocean energy', 'ocean power', 'sea power', 'blue energy', 'offshore renewables', 'hydrokinetic', 'WEC', 'wave energy converter'],
+  'wave energy':        ['wave power', 'ocean power', 'marine energy', 'ocean energy', 'tidal energy', 'WEC', 'offshore renewables'],
   'wave power':         ['wave energy', 'marine energy', 'ocean energy', 'tidal power'],
   'tidal energy':       ['tidal power', 'marine energy', 'ocean energy', 'tidal stream', 'tidal current'],
   'offshore wind':      ['offshore wind farm', 'offshore wind turbine', 'floating wind', 'wind farm'],
