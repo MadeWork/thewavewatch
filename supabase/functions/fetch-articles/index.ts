@@ -243,6 +243,10 @@ Deno.serve(async (req) => {
 // ─── PERIGON ─────────────────────────────────────────────────────────────────
 
 async function fetchFromPerigon(topic: any, _runId: string): Promise<any[]> {
+  if (!topic.keywords?.length) {
+    console.warn(`Topic "${topic.name}" has no keywords — skipping Perigon`)
+    return []
+  }
   const apiKey = Deno.env.get('PERIGON_API_KEY')
   if (!apiKey) throw new Error('PERIGON_API_KEY not configured')
 
