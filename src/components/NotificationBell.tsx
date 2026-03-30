@@ -37,7 +37,7 @@ export default function NotificationBell() {
 
     // Realtime subscription
     const channel = supabase
-      .channel("app_notifications_bell")
+      .channel(`app_notifications_bell-${user.id}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "app_notifications", filter: `user_id=eq.${user.id}` },
