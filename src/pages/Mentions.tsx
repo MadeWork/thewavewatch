@@ -23,6 +23,7 @@ export default function Mentions() {
   const [showBookmarksOnly, setShowBookmarksOnly] = useState(false);
   const [dateField, setDateField] = useState<"published_at" | "fetched_at">("published_at");
   const [relevanceFilter, setRelevanceFilter] = useState<"high" | "medium" | "all">("medium");
+  const [majorOnly, setMajorOnly] = useState(false);
 
   const { bookmarks, toggleBookmark, isBookmarked } = useBookmarks();
 
