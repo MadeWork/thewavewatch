@@ -123,6 +123,11 @@ Deno.serve(async (req) => {
     const results = []
 
     for (const topic of topics) {
+      // Safety: skip topics with no keywords
+      if (!topic.keywords?.length) {
+        console.warn(`Topic "${topic.name}" has no keywords — skipping`)
+        continue
+      }
       for (const source of topic.sources ?? ['perigon', 'guardian', 'gdelt']) {
         const runId = crypto.randomUUID()
 
@@ -238,6 +243,10 @@ Deno.serve(async (req) => {
 // ─── PERIGON ─────────────────────────────────────────────────────────────────
 
 async function fetchFromPerigon(topic: any, _runId: string): Promise<any[]> {
+  if (!topic.keywords?.length) {
+    console.warn(`Topic "${topic.name}" has no keywords — skipping Perigon`)
+    return []
+  }
   const apiKey = Deno.env.get('PERIGON_API_KEY')
   if (!apiKey) throw new Error('PERIGON_API_KEY not configured')
 
@@ -498,6 +507,10 @@ async function fetchFromGDELT(topic: any): Promise<any[]> {
 // ─── RSS ─────────────────────────────────────────────────────────────────────
 
 async function fetchFromRSS(topic: any, _runId: string): Promise<any[]> {
+  if (!topic.keywords?.length) {
+    console.warn(`Topic "${topic.name}" has no keywords — skipping RSS`)
+    return []
+  }
   const keywords = topic.keywords as string[]
   const expandedTerms = expandKeywords(keywords)
   const searchTerms = expandedTerms.map(k => k.toLowerCase())
@@ -508,7 +521,8 @@ async function fetchFromRSS(topic: any, _runId: string): Promise<any[]> {
     .eq('active', true)
     .eq('approval_status', 'approved')
     .not('rss_url', 'is', null)
-    .lt('consecutive_failures', 20)
+    .lt('consecutive_failures', 5)
+    .in('health_status', ['healthy', 'degraded'])
     .order('fetch_priority', { ascending: false })
     .limit(500)
 
