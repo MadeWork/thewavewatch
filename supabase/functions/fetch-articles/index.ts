@@ -366,10 +366,11 @@ async function fetchRSSUnified(
             if (!td.topic.sources?.includes('rss')) continue
             const matches = td.expandedTerms.some(term => text.includes(term))
             if (matches) {
-              allArticles.push({
+                const domain = source.domain ?? extractDomainName(source.rss_url)
+                allArticles.push({
                 external_id: hashUrl(item.link ?? item.guid ?? ''),
                 source_name: source.name ?? source.domain ?? '',
-                source_url: source.domain ?? extractDomainName(source.rss_url),
+                source_url: domain,
                 title: item.title ?? '',
                 description: item.description ?? null,
                 content: item.content ?? null,
@@ -383,7 +384,8 @@ async function fetchRSSUnified(
                 ingestion_source: 'rss',
                 topic_id: td.topic.id,
                 user_id: td.topic.user_id,
-                ingestion_run_id: undefined, // set in main handler
+                ingestion_run_id: undefined,
+                is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (domain || '').includes(m)),
               })
             }
           }
