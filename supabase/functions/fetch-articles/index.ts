@@ -252,106 +252,37 @@ async function fetchFromPerigon(topic: any, _runId: string): Promise<any[]> {
 
   const keywords = topic.keywords as string[]
   const expandedQuery = buildPerigonQuery(keywords)
-  const from = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
+  const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
   console.log(`Perigon query for topic "${topic.name}": ${expandedQuery}`)
 
-  const allArticles: any[] = []
-  const fetchErrors: string[] = []
+  // ── SINGLE optimised fetch: sourceGroup + explicit domains, 7-day window ──
+  const url = new URL('https://api.goperigon.com/v1/all')
+  url.searchParams.set('q', expandedQuery)
+  url.searchParams.set('from', from)
+  url.searchParams.set('language', topic.language ?? 'en')
+  url.searchParams.set('sourceGroup', 'top100')
+  url.searchParams.set('source', MAJOR_OUTLET_DOMAINS.join(','))
+  url.searchParams.set('sortBy', 'relevance')
+  url.searchParams.set('showReprints', 'false')
+  url.searchParams.set('size', '100')
+  url.searchParams.set('apiKey', apiKey)
 
-  // ── FETCH 1: Expanded keywords + top100 sourceGroup (avoids URL length issues) ──
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 15000)
+  let allArticles: any[] = []
+
   try {
-    const url = new URL('https://api.goperigon.com/v1/all')
-    url.searchParams.set('q', expandedQuery)
-    url.searchParams.set('from', from)
-    url.searchParams.set('language', topic.language ?? 'en')
-    url.searchParams.set('sourceGroup', 'top100')
-    url.searchParams.set('sortBy', 'relevance')
-    url.searchParams.set('showReprints', 'false')
-    url.searchParams.set('size', '50')
-    url.searchParams.set('apiKey', apiKey)
-
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 15000)
-    try {
-      const res = await fetch(url.toString(), { signal: controller.signal })
-      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
-      const data = await res.json()
-      const articles = normalisePerigonArticles(data.articles ?? [], 'perigon-top100-primary')
-      allArticles.push(...articles)
-      console.log(`Perigon top100 primary: ${articles.length} articles`)
-    } finally {
-      clearTimeout(timeout)
-    }
+    const res = await fetch(url.toString(), { signal: controller.signal })
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
+    const data = await res.json()
+    allArticles = normalisePerigonArticles(data.articles ?? [], 'perigon')
+    console.log(`Perigon returned ${allArticles.length} articles`)
   } catch (err: any) {
-    fetchErrors.push(`top100-primary: ${err.message}`)
-    console.error('Perigon top100 primary fetch failed:', err.message)
-  }
-
-  // ── FETCH 1b: Fallback to explicit domains if top100 returned < 5 ──
-  if (allArticles.length < 5) {
-    try {
-      const url = new URL('https://api.goperigon.com/v1/all')
-      url.searchParams.set('q', expandedQuery)
-      url.searchParams.set('from', from)
-      url.searchParams.set('language', topic.language ?? 'en')
-      url.searchParams.set('source', MAJOR_OUTLET_DOMAINS.slice(0, 30).join(','))
-      url.searchParams.set('sortBy', 'relevance')
-      url.searchParams.set('showReprints', 'false')
-      url.searchParams.set('size', '50')
-      url.searchParams.set('apiKey', apiKey)
-
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 15000)
-      try {
-        const res = await fetch(url.toString(), { signal: controller.signal })
-        if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
-        const data = await res.json()
-        const articles = normalisePerigonArticles(data.articles ?? [], 'perigon-major-fallback')
-        allArticles.push(...articles)
-        console.log(`Perigon major fallback: ${articles.length} articles`)
-      } finally {
-        clearTimeout(timeout)
-      }
-    } catch (err: any) {
-      console.warn('Perigon major fallback failed (non-fatal):', err.message)
-    }
-  }
-
-  // ── FETCH 2: Original keywords + major outlets + sorted by date (breaking news) ──
-  try {
-    const originalQuery = keywords
-      .map((k: string) => k.includes(' ') ? `"${k}"` : k)
-      .join(' OR ')
-
-    const url = new URL('https://api.goperigon.com/v1/all')
-    url.searchParams.set('q', originalQuery)
-    url.searchParams.set('from', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-    url.searchParams.set('language', topic.language ?? 'en')
-    url.searchParams.set('source', MAJOR_OUTLET_DOMAINS.join(','))
-    url.searchParams.set('sortBy', 'date')
-    url.searchParams.set('showReprints', 'false')
-    url.searchParams.set('size', '20')
-    url.searchParams.set('apiKey', apiKey)
-
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 15000)
-    try {
-      const res = await fetch(url.toString(), { signal: controller.signal })
-      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
-      const data = await res.json()
-      const articles = normalisePerigonArticles(data.articles ?? [], 'perigon-recent')
-      allArticles.push(...articles)
-      console.log(`Perigon recent: ${articles.length} articles`)
-    } finally {
-      clearTimeout(timeout)
-    }
-  } catch (err: any) {
-    console.warn('Perigon recent fetch failed (non-fatal):', err.message)
-  }
-
-  if (allArticles.length === 0 && fetchErrors.length >= 2) {
-    throw new Error(`Perigon fetches failed: ${fetchErrors.join('; ')}`)
+    console.error('Perigon fetch failed:', err.message)
+    throw err
+  } finally {
+    clearTimeout(timeout)
   }
 
   // Deduplicate by URL hash
