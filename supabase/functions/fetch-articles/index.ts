@@ -242,12 +242,19 @@ Deno.serve(async (req) => {
         }).in('id', successIds)
       }
 
-      // Update failed sources in one batch using individual updates (small set)
-      for (const fail of failUpdates) {
-        await supabase.from('sources').update({
-          consecutive_failures: fail.failures,
-          health_status: 'error',
-        }).eq('id', fail.id)
+      // Bulk update failed sources using upsert
+      if (failUpdates.length > 0) {
+        const failRows = failUpdates.map(f => ({
+          id: f.id,
+          consecutive_failures: f.failures,
+          health_status: f.failures >= 20 ? 'error' : 'degraded',
+        }))
+        for (const row of failRows) {
+          await supabase.from('sources').update({
+            consecutive_failures: row.consecutive_failures,
+            health_status: row.health_status,
+          }).eq('id', row.id)
+        }
       }
     }
 
