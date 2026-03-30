@@ -117,6 +117,33 @@ export default function AdminIngestion() {
     }
   };
 
+  const triggerBackfill = async () => {
+    if (!backfillTopicId) return;
+    setBackfilling(true);
+    setBackfillResult(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/backfill-articles`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session?.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ topic_id: backfillTopicId, months: backfillMonths }),
+      });
+      const data = await res.json();
+      setBackfillResult(data);
+      queryClient.invalidateQueries({ queryKey: ["pipeline-health"] });
+      queryClient.invalidateQueries({ queryKey: ["monitored-topics-admin"] });
+    } catch (err) {
+      console.error("Backfill failed:", err);
+      setBackfillResult({ error: "Backfill request failed" });
+    } finally {
+      setBackfilling(false);
+    }
+  };
+
   const statusColor = (status: string) => {
     switch (status) {
       case "success": return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
