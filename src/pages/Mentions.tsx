@@ -59,6 +59,18 @@ export default function Mentions() {
   const filtered = useMemo(() => {
     let result = articles ?? [];
 
+    // Exclude duplicates
+    result = result.filter(a => !(a as any).is_duplicate);
+
+    // Relevance filter
+    if (relevanceFilter === "high") {
+      result = result.filter(a => (a as any).relevance_label === "high" || !(a as any).is_enriched);
+    } else if (relevanceFilter === "medium") {
+      result = result.filter(a => ["high", "medium"].includes((a as any).relevance_label) || !(a as any).is_enriched);
+    }
+    // "all" still excludes noise and duplicates
+    result = result.filter(a => (a as any).relevance_label !== "noise" || !(a as any).is_enriched);
+
     // Quick search
     if (quickSearch) {
       const q = quickSearch.toLowerCase();
@@ -73,7 +85,6 @@ export default function Mentions() {
     // Advanced search
     if (searchQuery) {
       const sq = searchQuery;
-      // Terms
       if (sq.terms.length > 0) {
         result = result.filter(a => {
           const text = `${a.title} ${a.snippet || ""} ${(a.matched_keywords || []).join(" ")}`.toLowerCase();
@@ -84,13 +95,9 @@ export default function Mentions() {
           });
         });
       }
-      // Sources
       if (sq.sources.length > 0) result = result.filter(a => sq.sources.includes((a.sources as any)?.name || a.source_name || ""));
-      // Countries
       if (sq.countries.length > 0) result = result.filter(a => sq.countries.includes((a.sources as any)?.country_code || ""));
-      // Sentiments
       if (sq.sentiments.length > 0) result = result.filter(a => sq.sentiments.includes(a.sentiment || ""));
-      // Date range
       if (sq.dateRange !== "all") {
         const now = new Date();
         let cutoff: Date;
@@ -106,14 +113,18 @@ export default function Mentions() {
         result = result.filter(a => new Date(a.published_at) >= cutoff);
       }
     }
-    // Sort: use published_at if available, fall back to fetched_at
+
+    // Sort: enriched first, then unenriched at bottom; within each group by date
     result = [...result].sort((a, b) => {
+      const enrichedA = (a as any).is_enriched ? 1 : 0;
+      const enrichedB = (b as any).is_enriched ? 1 : 0;
+      if (enrichedA !== enrichedB) return enrichedB - enrichedA;
       const dateA = a.published_at || a.fetched_at;
       const dateB = b.published_at || b.fetched_at;
       return new Date(dateB).getTime() - new Date(dateA).getTime();
     });
     return result;
-  }, [articles, quickSearch, searchQuery, showBookmarksOnly, bookmarks, dateField]);
+  }, [articles, quickSearch, searchQuery, showBookmarksOnly, bookmarks, dateField, relevanceFilter]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
