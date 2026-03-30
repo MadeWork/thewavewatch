@@ -13,8 +13,15 @@ serve(async (req) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const lovableKey = Deno.env.get("LOVABLE_API_KEY")!;
+  const lovableKey = Deno.env.get("LOVABLE_API_KEY");
   const supabase = createClient(supabaseUrl, serviceKey);
+
+  if (!lovableKey) {
+    console.error("LOVABLE_API_KEY is not set — enrichment will fail");
+    return new Response(JSON.stringify({ error: "LOVABLE_API_KEY not configured" }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  }
 
   try {
     const { topic_id } = await req.json().catch(() => ({}));
@@ -22,10 +29,10 @@ serve(async (req) => {
     // 1. Fetch unenriched articles
     let query = supabase
       .from("articles")
-      .select("id, title, description, snippet, source_name, source_domain, url, published_at, matched_keywords")
+      .select("id, title, description, source_name, source_url, url, published_at, ingestion_source")
       .eq("is_enriched", false)
       .eq("is_duplicate", false)
-      .order("fetched_at", { ascending: true })
+      .order("created_at", { ascending: true })
       .limit(BATCH_SIZE);
 
     if (topic_id) query = query.eq("topic_id", topic_id);
