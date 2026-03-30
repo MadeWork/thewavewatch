@@ -2,7 +2,8 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { format, subMonths } from "date-fns";
-import { Search, Download, ExternalLink, ChevronLeft, ChevronRight, X, Filter, Sparkles, Bookmark, List, Table, Tag, StickyNote, CheckSquare, Calendar } from "lucide-react";
+import { Search, Download, ExternalLink, ChevronLeft, ChevronRight, X, Filter, Sparkles, Bookmark, List, Table, Tag, StickyNote, CheckSquare, Calendar, Loader2 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ErrorBanner from "@/components/ErrorBanner";
 import EmptyState from "@/components/EmptyState";
 import ArticleDetailDrawer from "@/components/ArticleDetailDrawer";
@@ -21,6 +22,7 @@ export default function Mentions() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBookmarksOnly, setShowBookmarksOnly] = useState(false);
   const [dateField, setDateField] = useState<"published_at" | "fetched_at">("published_at");
+  const [relevanceFilter, setRelevanceFilter] = useState<"high" | "medium" | "all">("medium");
 
   const { bookmarks, toggleBookmark, isBookmarked } = useBookmarks();
 
@@ -28,10 +30,10 @@ export default function Mentions() {
     queryKey: ["mentions"],
     queryFn: async () => {
       const { data, error } = await supabase.from("articles").select("*, sources(name, region, country_code)").neq("source_category", "social" as any).order("published_at", { ascending: false }).limit(1000);
-      // Note: we always fetch ordered by published_at, but re-sort client-side based on dateField
       if (error) throw error;
       return data as any[];
     },
+    refetchInterval: 10000, // Auto-refresh as enrichment completes
   });
 
   const { data: keywordTexts } = useQuery({
@@ -57,6 +59,18 @@ export default function Mentions() {
   const filtered = useMemo(() => {
     let result = articles ?? [];
 
+    // Exclude duplicates
+    result = result.filter(a => !(a as any).is_duplicate);
+
+    // Relevance filter
+    if (relevanceFilter === "high") {
+      result = result.filter(a => (a as any).relevance_label === "high" || !(a as any).is_enriched);
+    } else if (relevanceFilter === "medium") {
+      result = result.filter(a => ["high", "medium"].includes((a as any).relevance_label) || !(a as any).is_enriched);
+    }
+    // "all" still excludes noise and duplicates
+    result = result.filter(a => (a as any).relevance_label !== "noise" || !(a as any).is_enriched);
+
     // Quick search
     if (quickSearch) {
       const q = quickSearch.toLowerCase();
@@ -71,7 +85,6 @@ export default function Mentions() {
     // Advanced search
     if (searchQuery) {
       const sq = searchQuery;
-      // Terms
       if (sq.terms.length > 0) {
         result = result.filter(a => {
           const text = `${a.title} ${a.snippet || ""} ${(a.matched_keywords || []).join(" ")}`.toLowerCase();
@@ -82,13 +95,9 @@ export default function Mentions() {
           });
         });
       }
-      // Sources
       if (sq.sources.length > 0) result = result.filter(a => sq.sources.includes((a.sources as any)?.name || a.source_name || ""));
-      // Countries
       if (sq.countries.length > 0) result = result.filter(a => sq.countries.includes((a.sources as any)?.country_code || ""));
-      // Sentiments
       if (sq.sentiments.length > 0) result = result.filter(a => sq.sentiments.includes(a.sentiment || ""));
-      // Date range
       if (sq.dateRange !== "all") {
         const now = new Date();
         let cutoff: Date;
@@ -104,14 +113,18 @@ export default function Mentions() {
         result = result.filter(a => new Date(a.published_at) >= cutoff);
       }
     }
-    // Sort: use published_at if available, fall back to fetched_at
+
+    // Sort: enriched first, then unenriched at bottom; within each group by date
     result = [...result].sort((a, b) => {
+      const enrichedA = (a as any).is_enriched ? 1 : 0;
+      const enrichedB = (b as any).is_enriched ? 1 : 0;
+      if (enrichedA !== enrichedB) return enrichedB - enrichedA;
       const dateA = a.published_at || a.fetched_at;
       const dateB = b.published_at || b.fetched_at;
       return new Date(dateB).getTime() - new Date(dateA).getTime();
     });
     return result;
-  }, [articles, quickSearch, searchQuery, showBookmarksOnly, bookmarks, dateField]);
+  }, [articles, quickSearch, searchQuery, showBookmarksOnly, bookmarks, dateField, relevanceFilter]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -232,6 +245,16 @@ export default function Mentions() {
         />
       )}
 
+      {/* Relevance filter bar */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] text-text-muted mr-1">Quality:</span>
+        {([["high", "Top stories"], ["medium", "All relevant"], ["all", "Everything"]] as const).map(([val, label]) => (
+          <button key={val} onClick={() => { setRelevanceFilter(val as any); setPage(0); }}
+            className={`px-3 py-1.5 rounded-lg text-[11px] transition ${relevanceFilter === val ? "bg-primary text-primary-foreground" : "bg-bg-elevated text-text-secondary hover:bg-bg-subtle"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
       {/* Bulk action bar */}
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-primary/10 border border-primary/20">
@@ -333,9 +356,36 @@ export default function Mentions() {
                     )}
                     {a.language && <span className="px-1 py-0.5 rounded bg-bg-subtle text-text-muted text-[10px]">{a.language}</span>}
                     {src?.region && <span className="px-1.5 py-0.5 rounded bg-bg-subtle text-text-muted text-[10px]">{src.region}</span>}
-                    {(a as any).importance === "high" && <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 text-[10px] font-medium">High</span>}
-                    {(a as any).importance === "low" && <span className="px-1.5 py-0.5 rounded bg-bg-subtle text-text-muted text-[10px]">Low</span>}
-                    {(a as any).story_cluster_id && <span className="px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 text-[10px]">📰 Cluster</span>}
+                    {/* Relevance badge */}
+                    {(a as any).is_enriched ? (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                              (a as any).relevance_label === "high" ? "bg-positive/15 text-positive" :
+                              (a as any).relevance_label === "medium" ? "bg-amber-500/15 text-amber-400" :
+                              "bg-bg-subtle text-text-muted"
+                            }`}>
+                              {(a as any).relevance_label === "high" ? "● High" : (a as any).relevance_label === "medium" ? "● Medium" : "● Low"}
+                            </span>
+                          </TooltipTrigger>
+                          {(a as any).relevance_reason && (
+                            <TooltipContent side="top" className="max-w-xs text-xs">
+                              {(a as any).relevance_reason}
+                            </TooltipContent>
+                          )}
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : (
+                      <span className="px-1.5 py-0.5 rounded bg-bg-subtle text-text-muted text-[10px] flex items-center gap-1">
+                        <Loader2 className="w-2.5 h-2.5 animate-spin" /> Scoring…
+                      </span>
+                    )}
+                    {/* Key themes */}
+                    {(a as any).key_themes?.slice(0, 3).map((theme: string) => (
+                      <span key={theme} className="px-1.5 py-0.5 rounded-full bg-secondary/50 text-secondary-foreground text-[9px]">{theme}</span>
+                    ))}
+                    {(a as any).story_cluster_id && <span className="px-1.5 py-0.5 rounded bg-accent/30 text-accent-foreground text-[10px]">📰 Cluster</span>}
                     {(a as any).discovery_method && <span className="px-1 py-0.5 rounded bg-bg-subtle text-text-muted text-[9px]">{(a as any).discovery_method}</span>}
                     {a.matched_keywords?.map((kw: string) => (
                       <span key={kw} className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px]">{kw}</span>

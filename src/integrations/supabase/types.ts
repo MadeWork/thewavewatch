@@ -315,6 +315,8 @@ export type Database = {
           country: string | null
           description: string | null
           discovery_method: string | null
+          duplicate_of: string | null
+          enriched_at: string | null
           external_id: string | null
           fetched_at: string
           id: string
@@ -322,7 +324,9 @@ export type Database = {
           importance: string | null
           ingestion_run_id: string | null
           ingestion_source: string | null
+          is_duplicate: boolean | null
           is_enriched: boolean | null
+          key_themes: string[] | null
           language: string | null
           matched_keywords: string[] | null
           matched_reason: string | null
@@ -331,6 +335,8 @@ export type Database = {
           primary_entity: string | null
           published_at: string | null
           reach_estimate: number | null
+          relevance_label: string | null
+          relevance_reason: string | null
           relevance_score: number | null
           sentiment: string | null
           sentiment_score: number | null
@@ -357,6 +363,8 @@ export type Database = {
           country?: string | null
           description?: string | null
           discovery_method?: string | null
+          duplicate_of?: string | null
+          enriched_at?: string | null
           external_id?: string | null
           fetched_at?: string
           id?: string
@@ -364,7 +372,9 @@ export type Database = {
           importance?: string | null
           ingestion_run_id?: string | null
           ingestion_source?: string | null
+          is_duplicate?: boolean | null
           is_enriched?: boolean | null
+          key_themes?: string[] | null
           language?: string | null
           matched_keywords?: string[] | null
           matched_reason?: string | null
@@ -373,6 +383,8 @@ export type Database = {
           primary_entity?: string | null
           published_at?: string | null
           reach_estimate?: number | null
+          relevance_label?: string | null
+          relevance_reason?: string | null
           relevance_score?: number | null
           sentiment?: string | null
           sentiment_score?: number | null
@@ -399,6 +411,8 @@ export type Database = {
           country?: string | null
           description?: string | null
           discovery_method?: string | null
+          duplicate_of?: string | null
+          enriched_at?: string | null
           external_id?: string | null
           fetched_at?: string
           id?: string
@@ -406,7 +420,9 @@ export type Database = {
           importance?: string | null
           ingestion_run_id?: string | null
           ingestion_source?: string | null
+          is_duplicate?: boolean | null
           is_enriched?: boolean | null
+          key_themes?: string[] | null
           language?: string | null
           matched_keywords?: string[] | null
           matched_reason?: string | null
@@ -415,6 +431,8 @@ export type Database = {
           primary_entity?: string | null
           published_at?: string | null
           reach_estimate?: number | null
+          relevance_label?: string | null
+          relevance_reason?: string | null
           relevance_score?: number | null
           sentiment?: string | null
           sentiment_score?: number | null
@@ -431,6 +449,13 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "articles_duplicate_of_fkey"
+            columns: ["duplicate_of"]
+            isOneToOne: false
+            referencedRelation: "articles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "articles_source_id_fkey"
             columns: ["source_id"]
@@ -622,6 +647,7 @@ export type Database = {
           keywords: string[]
           language: string | null
           last_fetched_at: string | null
+          min_relevance_label: string | null
           name: string
           sources: string[] | null
           updated_at: string | null
@@ -634,6 +660,7 @@ export type Database = {
           keywords: string[]
           language?: string | null
           last_fetched_at?: string | null
+          min_relevance_label?: string | null
           name: string
           sources?: string[] | null
           updated_at?: string | null
@@ -646,6 +673,7 @@ export type Database = {
           keywords?: string[]
           language?: string | null
           last_fetched_at?: string | null
+          min_relevance_label?: string | null
           name?: string
           sources?: string[] | null
           updated_at?: string | null
