@@ -188,6 +188,10 @@ Deno.serve(async (req) => {
     // 6. Bulk upsert all articles
     let insertedCount = 0
     if (allArticles.length > 0) {
+      // Stamp all articles with the run ID
+      for (const a of allArticles) {
+        if (!a.ingestion_run_id) a.ingestion_run_id = runId
+      }
       // Deduplicate by external_id + topic_id + ingestion_source
       const seen = new Set<string>()
       const deduped = allArticles.filter(a => {
