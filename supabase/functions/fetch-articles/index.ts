@@ -136,7 +136,9 @@ Deno.serve(async (req) => {
         try {
           let articles: any[] = []
 
-          if (source === 'perigon') {
+          if (source === 'rss') {
+            articles = await fetchFromRSS(topic, runId)
+          } else if (source === 'perigon') {
             articles = await fetchFromPerigon(topic, runId)
           } else if (source === 'guardian') {
             articles = await fetchFromGuardian(topic, runId)
