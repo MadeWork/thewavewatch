@@ -502,48 +502,44 @@ async function fetchFromRSS(topic: any, _runId: string): Promise<any[]> {
   const expandedTerms = expandKeywords(keywords)
   const searchTerms = expandedTerms.map(k => k.toLowerCase())
 
-  const { data: domains, error } = await supabase
-    .from('approved_domains')
-    .select('*')
+  const { data: sources, error } = await supabase
+    .from('sources')
+    .select('id, name, rss_url, domain, language, country_code, health_status, consecutive_failures, fetch_priority')
     .eq('active', true)
-    .not('feed_url', 'is', null)
-    .order('priority', { ascending: false })
+    .eq('approval_status', 'approved')
+    .not('rss_url', 'is', null)
+    .lt('consecutive_failures', 20)
+    .order('fetch_priority', { ascending: false })
     .limit(500)
 
   if (error) {
-    console.error('Failed to fetch approved_domains:', error.message)
+    console.error('Failed to fetch sources:', error.message)
     return []
   }
 
-  if (!domains?.length) {
-    console.warn('No active RSS domains found')
+  if (!sources?.length) {
+    console.warn('No active sources found')
     return []
   }
 
-  console.log(`Processing ${domains.length} RSS feeds for topic "${topic.name}"`)
+  console.log(`Processing ${sources.length} RSS sources for topic "${topic.name}"`)
 
   const allArticles: any[] = []
-  const feedErrors: string[] = []
   const BATCH_SIZE = 20
 
-  for (let i = 0; i < domains.length; i += BATCH_SIZE) {
-    const batch = domains.slice(i, i + BATCH_SIZE)
+  for (let i = 0; i < sources.length; i += BATCH_SIZE) {
+    const batch = sources.slice(i, i + BATCH_SIZE)
     const batchResults = await Promise.allSettled(
-      batch.map(domain => fetchSingleRSSFeed(domain, searchTerms, topic))
+      batch.map(source => fetchSingleRSSFeed(source, searchTerms, topic))
     )
     for (const result of batchResults) {
       if (result.status === 'fulfilled') {
         allArticles.push(...result.value)
-      } else {
-        feedErrors.push(result.reason?.message ?? 'unknown error')
       }
     }
   }
 
-  console.log(`RSS fetched ${allArticles.length} relevant articles from ${domains.length} feeds`)
-  if (feedErrors.length > 0) {
-    console.warn(`RSS feed errors (non-fatal): ${feedErrors.length} feeds failed`)
-  }
+  console.log(`RSS total: ${allArticles.length} relevant articles`)
 
   const seen = new Set<string>()
   return allArticles.filter(a => {
@@ -554,13 +550,13 @@ async function fetchFromRSS(topic: any, _runId: string): Promise<any[]> {
 }
 
 async function fetchSingleRSSFeed(
-  domain: any,
+  source: any,
   searchTerms: string[],
   topic: any
 ): Promise<any[]> {
-  let feedUrl = domain.feed_url
-  if (!feedUrl && domain.domain) {
-    const d = domain.domain.replace(/^https?:\/\//, '')
+  let feedUrl = source.rss_url
+  if (!feedUrl && source.domain) {
+    const d = source.domain.replace(/^https?:\/\//, '')
     feedUrl = `https://${d}/feed`
   }
   if (!feedUrl) return []
@@ -575,7 +571,13 @@ async function fetchSingleRSSFeed(
     })
     clearTimeout(timeout)
 
-    if (!res.ok) return []
+    if (!res.ok) {
+      await supabase.from('sources').update({
+        consecutive_failures: (source.consecutive_failures ?? 0) + 1,
+        health_status: 'error'
+      }).eq('id', source.id)
+      return []
+    }
 
     const xml = await res.text()
     if (xml.length > 1_000_000) return []
@@ -589,10 +591,18 @@ async function fetchSingleRSSFeed(
       return searchTerms.some(term => text.includes(term))
     })
 
+    // Reset failures and update timestamps on success
+    await supabase.from('sources').update({
+      consecutive_failures: 0,
+      health_status: 'healthy',
+      last_fetched_at: new Date().toISOString(),
+      last_success_at: new Date().toISOString()
+    }).eq('id', source.id)
+
     return relevant.map(item => ({
       external_id: hashUrl(item.link ?? item.guid ?? ''),
-      source_name: domain.name ?? extractDomainName(feedUrl),
-      source_url: domain.domain ?? extractDomainName(feedUrl),
+      source_name: source.name ?? source.domain ?? '',
+      source_url: source.domain ?? extractDomainName(feedUrl),
       title: item.title ?? '',
       description: item.description ?? null,
       content: item.content ?? null,
@@ -600,9 +610,9 @@ async function fetchSingleRSSFeed(
       published_at: item.pubDate ?? new Date().toISOString(),
       url: item.link ?? '',
       image_url: item.image ?? null,
-      language: domain.language ?? topic.language ?? 'en',
+      language: source.language ?? topic.language ?? 'en',
       media_type: 'web',
-      country: domain.country_code ?? null,
+      country: source.country_code ?? null,
       ingestion_source: 'rss',
     })).filter((a: any) => a.title && a.url)
 
@@ -610,6 +620,10 @@ async function fetchSingleRSSFeed(
     if (err.name !== 'AbortError') {
       console.warn(`RSS feed failed for ${feedUrl}: ${err.message}`)
     }
+    await supabase.from('sources').update({
+      consecutive_failures: (source.consecutive_failures ?? 0) + 1,
+      health_status: 'error'
+    }).eq('id', source.id)
     return []
   }
 }
