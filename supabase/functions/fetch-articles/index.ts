@@ -188,6 +188,10 @@ Deno.serve(async (req) => {
     // 6. Bulk upsert all articles
     let insertedCount = 0
     if (allArticles.length > 0) {
+      // Stamp all articles with the run ID
+      for (const a of allArticles) {
+        if (!a.ingestion_run_id) a.ingestion_run_id = runId
+      }
       // Deduplicate by external_id + topic_id + ingestion_source
       const seen = new Set<string>()
       const deduped = allArticles.filter(a => {
@@ -242,12 +246,19 @@ Deno.serve(async (req) => {
         }).in('id', successIds)
       }
 
-      // Update failed sources in one batch using individual updates (small set)
-      for (const fail of failUpdates) {
-        await supabase.from('sources').update({
-          consecutive_failures: fail.failures,
-          health_status: 'error',
-        }).eq('id', fail.id)
+      // Bulk update failed sources using upsert
+      if (failUpdates.length > 0) {
+        const failRows = failUpdates.map(f => ({
+          id: f.id,
+          consecutive_failures: f.failures,
+          health_status: f.failures >= 20 ? 'error' : 'degraded',
+        }))
+        for (const row of failRows) {
+          await supabase.from('sources').update({
+            consecutive_failures: row.consecutive_failures,
+            health_status: row.health_status,
+          }).eq('id', row.id)
+        }
       }
     }
 
@@ -372,7 +383,7 @@ async function fetchRSSUnified(
                 ingestion_source: 'rss',
                 topic_id: td.topic.id,
                 user_id: td.topic.user_id,
-                ingestion_run_id: null, // set later
+                ingestion_run_id: undefined, // set in main handler
               })
             }
           }
