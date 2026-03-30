@@ -128,6 +128,7 @@ SCORING RULES:
 - "medium" (0.5–0.79): Tangentially related. Mentions the topic but it's not the main focus.
 - "low" (0.2–0.49): Weak connection. Only incidentally mentions a keyword.
 - "noise" (0.0–0.19): Irrelevant. Keyword match was coincidental. Should be filtered out.
+- IMPORTANT: Treat synonyms and closely related terms as equivalent. For example, "marine energy" = "wave power" = "tidal energy" = "ocean energy". An article about "wave power funding" is HIGH relevance for "marine energy" keywords. Do NOT penalise articles for using different terminology than the exact monitored keywords.
 
 For sentiment, score how the article portrays the topic/organisation:
 - "positive": Favourable coverage, achievements, growth, praise
