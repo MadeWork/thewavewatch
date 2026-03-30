@@ -25,7 +25,7 @@ serve(async (req) => {
       .select("id, title, description, snippet, source_name, source_domain, url, published_at, matched_keywords")
       .eq("is_enriched", false)
       .eq("is_duplicate", false)
-      .order("created_at", { ascending: true })
+      .order("fetched_at", { ascending: true })
       .limit(BATCH_SIZE);
 
     if (topic_id) query = query.eq("topic_id", topic_id);

@@ -175,6 +175,18 @@ serve(async (req) => {
       });
     } catch {}
 
+    // ENRICHMENT: Score newly ingested articles for relevance
+    try {
+      await fetch(`${supabaseUrl}/functions/v1/enrich-articles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}` },
+        body: JSON.stringify({}),
+      });
+      console.log("Enrichment triggered");
+    } catch (e: any) {
+      console.log("Enrichment trigger failed:", e.message);
+    }
+
     // 90-day retention cleanup
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 90);
