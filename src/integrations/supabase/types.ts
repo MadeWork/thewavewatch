@@ -306,20 +306,31 @@ export type Database = {
       articles: {
         Row: {
           ai_summary: string | null
+          author: string | null
           author_email: string | null
           author_name: string | null
           author_url: string | null
           confidence: number | null
+          content: string | null
+          country: string | null
+          description: string | null
           discovery_method: string | null
+          external_id: string | null
           fetched_at: string
           id: string
+          image_url: string | null
           importance: string | null
+          ingestion_run_id: string | null
+          ingestion_source: string | null
+          is_enriched: boolean | null
           language: string | null
           matched_keywords: string[] | null
           matched_reason: string | null
           matched_via: string | null
+          media_type: string | null
           primary_entity: string | null
           published_at: string | null
+          reach_estimate: number | null
           relevance_score: number | null
           sentiment: string | null
           sentiment_score: number | null
@@ -328,26 +339,40 @@ export type Database = {
           source_domain: string | null
           source_id: string | null
           source_name: string | null
+          source_url: string | null
           story_cluster_id: string | null
           title: string
+          topic_id: string | null
           url: string
+          user_id: string | null
         }
         Insert: {
           ai_summary?: string | null
+          author?: string | null
           author_email?: string | null
           author_name?: string | null
           author_url?: string | null
           confidence?: number | null
+          content?: string | null
+          country?: string | null
+          description?: string | null
           discovery_method?: string | null
+          external_id?: string | null
           fetched_at?: string
           id?: string
+          image_url?: string | null
           importance?: string | null
+          ingestion_run_id?: string | null
+          ingestion_source?: string | null
+          is_enriched?: boolean | null
           language?: string | null
           matched_keywords?: string[] | null
           matched_reason?: string | null
           matched_via?: string | null
+          media_type?: string | null
           primary_entity?: string | null
           published_at?: string | null
+          reach_estimate?: number | null
           relevance_score?: number | null
           sentiment?: string | null
           sentiment_score?: number | null
@@ -356,26 +381,40 @@ export type Database = {
           source_domain?: string | null
           source_id?: string | null
           source_name?: string | null
+          source_url?: string | null
           story_cluster_id?: string | null
           title: string
+          topic_id?: string | null
           url: string
+          user_id?: string | null
         }
         Update: {
           ai_summary?: string | null
+          author?: string | null
           author_email?: string | null
           author_name?: string | null
           author_url?: string | null
           confidence?: number | null
+          content?: string | null
+          country?: string | null
+          description?: string | null
           discovery_method?: string | null
+          external_id?: string | null
           fetched_at?: string
           id?: string
+          image_url?: string | null
           importance?: string | null
+          ingestion_run_id?: string | null
+          ingestion_source?: string | null
+          is_enriched?: boolean | null
           language?: string | null
           matched_keywords?: string[] | null
           matched_reason?: string | null
           matched_via?: string | null
+          media_type?: string | null
           primary_entity?: string | null
           published_at?: string | null
+          reach_estimate?: number | null
           relevance_score?: number | null
           sentiment?: string | null
           sentiment_score?: number | null
@@ -384,9 +423,12 @@ export type Database = {
           source_domain?: string | null
           source_id?: string | null
           source_name?: string | null
+          source_url?: string | null
           story_cluster_id?: string | null
           title?: string
+          topic_id?: string | null
           url?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -394,6 +436,13 @@ export type Database = {
             columns: ["source_id"]
             isOneToOne: false
             referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "articles_topic_id_fkey"
+            columns: ["topic_id"]
+            isOneToOne: false
+            referencedRelation: "monitored_topics"
             referencedColumns: ["id"]
           },
         ]
@@ -442,6 +491,56 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      ingestion_runs: {
+        Row: {
+          articles_duplicate: number | null
+          articles_fetched: number | null
+          articles_inserted: number | null
+          completed_at: string | null
+          error_message: string | null
+          id: string
+          metadata: Json | null
+          source: string
+          started_at: string | null
+          status: string
+          topic_id: string | null
+        }
+        Insert: {
+          articles_duplicate?: number | null
+          articles_fetched?: number | null
+          articles_inserted?: number | null
+          completed_at?: string | null
+          error_message?: string | null
+          id?: string
+          metadata?: Json | null
+          source: string
+          started_at?: string | null
+          status?: string
+          topic_id?: string | null
+        }
+        Update: {
+          articles_duplicate?: number | null
+          articles_fetched?: number | null
+          articles_inserted?: number | null
+          completed_at?: string | null
+          error_message?: string | null
+          id?: string
+          metadata?: Json | null
+          source?: string
+          started_at?: string | null
+          status?: string
+          topic_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ingestion_runs_topic_id_fkey"
+            columns: ["topic_id"]
+            isOneToOne: false
+            referencedRelation: "monitored_topics"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       keyword_groups: {
         Row: {
@@ -512,6 +611,45 @@ export type Database = {
           monitor_in_media?: boolean
           monitor_in_social?: boolean
           text?: string
+        }
+        Relationships: []
+      }
+      monitored_topics: {
+        Row: {
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          keywords: string[]
+          language: string | null
+          last_fetched_at: string | null
+          name: string
+          sources: string[] | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          keywords: string[]
+          language?: string | null
+          last_fetched_at?: string | null
+          name: string
+          sources?: string[] | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          keywords?: string[]
+          language?: string | null
+          last_fetched_at?: string | null
+          name?: string
+          sources?: string[] | null
+          updated_at?: string | null
+          user_id?: string
         }
         Relationships: []
       }
