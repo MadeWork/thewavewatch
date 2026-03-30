@@ -4,9 +4,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
+import { Progress } from "@/components/ui/progress";
 import { formatDistanceToNow, format, differenceInSeconds } from "date-fns";
 import { useState } from "react";
-import { Activity, Clock, FileText, AlertTriangle, Radio, Play, RefreshCw, Tag } from "lucide-react";
+import { Activity, Clock, FileText, AlertTriangle, Radio, Play, RefreshCw, Tag, History, Search } from "lucide-react";
 
 export default function AdminIngestion() {
   const queryClient = useQueryClient();
