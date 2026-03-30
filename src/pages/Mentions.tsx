@@ -130,7 +130,7 @@ export default function Mentions() {
       return new Date(dateB).getTime() - new Date(dateA).getTime();
     });
     return result;
-  }, [articles, quickSearch, searchQuery, showBookmarksOnly, bookmarks, dateField, relevanceFilter]);
+  }, [articles, quickSearch, searchQuery, showBookmarksOnly, bookmarks, dateField, relevanceFilter, majorOnly]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
