@@ -2,7 +2,8 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { format, subMonths } from "date-fns";
-import { Search, Download, ExternalLink, ChevronLeft, ChevronRight, X, Filter, Sparkles, Bookmark, List, Table, Tag, StickyNote, CheckSquare, Calendar } from "lucide-react";
+import { Search, Download, ExternalLink, ChevronLeft, ChevronRight, X, Filter, Sparkles, Bookmark, List, Table, Tag, StickyNote, CheckSquare, Calendar, Loader2 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ErrorBanner from "@/components/ErrorBanner";
 import EmptyState from "@/components/EmptyState";
 import ArticleDetailDrawer from "@/components/ArticleDetailDrawer";
@@ -21,6 +22,7 @@ export default function Mentions() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBookmarksOnly, setShowBookmarksOnly] = useState(false);
   const [dateField, setDateField] = useState<"published_at" | "fetched_at">("published_at");
+  const [relevanceFilter, setRelevanceFilter] = useState<"high" | "medium" | "all">("medium");
 
   const { bookmarks, toggleBookmark, isBookmarked } = useBookmarks();
 
@@ -28,10 +30,10 @@ export default function Mentions() {
     queryKey: ["mentions"],
     queryFn: async () => {
       const { data, error } = await supabase.from("articles").select("*, sources(name, region, country_code)").neq("source_category", "social" as any).order("published_at", { ascending: false }).limit(1000);
-      // Note: we always fetch ordered by published_at, but re-sort client-side based on dateField
       if (error) throw error;
       return data as any[];
     },
+    refetchInterval: 10000, // Auto-refresh as enrichment completes
   });
 
   const { data: keywordTexts } = useQuery({
