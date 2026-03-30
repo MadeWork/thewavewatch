@@ -339,6 +339,78 @@ export default function AdminIngestion() {
           )}
         </CardContent>
       </Card>
+
+      {/* Section 4: Historical Backfill */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <History className="w-4 h-4" />
+            Historical Backfill
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Search archives up to 6 months back using Guardian, GDELT, and Perigon APIs. Best for filling gaps from major outlets.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-foreground">Topic</label>
+              <Select value={backfillTopicId} onValueChange={setBackfillTopicId}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Select a topic…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(topics ?? []).map((t: any) => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-foreground">Lookback: {backfillMonths} month{backfillMonths > 1 ? "s" : ""}</label>
+              <Slider
+                value={[backfillMonths]}
+                onValueChange={([v]) => setBackfillMonths(v)}
+                min={1}
+                max={6}
+                step={1}
+                className="py-2"
+              />
+            </div>
+            <Button
+              onClick={triggerBackfill}
+              disabled={backfilling || !backfillTopicId}
+              size="sm"
+            >
+              {backfilling ? (
+                <><RefreshCw className="w-4 h-4 animate-spin mr-2" /> Searching archives…</>
+              ) : (
+                <><Search className="w-4 h-4 mr-2" /> Run Deep Search</>
+              )}
+            </Button>
+          </div>
+          {backfilling && (
+            <div className="space-y-1">
+              <Progress value={undefined} className="h-1.5" />
+              <p className="text-xs text-muted-foreground text-center">Searching Guardian, GDELT & Perigon archives…</p>
+            </div>
+          )}
+          {backfillResult && !backfillResult.error && (
+            <div className="p-3 rounded-lg border border-border bg-card space-y-1">
+              <p className="text-sm font-medium text-foreground">Backfill complete — {backfillResult.topic}</p>
+              <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                <span>Guardian: {backfillResult.guardian}</span>
+                <span>GDELT: {backfillResult.gdelt}</span>
+                <span>Perigon: {backfillResult.perigon}</span>
+                <span className="text-foreground font-medium">Inserted: {backfillResult.inserted}</span>
+              </div>
+            </div>
+          )}
+          {backfillResult?.error && (
+            <p className="text-xs text-destructive">{backfillResult.error}</p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

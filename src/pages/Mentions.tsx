@@ -213,6 +213,10 @@ export default function Mentions() {
             className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition ${showBookmarksOnly ? "bg-primary/20 text-primary" : "bg-bg-elevated text-text-secondary hover:bg-bg-subtle"}`}>
             <Bookmark className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Saved</span>
           </button>
+          <button onClick={() => { setMajorOnly(!majorOnly); setPage(0); }}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition ${majorOnly ? "bg-primary/20 text-primary" : "bg-bg-elevated text-text-secondary hover:bg-bg-subtle"}`}>
+            <Shield className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Major Only</span>
+          </button>
           {/* Date field toggle */}
           <div className="segment-control" style={{ maxWidth: 180 }}>
             <button className={`segment-btn ${dateField === "published_at" ? "active" : ""}`} onClick={() => { setDateField("published_at"); setPage(0); }} style={{ padding: "4px 8px", fontSize: 10 }}>
