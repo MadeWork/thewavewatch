@@ -521,8 +521,7 @@ async function fetchFromRSS(topic: any, _runId: string): Promise<any[]> {
     .eq('active', true)
     .eq('approval_status', 'approved')
     .not('rss_url', 'is', null)
-    .lt('consecutive_failures', 5)
-    .in('health_status', ['healthy', 'degraded'])
+    .lt('consecutive_failures', 50)
     .order('fetch_priority', { ascending: false })
     .limit(500)
 
