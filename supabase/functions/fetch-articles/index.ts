@@ -531,7 +531,7 @@ async function fetchSingleRSSFeed(
     if (xml.length > 1_000_000) return []
 
     const items = parseRSSXML(xml)
-    const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000)
+    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
 
     const relevant = items.filter(item => {
       if (item.pubDate && new Date(item.pubDate) < cutoff) return false
