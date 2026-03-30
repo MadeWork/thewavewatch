@@ -318,36 +318,7 @@ async function fetchFromPerigon(topic: any, _runId: string): Promise<any[]> {
     }
   }
 
-  // ── FETCH 2: Top100 group with expanded query ──
-  try {
-    const url = new URL('https://api.goperigon.com/v1/all')
-    url.searchParams.set('q', expandedQuery)
-    url.searchParams.set('from', from)
-    url.searchParams.set('language', topic.language ?? 'en')
-    url.searchParams.set('sourceGroup', 'top100')
-    url.searchParams.set('sortBy', 'relevance')
-    url.searchParams.set('showReprints', 'false')
-    url.searchParams.set('size', '30')
-    url.searchParams.set('apiKey', apiKey)
-
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 15000)
-    try {
-      const res = await fetch(url.toString(), { signal: controller.signal })
-      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
-      const data = await res.json()
-      const articles = normalisePerigonArticles(data.articles ?? [], 'perigon-top100')
-      allArticles.push(...articles)
-      console.log(`Perigon top100: ${articles.length} articles`)
-    } finally {
-      clearTimeout(timeout)
-    }
-  } catch (err: any) {
-    fetchErrors.push(`top100: ${err.message}`)
-    console.error('Perigon top100 fetch failed (non-fatal):', err.message)
-  }
-
-  // ── FETCH 3: Original keywords + major outlets + sorted by date (breaking news) ──
+  // ── FETCH 2: Original keywords + major outlets + sorted by date (breaking news) ──
   try {
     const originalQuery = keywords
       .map((k: string) => k.includes(' ') ? `"${k}"` : k)
