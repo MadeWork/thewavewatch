@@ -1,4 +1,4 @@
-import { LayoutDashboard, List, Tag, Radio, BarChart3, Settings, LogOut, Bell, Archive, FileText, Menu, X, MessageCircle } from "lucide-react";
+import { LayoutDashboard, List, Tag, Radio, BarChart3, Settings, LogOut, Bell, Archive, FileText, Menu, X, MessageCircle, Activity } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useState, useEffect } from "react";
@@ -15,6 +15,7 @@ const links = [
   { to: "/social", label: "Social", icon: MessageCircle },
   { to: "/reports", label: "Reports", icon: FileText },
   { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/admin/ingestion", label: "Ingestion", icon: Activity },
 ];
 
 export default function AppSidebar() {
