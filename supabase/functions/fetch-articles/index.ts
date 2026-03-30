@@ -554,6 +554,7 @@ function normalisePerigonArticles(articles: any[], fetchSource: string): any[] {
       media_type: 'web',
       country: a.source?.country ?? null,
       ingestion_source: fetchSource,
+      is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (a.source?.domain ?? '').includes(m)),
     }))
 }
 
