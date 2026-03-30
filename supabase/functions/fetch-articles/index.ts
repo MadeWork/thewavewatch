@@ -613,6 +613,7 @@ async function fetchFromGuardian(topic: any): Promise<any[]> {
           media_type: 'web',
           country: edition === 'us' ? 'US' : edition === 'au' ? 'AU' : 'GB',
           ingestion_source: `guardian-${edition}`,
+          is_major_outlet: true,
         }))
 
         allArticles.push(...articles)
