@@ -259,13 +259,13 @@ async function fetchFromPerigon(topic: any, _runId: string): Promise<any[]> {
   const allArticles: any[] = []
   const fetchErrors: string[] = []
 
-  // ── FETCH 1: Expanded keywords + explicit major outlet domains ──
+  // ── FETCH 1: Expanded keywords + top100 sourceGroup (avoids URL length issues) ──
   try {
     const url = new URL('https://api.goperigon.com/v1/all')
     url.searchParams.set('q', expandedQuery)
     url.searchParams.set('from', from)
     url.searchParams.set('language', topic.language ?? 'en')
-    url.searchParams.set('source', MAJOR_OUTLET_DOMAINS.join(','))
+    url.searchParams.set('sourceGroup', 'top100')
     url.searchParams.set('sortBy', 'relevance')
     url.searchParams.set('showReprints', 'false')
     url.searchParams.set('size', '50')
