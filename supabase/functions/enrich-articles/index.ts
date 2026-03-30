@@ -121,7 +121,7 @@ serve(async (req) => {
 
 async function scoreWithAI(apiKey: string, keywords: string, articles: any[]) {
   const articleList = articles.map((a, i) =>
-    `[${i}] ID:${a.id}\nTitle: ${a.title}\nDescription: ${a.description || a.snippet || "N/A"}\nSource: ${a.source_name || a.source_domain || "Unknown"}`
+    `[${i}] ID:${a.id}\nTitle: ${a.title}\nDescription: ${a.description || "N/A"}\nSource: ${a.source_name || a.source_url || "Unknown"}`
   ).join("\n\n");
 
   const prompt = `You are a media monitoring relevance scorer for a professional intelligence platform.
