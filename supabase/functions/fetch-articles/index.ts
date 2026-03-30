@@ -10,139 +10,32 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 )
 
-const TIER1_DOMAINS = [
-  // ─── GLOBAL WIRE SERVICES (highest priority — syndicated everywhere) ───
-  'reuters.com',
-  'apnews.com',
-  'afp.com',
-  // ─── UNITED STATES ───
-  'nytimes.com',
-  'washingtonpost.com',
-  'wsj.com',
-  'bloomberg.com',
-  'ft.com',
-  'forbes.com',
-  'cnbc.com',
-  'cnn.com',
-  'nbcnews.com',
-  'abcnews.go.com',
-  'cbsnews.com',
-  'npr.org',
-  'politico.com',
-  'theatlantic.com',
-  'time.com',
-  'businessinsider.com',
-  'usatoday.com',
-  'latimes.com',
-  'chicagotribune.com',
-  // ─── UNITED KINGDOM ───
-  'theguardian.com',
-  'bbc.com',
-  'bbc.co.uk',
-  'thetimes.co.uk',
-  'telegraph.co.uk',
-  'independent.co.uk',
-  'standard.co.uk',
-  'mirror.co.uk',
-  'dailymail.co.uk',
-  'thesun.co.uk',
-  'sky.com',
-  'channel4.com',
-  // ─── EUROPE — NORDIC ───
-  'dn.se',
-  'svd.se',
-  'di.se',
-  'aftonbladet.se',
-  'expressen.se',
-  'aftenposten.no',
-  'dn.no',
-  'vg.no',
-  'e24.no',
-  'nrk.no',
-  'berlingske.dk',
-  'politiken.dk',
-  'borsen.dk',
-  'dr.dk',
-  'yle.fi',
-  'hs.fi',
-  // ─── EUROPE — MAJOR NATIONAL OUTLETS ───
-  'spiegel.de',
-  'faz.net',
-  'sueddeutsche.de',
-  'zeit.de',
-  'dw.com',
-  'handelsblatt.com',
-  'lemonde.fr',
-  'lefigaro.fr',
-  'lesechos.fr',
-  'liberation.fr',
-  'nrc.nl',
-  'fd.nl',
-  'nos.nl',
-  'elpais.com',
-  'elmundo.es',
-  'corriere.it',
-  'repubblica.it',
-  'euractiv.com',
-  'politico.eu',
-  'thelocal.se',
-  'thelocal.no',
-  // ─── AUSTRALIA ───
-  'abc.net.au',
-  'smh.com.au',
-  'theage.com.au',
-  'afr.com',
-  'theaustralian.com.au',
-  'news.com.au',
-  'theguardian.com/au',
-  'sbs.com.au',
-  '9news.com.au',
-  '7news.com.au',
-  // ─── NEW ZEALAND ───
-  'nzherald.co.nz',
-  'stuff.co.nz',
-  'rnz.co.nz',
-  'tvnz.co.nz',
-  'newsroom.co.nz',
-  'businessdesk.co.nz',
-].join(',')
-
-// NewsAPI named source IDs — for the /top-headlines endpoint
-const TIER1_SOURCES = [
-  // Wire
-  'reuters',
-  'associated-press',
-  // US
-  'the-new-york-times',
-  'the-washington-post',
-  'the-wall-street-journal',
-  'bloomberg',
-  'cnbc',
-  'cnn',
-  'nbc-news',
-  'abc-news',
-  'cbs-news',
-  'npr',
-  'politico',
-  'time',
-  'business-insider',
-  'usa-today',
-  // UK
-  'the-guardian-uk',
-  'bbc-news',
-  'the-times',
-  'the-telegraph',
-  'the-independent',
-  'mirror',
-  'daily-mail',
-  'sky-news',
-  // Europe
-  'der-spiegel',
-  'le-monde',
-  'ary-news',
-  // Australia
-  'abc-news-au',
-  'australian-financial-review',
+// ─── PERIGON SOURCE CONFIGURATION ────────────────────────────────────────────
+const PERIGON_TIER1_SOURCES = [
+  // ── WIRE SERVICES ──
+  'reuters.com', 'apnews.com', 'afp.com', 'bloomberg.com',
+  // ── UNITED STATES ──
+  'nytimes.com', 'washingtonpost.com', 'wsj.com', 'ft.com',
+  'cnbc.com', 'cnn.com', 'nbcnews.com', 'abcnews.go.com',
+  'cbsnews.com', 'npr.org', 'politico.com', 'theatlantic.com',
+  'time.com', 'forbes.com', 'usatoday.com', 'latimes.com', 'businessinsider.com',
+  // ── UNITED KINGDOM ──
+  'theguardian.com', 'bbc.com', 'bbc.co.uk', 'thetimes.co.uk',
+  'telegraph.co.uk', 'independent.co.uk', 'sky.com', 'ft.com',
+  // ── EUROPE — NORDIC ──
+  'dn.se', 'svd.se', 'di.se', 'aftonbladet.se',
+  'aftenposten.no', 'dn.no', 'vg.no', 'nrk.no', 'e24.no',
+  'berlingske.dk', 'politiken.dk', 'borsen.dk', 'dr.dk',
+  'yle.fi', 'hs.fi',
+  // ── EUROPE — MAJOR NATIONAL ──
+  'spiegel.de', 'faz.net', 'sueddeutsche.de', 'zeit.de', 'dw.com',
+  'lemonde.fr', 'lefigaro.fr', 'lesechos.fr',
+  'euractiv.com', 'politico.eu',
+  // ── AUSTRALIA ──
+  'abc.net.au', 'smh.com.au', 'theage.com.au', 'afr.com',
+  'theaustralian.com.au', 'news.com.au', 'sbs.com.au',
+  // ── NEW ZEALAND ──
+  'nzherald.co.nz', 'stuff.co.nz', 'rnz.co.nz', 'newsroom.co.nz',
 ].join(',')
 
 Deno.serve(async (req) => {
@@ -177,7 +70,7 @@ Deno.serve(async (req) => {
     const results = []
 
     for (const topic of topics) {
-      for (const source of topic.sources ?? ['newsapi']) {
+      for (const source of topic.sources ?? ['perigon', 'guardian', 'gdelt']) {
         const runId = crypto.randomUUID()
 
         await supabase.from('ingestion_runs').insert({
@@ -190,8 +83,10 @@ Deno.serve(async (req) => {
         try {
           let articles: any[] = []
 
-          if (source === 'newsapi') {
-            articles = await fetchFromNewsAPI(topic)
+          if (source === 'perigon') {
+            articles = await fetchFromPerigon(topic, runId)
+          } else if (source === 'guardian') {
+            articles = await fetchFromGuardian(topic, runId)
           } else if (source === 'gdelt') {
             articles = await fetchFromGDELT(topic)
           }
@@ -244,6 +139,19 @@ Deno.serve(async (req) => {
           }).eq('id', topic.id)
 
           results.push({ topic_id: topic.id, source, status: 'success', inserted: insertedCount, fetched: articles.length })
+
+          // Fire-and-forget enrichment trigger
+          const projectUrl = Deno.env.get('SUPABASE_URL')!
+          const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+          fetch(`${projectUrl}/functions/v1/enrich-articles`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${serviceKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ topic_id: topic.id })
+          }).catch(err => console.error('Failed to trigger enrichment:', err))
+
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err)
           console.error(`Ingestion failed for topic ${topic.id} / ${source}:`, errorMsg)
@@ -272,46 +180,186 @@ Deno.serve(async (req) => {
   }
 })
 
-async function fetchFromNewsAPI(topic: any): Promise<any[]> {
-  const apiKey = Deno.env.get('NEWSAPI_KEY')
-  if (!apiKey) throw new Error('NEWSAPI_KEY not configured')
+// ─── PERIGON ─────────────────────────────────────────────────────────────────
 
-  const query = topic.keywords.join(' OR ')
-  const from = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+async function fetchFromPerigon(topic: any, _runId: string): Promise<any[]> {
+  const apiKey = Deno.env.get('PERIGON_API_KEY')
+  if (!apiKey) throw new Error('PERIGON_API_KEY not configured')
 
-  const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&from=${from}&language=${topic.language ?? 'en'}&sortBy=publishedAt&pageSize=100&apiKey=${apiKey}`
+  const keywords = topic.keywords as string[]
+  const query = keywords
+    .map((k: string) => k.includes(' ') ? `"${k}"` : k)
+    .join(' OR ')
 
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 15000)
+  const from = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
+  const allArticles: any[] = []
 
+  // ── FETCH 1: Keyword search scoped to top100 sources ──
   try {
-    const res = await fetch(url, { signal: controller.signal })
-    if (!res.ok) throw new Error(`NewsAPI responded ${res.status}: ${await res.text()}`)
+    const url = new URL('https://api.goperigon.com/v1/all')
+    url.searchParams.set('q', query)
+    url.searchParams.set('from', from)
+    url.searchParams.set('language', topic.language ?? 'en')
+    url.searchParams.set('sourceGroup', 'top100')
+    url.searchParams.set('sortBy', 'relevance')
+    url.searchParams.set('showReprints', 'false')
+    url.searchParams.set('size', '50')
+    url.searchParams.set('apiKey', apiKey)
 
-    const data = await res.json()
-    if (data.status !== 'ok') throw new Error(`NewsAPI error: ${data.message}`)
-
-    return (data.articles ?? [])
-      .filter((a: any) => a.title && a.url && !a.title.includes('[Removed]'))
-      .map((a: any) => ({
-        external_id: hashUrl(a.url),
-        source_name: a.source?.name ?? 'Unknown',
-        source_url: a.source?.id ?? a.url,
-        title: a.title,
-        description: a.description,
-        content: a.content,
-        author: a.author,
-        published_at: a.publishedAt,
-        url: a.url,
-        image_url: a.urlToImage,
-        language: topic.language ?? 'en',
-        media_type: 'web',
-        ingestion_source: 'newsapi',
-      }))
-  } finally {
-    clearTimeout(timeout)
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 15000)
+    try {
+      const res = await fetch(url.toString(), { signal: controller.signal })
+      if (!res.ok) throw new Error(`Perigon responded ${res.status}: ${await res.text()}`)
+      const data = await res.json()
+      const articles = normalisePerigonArticles(data.articles ?? [], 'perigon-top100')
+      allArticles.push(...articles)
+      console.log(`Perigon top100 returned ${articles.length} articles for topic ${topic.id}`)
+    } finally {
+      clearTimeout(timeout)
+    }
+  } catch (err: any) {
+    console.error('Perigon top100 fetch failed:', err.message)
   }
+
+  // ── FETCH 2: Broader search with explicit source domain filter ──
+  try {
+    const url = new URL('https://api.goperigon.com/v1/all')
+    url.searchParams.set('q', query)
+    url.searchParams.set('from', from)
+    url.searchParams.set('language', topic.language ?? 'en')
+    url.searchParams.set('source', PERIGON_TIER1_SOURCES)
+    url.searchParams.set('sortBy', 'date')
+    url.searchParams.set('showReprints', 'false')
+    url.searchParams.set('size', '50')
+    url.searchParams.set('apiKey', apiKey)
+
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 15000)
+    try {
+      const res = await fetch(url.toString(), { signal: controller.signal })
+      if (!res.ok) throw new Error(`Perigon explicit sources responded ${res.status}: ${await res.text()}`)
+      const data = await res.json()
+      const articles = normalisePerigonArticles(data.articles ?? [], 'perigon-explicit')
+      allArticles.push(...articles)
+      console.log(`Perigon explicit sources returned ${articles.length} articles for topic ${topic.id}`)
+    } finally {
+      clearTimeout(timeout)
+    }
+  } catch (err: any) {
+    console.error('Perigon explicit sources fetch failed (non-fatal):', err.message)
+  }
+
+  // Deduplicate within batch by URL
+  const seen = new Set<string>()
+  return allArticles.filter(a => {
+    if (seen.has(a.external_id)) return false
+    seen.add(a.external_id)
+    return true
+  })
 }
+
+function normalisePerigonArticles(articles: any[], fetchSource: string): any[] {
+  return articles
+    .filter((a: any) => a.title && a.url && a.source?.domain)
+    .map((a: any) => ({
+      external_id: hashUrl(a.url),
+      source_name: a.source?.name ?? a.source?.domain ?? 'Unknown',
+      source_url: a.source?.domain ?? '',
+      title: a.title,
+      description: a.description ?? a.summary ?? null,
+      content: a.content ?? null,
+      author: a.authorsByline ?? (a.authors?.[0]?.name ?? null),
+      published_at: a.pubDate ?? a.addDate ?? new Date().toISOString(),
+      url: a.url,
+      image_url: a.imageUrl ?? null,
+      language: a.language ?? 'en',
+      media_type: 'web',
+      country: a.source?.country ?? null,
+      ingestion_source: fetchSource,
+    }))
+}
+
+// ─── THE GUARDIAN ────────────────────────────────────────────────────────────
+
+async function fetchFromGuardian(topic: any, _runId: string): Promise<any[]> {
+  const apiKey = Deno.env.get('GUARDIAN_API_KEY')
+  if (!apiKey) {
+    console.warn('GUARDIAN_API_KEY not configured — skipping Guardian fetch')
+    return []
+  }
+
+  const keywords = topic.keywords as string[]
+  const query = keywords
+    .map((k: string) => k.includes(' ') ? `"${k}"` : k)
+    .join(' OR ')
+
+  const fromDate = new Date(Date.now() - 48 * 60 * 60 * 1000)
+    .toISOString()
+    .split('T')[0]
+
+  const allArticles: any[] = []
+  const editions = ['uk', 'us', 'au']
+
+  for (const edition of editions) {
+    try {
+      const url = new URL('https://content.guardianapis.com/search')
+      url.searchParams.set('q', query)
+      url.searchParams.set('from-date', fromDate)
+      url.searchParams.set('order-by', 'relevance')
+      url.searchParams.set('show-fields', 'headline,trailText,bodyText,thumbnail,byline,wordcount')
+      url.searchParams.set('show-tags', 'keyword')
+      url.searchParams.set('page-size', '30')
+      url.searchParams.set('edition', edition)
+      url.searchParams.set('api-key', apiKey)
+
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 15000)
+      try {
+        const res = await fetch(url.toString(), { signal: controller.signal })
+        if (!res.ok) throw new Error(`Guardian API responded ${res.status} for edition ${edition}`)
+
+        const data = await res.json()
+        if (data.response?.status !== 'ok') {
+          throw new Error(`Guardian API error: ${data.response?.message}`)
+        }
+
+        const articles = (data.response?.results ?? []).map((a: any) => ({
+          external_id: hashUrl(a.webUrl),
+          source_name: 'The Guardian',
+          source_url: 'theguardian.com',
+          title: a.fields?.headline ?? a.webTitle,
+          description: a.fields?.trailText ?? null,
+          content: a.fields?.bodyText ?? null,
+          author: a.fields?.byline ?? null,
+          published_at: a.webPublicationDate,
+          url: a.webUrl,
+          image_url: a.fields?.thumbnail ?? null,
+          language: 'en',
+          media_type: 'web',
+          country: edition === 'us' ? 'US' : edition === 'au' ? 'AU' : 'GB',
+          ingestion_source: `guardian-${edition}`,
+        }))
+
+        allArticles.push(...articles)
+        console.log(`Guardian ${edition} returned ${articles.length} articles for topic ${topic.id}`)
+      } finally {
+        clearTimeout(timeout)
+      }
+    } catch (err: any) {
+      console.error(`Guardian ${edition} fetch failed (non-fatal):`, err.message)
+    }
+  }
+
+  const seen = new Set<string>()
+  return allArticles.filter(a => {
+    if (seen.has(a.external_id)) return false
+    seen.add(a.external_id)
+    return true
+  })
+}
+
+// ─── GDELT ───────────────────────────────────────────────────────────────────
 
 async function fetchFromGDELT(topic: any): Promise<any[]> {
   const query = topic.keywords.join(' ')
@@ -348,6 +396,8 @@ async function fetchFromGDELT(topic: any): Promise<any[]> {
     clearTimeout(timeout)
   }
 }
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 function hashUrl(url: string): string {
   let hash = 0
