@@ -20,12 +20,13 @@ export default function AdminIngestion() {
       const now = new Date();
       const yesterday = new Date(now.getTime() - 86400000).toISOString();
 
-      const [totalRes, recentRes, lastRunRes, topicsRes, failedRes] = await Promise.all([
+      const [totalRes, recentRes, lastRunRes, topicsRes, failedRes, rssRes] = await Promise.all([
         supabase.from("articles").select("id", { count: "exact", head: true }).not("topic_id", "is", null),
         supabase.from("articles").select("id", { count: "exact", head: true }).not("topic_id", "is", null).gte("created_at", yesterday),
         supabase.from("ingestion_runs").select("completed_at, status").eq("status", "success").order("completed_at", { ascending: false }).limit(1).maybeSingle(),
         supabase.from("monitored_topics").select("id", { count: "exact", head: true }).eq("is_active", true),
         supabase.from("ingestion_runs").select("id", { count: "exact", head: true }).eq("status", "failed").gte("started_at", yesterday),
+        supabase.from("approved_domains").select("id", { count: "exact", head: true }).not("feed_url", "is", null).eq("active", true),
       ]);
 
       return {
@@ -34,6 +35,7 @@ export default function AdminIngestion() {
         lastSuccess: lastRunRes.data?.completed_at ?? null,
         activeTopics: topicsRes.count ?? 0,
         failedRuns24h: failedRes.count ?? 0,
+        rssFeeds: rssRes.count ?? 0,
       };
     },
     refetchInterval: 30000,
