@@ -27,35 +27,27 @@ const KEYWORD_EXPANSIONS: Record<string, string[]> = {
 
 function expandKeywords(keywords: string[]): string[] {
   const expanded = new Set<string>()
-
   for (const kw of keywords) {
     expanded.add(kw)
     const lower = kw.toLowerCase()
-
     if (KEYWORD_EXPANSIONS[lower]) {
-      for (const syn of KEYWORD_EXPANSIONS[lower]) {
-        expanded.add(syn)
-      }
+      for (const syn of KEYWORD_EXPANSIONS[lower]) expanded.add(syn)
     }
-
     for (const [key, syns] of Object.entries(KEYWORD_EXPANSIONS)) {
       if (lower.includes(key) && lower !== key) {
         for (const syn of syns) expanded.add(syn)
       }
     }
   }
-
   return Array.from(expanded)
 }
 
 function buildPerigonQuery(keywords: string[]): string {
   const expanded = expandKeywords(keywords)
-
   return expanded
     .map(k => {
       const trimmed = k.trim()
-      if (!trimmed.includes(' ')) return trimmed
-      return `"${trimmed}"`
+      return trimmed.includes(' ') ? `"${trimmed}"` : trimmed
     })
     .join(' OR ')
 }
@@ -63,33 +55,26 @@ function buildPerigonQuery(keywords: string[]): string {
 // ─── MAJOR OUTLET DOMAINS ────────────────────────────────────────────────────
 
 const MAJOR_OUTLET_DOMAINS = [
-  // Wire services
   'reuters.com', 'apnews.com', 'bloomberg.com', 'afp.com',
-  // US majors
   'nytimes.com', 'washingtonpost.com', 'wsj.com', 'ft.com',
   'cnbc.com', 'cnn.com', 'nbcnews.com', 'abcnews.go.com',
   'cbsnews.com', 'npr.org', 'politico.com', 'theatlantic.com',
   'time.com', 'forbes.com', 'usatoday.com', 'latimes.com',
   'businessinsider.com',
-  // UK majors
   'theguardian.com', 'bbc.com', 'bbc.co.uk', 'thetimes.co.uk',
   'telegraph.co.uk', 'independent.co.uk', 'sky.com', 'standard.co.uk',
-  // Nordic
   'dn.se', 'svd.se', 'di.se', 'aftonbladet.se', 'expressen.se',
   'aftenposten.no', 'dn.no', 'vg.no', 'nrk.no', 'e24.no',
   'berlingske.dk', 'politiken.dk', 'borsen.dk', 'dr.dk',
   'yle.fi', 'hs.fi',
-  // European majors
   'spiegel.de', 'faz.net', 'sueddeutsche.de', 'dw.com',
   'lemonde.fr', 'lefigaro.fr', 'euractiv.com', 'politico.eu',
-  // Australia
   'abc.net.au', 'smh.com.au', 'theage.com.au', 'afr.com',
   'theaustralian.com.au', 'news.com.au', 'sbs.com.au',
-  // New Zealand
   'nzherald.co.nz', 'stuff.co.nz', 'rnz.co.nz', 'newsroom.co.nz',
 ]
 
-// ─── MAIN HANDLER ────────────────────────────────────────────────────────────
+// ─── MAIN HANDLER (UNIFIED) ─────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -98,15 +83,17 @@ Deno.serve(async (req) => {
 
   try {
     const { topic_id } = await req.json().catch(() => ({}))
+    const startTime = Date.now()
 
-    const query = supabase
+    // 1. Fetch all active topics
+    const topicQuery = supabase
       .from('monitored_topics')
       .select('*')
       .eq('is_active', true)
 
-    if (topic_id) query.eq('id', topic_id)
+    if (topic_id) topicQuery.eq('id', topic_id)
 
-    const { data: topics, error } = await query
+    const { data: topics, error } = await topicQuery
     if (error) {
       return new Response(JSON.stringify({ error: error.message }), {
         status: 500,
@@ -114,120 +101,193 @@ Deno.serve(async (req) => {
       })
     }
 
-    if (!topics || topics.length === 0) {
+    if (!topics?.length) {
       return new Response(JSON.stringify({ results: [], message: 'No active topics found' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    const results = []
+    // Build per-topic search terms for matching
+    const topicSearchData = topics.map(t => ({
+      topic: t,
+      keywords: t.keywords ?? [],
+      expandedTerms: expandKeywords(t.keywords ?? []).map(k => k.toLowerCase()),
+    }))
 
-    for (const topic of topics) {
-      // Safety: skip topics with no keywords
-      if (!topic.keywords?.length) {
-        console.warn(`Topic "${topic.name}" has no keywords — skipping`)
-        continue
-      }
-      for (const source of topic.sources ?? ['perigon', 'guardian', 'gdelt']) {
-        const runId = crypto.randomUUID()
+    // Create a single ingestion run for the whole batch
+    const runId = crypto.randomUUID()
+    await supabase.from('ingestion_runs').insert({
+      id: runId,
+      topic_id: topics[0].id,
+      source: 'unified',
+      status: 'running',
+    })
 
-        await supabase.from('ingestion_runs').insert({
-          id: runId,
-          topic_id: topic.id,
-          source,
-          status: 'running',
-        })
+    const allArticles: any[] = []
+    const healthUpdates: Map<string, { id: string; success: boolean; failures: number }> = new Map()
+    const sourceResults: any[] = []
 
-        try {
-          let articles: any[] = []
+    // 2. Unified RSS — fetch each source ONCE, match against ALL topics
+    try {
+      const rssResult = await fetchRSSUnified(topicSearchData, healthUpdates)
+      allArticles.push(...rssResult)
+      sourceResults.push({ source: 'rss', count: rssResult.length })
+      console.log(`RSS unified: ${rssResult.length} articles`)
+    } catch (err: any) {
+      console.error('RSS unified failed:', err.message)
+      sourceResults.push({ source: 'rss', count: 0, error: err.message })
+    }
 
-          if (source === 'rss') {
-            articles = await fetchFromRSS(topic, runId)
-          } else if (source === 'perigon') {
-            articles = await fetchFromPerigon(topic, runId)
-          } else if (source === 'guardian') {
-            articles = await fetchFromGuardian(topic, runId)
-          } else if (source === 'gdelt') {
-            articles = await fetchFromGDELT(topic)
-          }
+    // 3. Unified Perigon — ONE request combining all topic keywords
+    try {
+      const perigonResult = await fetchPerigonUnified(topicSearchData)
+      allArticles.push(...perigonResult)
+      sourceResults.push({ source: 'perigon', count: perigonResult.length })
+      console.log(`Perigon unified: ${perigonResult.length} articles`)
+    } catch (err: any) {
+      console.error('Perigon unified failed:', err.message)
+      sourceResults.push({ source: 'perigon', count: 0, error: err.message })
+    }
 
-          if (articles.length === 0) {
-            await supabase.from('ingestion_runs').update({
-              status: 'success',
-              articles_fetched: 0,
-              articles_inserted: 0,
-              articles_duplicate: 0,
-              completed_at: new Date().toISOString(),
-            }).eq('id', runId)
-
-            results.push({ topic_id: topic.id, source, status: 'success', inserted: 0, fetched: 0 })
-            continue
-          }
-
-          const rows = articles.map(a => ({
-            ...a,
-            topic_id: topic.id,
-            user_id: topic.user_id,
-            ingestion_run_id: runId,
-          }))
-
-          const { data: inserted, error: insertError } = await supabase
-            .from('articles')
-            .upsert(rows, {
-              onConflict: 'topic_id,external_id,ingestion_source',
-              ignoreDuplicates: true,
-            })
-            .select('id')
-
-          if (insertError) {
-            console.error('Upsert error:', insertError.message)
-          }
-
-          const insertedCount = inserted?.length ?? 0
-          const duplicateCount = articles.length - insertedCount
-
-          await supabase.from('ingestion_runs').update({
-            status: 'success',
-            articles_fetched: articles.length,
-            articles_inserted: insertedCount,
-            articles_duplicate: duplicateCount,
-            completed_at: new Date().toISOString(),
-          }).eq('id', runId)
-
-          await supabase.from('monitored_topics').update({
-            last_fetched_at: new Date().toISOString(),
-          }).eq('id', topic.id)
-
-          results.push({ topic_id: topic.id, source, status: 'success', inserted: insertedCount, fetched: articles.length })
-
-          // Fire-and-forget enrichment trigger
-          const projectUrl = Deno.env.get('SUPABASE_URL')!
-          const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-          fetch(`${projectUrl}/functions/v1/enrich-articles`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${serviceKey}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ topic_id: topic.id })
-          }).catch(err => console.error('Failed to trigger enrichment:', err))
-
-        } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : String(err)
-          console.error(`Ingestion failed for topic ${topic.id} / ${source}:`, errorMsg)
-
-          await supabase.from('ingestion_runs').update({
-            status: 'failed',
-            error_message: errorMsg,
-            completed_at: new Date().toISOString(),
-          }).eq('id', runId)
-
-          results.push({ topic_id: topic.id, source, status: 'failed', error: errorMsg })
-        }
+    // 4. Guardian — still per-topic (free API, no credit concern)
+    for (const td of topicSearchData) {
+      if (!td.topic.sources?.includes('guardian')) continue
+      try {
+        const guardianArticles = await fetchFromGuardian(td.topic)
+        const mapped = guardianArticles.map(a => ({
+          ...a,
+          topic_id: td.topic.id,
+          user_id: td.topic.user_id,
+          ingestion_run_id: runId,
+        }))
+        allArticles.push(...mapped)
+        sourceResults.push({ source: `guardian-${td.topic.name}`, count: mapped.length })
+      } catch (err: any) {
+        console.error(`Guardian failed for ${td.topic.name}:`, err.message)
       }
     }
 
-    return new Response(JSON.stringify({ results }), {
+    // 5. GDELT — still per-topic (free, no credit concern)
+    for (const td of topicSearchData) {
+      if (!td.topic.sources?.includes('gdelt')) continue
+      try {
+        const gdeltArticles = await fetchFromGDELT(td.topic)
+        const mapped = gdeltArticles.map(a => ({
+          ...a,
+          topic_id: td.topic.id,
+          user_id: td.topic.user_id,
+          ingestion_run_id: runId,
+        }))
+        allArticles.push(...mapped)
+        sourceResults.push({ source: `gdelt-${td.topic.name}`, count: mapped.length })
+      } catch (err: any) {
+        console.error(`GDELT failed for ${td.topic.name}:`, err.message)
+      }
+    }
+
+    // 6. Bulk upsert all articles
+    let insertedCount = 0
+    if (allArticles.length > 0) {
+      // Deduplicate by external_id + topic_id + ingestion_source
+      const seen = new Set<string>()
+      const deduped = allArticles.filter(a => {
+        const key = `${a.topic_id}:${a.external_id}:${a.ingestion_source}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+
+      console.log(`Bulk upserting ${deduped.length} articles (from ${allArticles.length} raw)`)
+
+      // Upsert in chunks of 200 to avoid payload limits
+      const CHUNK_SIZE = 200
+      for (let i = 0; i < deduped.length; i += CHUNK_SIZE) {
+        const chunk = deduped.slice(i, i + CHUNK_SIZE)
+        const { data: inserted, error: insertError } = await supabase
+          .from('articles')
+          .upsert(chunk, {
+            onConflict: 'topic_id,external_id,ingestion_source',
+            ignoreDuplicates: true,
+          })
+          .select('id')
+
+        if (insertError) {
+          console.error('Upsert error:', insertError.message)
+        }
+        insertedCount += inserted?.length ?? 0
+      }
+    }
+
+    // 7. Bulk health updates for RSS sources
+    if (healthUpdates.size > 0) {
+      const now = new Date().toISOString()
+      const successIds: string[] = []
+      const failUpdates: { id: string; failures: number }[] = []
+
+      for (const [, update] of healthUpdates) {
+        if (update.success) {
+          successIds.push(update.id)
+        } else {
+          failUpdates.push({ id: update.id, failures: update.failures })
+        }
+      }
+
+      // Bulk reset healthy sources
+      if (successIds.length > 0) {
+        await supabase.from('sources').update({
+          consecutive_failures: 0,
+          health_status: 'healthy',
+          last_fetched_at: now,
+          last_success_at: now,
+        }).in('id', successIds)
+      }
+
+      // Update failed sources in one batch using individual updates (small set)
+      for (const fail of failUpdates) {
+        await supabase.from('sources').update({
+          consecutive_failures: fail.failures,
+          health_status: 'error',
+        }).eq('id', fail.id)
+      }
+    }
+
+    // 8. Update all topic timestamps
+    const topicIds = topics.map(t => t.id)
+    await supabase.from('monitored_topics').update({
+      last_fetched_at: new Date().toISOString(),
+    }).in('id', topicIds)
+
+    // 9. Complete ingestion run
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
+    await supabase.from('ingestion_runs').update({
+      status: 'success',
+      articles_fetched: allArticles.length,
+      articles_inserted: insertedCount,
+      articles_duplicate: allArticles.length - insertedCount,
+      completed_at: new Date().toISOString(),
+      metadata: { sources: sourceResults, elapsed_seconds: elapsed },
+    }).eq('id', runId)
+
+    // 10. Single enrichment trigger at the end
+    const projectUrl = Deno.env.get('SUPABASE_URL')!
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    fetch(`${projectUrl}/functions/v1/enrich-articles`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    }).catch(err => console.error('Failed to trigger enrichment:', err))
+
+    console.log(`Unified ingestion complete in ${elapsed}s: ${insertedCount} inserted, ${allArticles.length} fetched`)
+
+    return new Response(JSON.stringify({
+      results: sourceResults,
+      total_fetched: allArticles.length,
+      total_inserted: insertedCount,
+      elapsed_seconds: elapsed,
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (err) {
@@ -240,29 +300,170 @@ Deno.serve(async (req) => {
   }
 })
 
-// ─── PERIGON ─────────────────────────────────────────────────────────────────
+// ─── UNIFIED RSS ─────────────────────────────────────────────────────────────
 
-async function fetchFromPerigon(topic: any, _runId: string): Promise<any[]> {
-  if (!topic.keywords?.length) {
-    console.warn(`Topic "${topic.name}" has no keywords — skipping Perigon`)
+interface TopicSearchData {
+  topic: any
+  keywords: string[]
+  expandedTerms: string[]
+}
+
+async function fetchRSSUnified(
+  topicSearchData: TopicSearchData[],
+  healthUpdates: Map<string, { id: string; success: boolean; failures: number }>
+): Promise<any[]> {
+  const { data: sources, error } = await supabase
+    .from('sources')
+    .select('id, name, rss_url, domain, language, country_code, health_status, consecutive_failures, fetch_priority')
+    .eq('active', true)
+    .eq('approval_status', 'approved')
+    .not('rss_url', 'is', null)
+    .lt('consecutive_failures', 50)
+    .order('fetch_priority', { ascending: false })
+    .limit(500)
+
+  if (error || !sources?.length) {
+    if (error) console.error('Failed to fetch sources:', error.message)
     return []
   }
-  const apiKey = Deno.env.get('PERIGON_API_KEY')
-  if (!apiKey) throw new Error('PERIGON_API_KEY not configured')
 
-  const keywords = topic.keywords as string[]
-  const expandedQuery = buildPerigonQuery(keywords)
+  console.log(`RSS unified: processing ${sources.length} sources against ${topicSearchData.length} topics`)
+
+  const allArticles: any[] = []
+  const BATCH_SIZE = 50
+  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+
+  for (let i = 0; i < sources.length; i += BATCH_SIZE) {
+    const batch = sources.slice(i, i + BATCH_SIZE)
+    const batchResults = await Promise.allSettled(
+      batch.map(source => fetchSingleRSSFeedUnified(source, cutoff))
+    )
+
+    for (let j = 0; j < batchResults.length; j++) {
+      const result = batchResults[j]
+      const source = batch[j]
+
+      if (result.status === 'fulfilled') {
+        const { items, success, failures } = result.value
+        healthUpdates.set(source.id, { id: source.id, success, failures })
+
+        // Match each item against ALL topics
+        for (const item of items) {
+          const text = `${item.title ?? ''} ${item.description ?? ''}`.toLowerCase()
+
+          for (const td of topicSearchData) {
+            if (!td.topic.sources?.includes('rss')) continue
+            const matches = td.expandedTerms.some(term => text.includes(term))
+            if (matches) {
+              allArticles.push({
+                external_id: hashUrl(item.link ?? item.guid ?? ''),
+                source_name: source.name ?? source.domain ?? '',
+                source_url: source.domain ?? extractDomainName(source.rss_url),
+                title: item.title ?? '',
+                description: item.description ?? null,
+                content: item.content ?? null,
+                author: item.author ?? null,
+                published_at: item.pubDate ?? new Date().toISOString(),
+                url: item.link ?? '',
+                image_url: item.image ?? null,
+                language: source.language ?? td.topic.language ?? 'en',
+                media_type: 'web',
+                country: source.country_code ?? null,
+                ingestion_source: 'rss',
+                topic_id: td.topic.id,
+                user_id: td.topic.user_id,
+                ingestion_run_id: null, // set later
+              })
+            }
+          }
+        }
+      } else {
+        healthUpdates.set(source.id, {
+          id: source.id,
+          success: false,
+          failures: (source.consecutive_failures ?? 0) + 1,
+        })
+      }
+    }
+  }
+
+  return allArticles
+}
+
+async function fetchSingleRSSFeedUnified(
+  source: any,
+  cutoff: Date
+): Promise<{ items: any[]; success: boolean; failures: number }> {
+  let feedUrl = source.rss_url
+  if (!feedUrl && source.domain) {
+    const d = source.domain.replace(/^https?:\/\//, '')
+    feedUrl = `https://${d}/feed`
+  }
+  if (!feedUrl) return { items: [], success: true, failures: 0 }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 8000)
+
+  try {
+    const res = await fetch(feedUrl, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+      },
+    })
+    clearTimeout(timeout)
+
+    if (!res.ok) {
+      return { items: [], success: false, failures: (source.consecutive_failures ?? 0) + 1 }
+    }
+
+    const xml = await res.text()
+    if (xml.length > 1_000_000) return { items: [], success: true, failures: 0 }
+
+    const items = parseRSSXML(xml).filter(item => {
+      if (item.pubDate && new Date(item.pubDate) < cutoff) return false
+      return true
+    })
+
+    return { items, success: true, failures: 0 }
+  } catch (err: any) {
+    clearTimeout(timeout)
+    if (err.name !== 'AbortError') {
+      console.warn(`RSS feed failed for ${feedUrl}: ${err.message}`)
+    }
+    return { items: [], success: false, failures: (source.consecutive_failures ?? 0) + 1 }
+  }
+}
+
+// ─── UNIFIED PERIGON ─────────────────────────────────────────────────────────
+
+async function fetchPerigonUnified(topicSearchData: TopicSearchData[]): Promise<any[]> {
+  const apiKey = Deno.env.get('PERIGON_API_KEY')
+  if (!apiKey) {
+    console.warn('PERIGON_API_KEY not configured — skipping')
+    return []
+  }
+
+  // Combine ALL keywords from ALL topics into one query
+  const allKeywords = new Set<string>()
+  for (const td of topicSearchData) {
+    if (!td.topic.sources?.includes('perigon')) continue
+    for (const kw of td.keywords) allKeywords.add(kw)
+  }
+
+  if (allKeywords.size === 0) return []
+
+  const globalQuery = buildPerigonQuery(Array.from(allKeywords))
   const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
-  console.log(`Perigon query for topic "${topic.name}": ${expandedQuery}`)
+  console.log(`Perigon unified query (${allKeywords.size} keywords): ${globalQuery.slice(0, 200)}...`)
 
-  // ── SINGLE optimised fetch: sourceGroup + explicit domains, 7-day window ──
   const url = new URL('https://api.goperigon.com/v1/all')
-  url.searchParams.set('q', expandedQuery)
+  url.searchParams.set('q', globalQuery)
   url.searchParams.set('from', from)
-  url.searchParams.set('language', topic.language ?? 'en')
   url.searchParams.set('sourceGroup', 'top100')
-  url.searchParams.set('source', MAJOR_OUTLET_DOMAINS.join(','))
+  url.searchParams.set('source', MAJOR_OUTLET_DOMAINS.slice(0, 30).join(','))
   url.searchParams.set('sortBy', 'relevance')
   url.searchParams.set('showReprints', 'false')
   url.searchParams.set('size', '100')
@@ -270,31 +471,56 @@ async function fetchFromPerigon(topic: any, _runId: string): Promise<any[]> {
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 15000)
-  let allArticles: any[] = []
 
   try {
     const res = await fetch(url.toString(), { signal: controller.signal })
     if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
+
     const data = await res.json()
-    allArticles = normalisePerigonArticles(data.articles ?? [], 'perigon')
-    console.log(`Perigon returned ${allArticles.length} articles`)
+    const rawArticles = normalisePerigonArticles(data.articles ?? [], 'perigon')
+    console.log(`Perigon returned ${rawArticles.length} articles`)
+
+    // Route each article to matching topics
+    const routed: any[] = []
+    for (const article of rawArticles) {
+      const text = `${article.title ?? ''} ${article.description ?? ''}`.toLowerCase()
+
+      for (const td of topicSearchData) {
+        if (!td.topic.sources?.includes('perigon')) continue
+        const matches = td.expandedTerms.some(term => text.includes(term))
+        if (matches) {
+          routed.push({
+            ...article,
+            topic_id: td.topic.id,
+            user_id: td.topic.user_id,
+          })
+        }
+      }
+
+      // If no topic matched, assign to first topic (don't lose the article)
+      if (!routed.some(r => r.external_id === article.external_id)) {
+        routed.push({
+          ...article,
+          topic_id: topicSearchData[0].topic.id,
+          user_id: topicSearchData[0].topic.user_id,
+        })
+      }
+    }
+
+    // Deduplicate
+    const seen = new Set<string>()
+    return routed.filter(a => {
+      const key = `${a.topic_id}:${a.external_id}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
   } catch (err: any) {
-    console.error('Perigon fetch failed:', err.message)
+    console.error('Perigon unified fetch failed:', err.message)
     throw err
   } finally {
     clearTimeout(timeout)
   }
-
-  // Deduplicate by URL hash
-  const seen = new Set<string>()
-  const deduped = allArticles.filter(a => {
-    if (seen.has(a.external_id)) return false
-    seen.add(a.external_id)
-    return true
-  })
-
-  console.log(`Perigon total unique: ${deduped.length} (from ${allArticles.length} raw)`)
-  return deduped
 }
 
 function normalisePerigonArticles(articles: any[], fetchSource: string): any[] {
@@ -320,10 +546,10 @@ function normalisePerigonArticles(articles: any[], fetchSource: string): any[] {
 
 // ─── THE GUARDIAN ────────────────────────────────────────────────────────────
 
-async function fetchFromGuardian(topic: any, _runId: string): Promise<any[]> {
+async function fetchFromGuardian(topic: any): Promise<any[]> {
   const apiKey = Deno.env.get('GUARDIAN_API_KEY')
   if (!apiKey) {
-    console.warn('GUARDIAN_API_KEY not configured — skipping Guardian fetch')
+    console.warn('GUARDIAN_API_KEY not configured — skipping')
     return []
   }
 
@@ -333,10 +559,7 @@ async function fetchFromGuardian(topic: any, _runId: string): Promise<any[]> {
     .map((k: string) => k.includes(' ') ? `"${k}"` : k)
     .join(' OR ')
 
-  const fromDate = new Date(Date.now() - 48 * 60 * 60 * 1000)
-    .toISOString()
-    .split('T')[0]
-
+  const fromDate = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString().split('T')[0]
   const allArticles: any[] = []
   const editions = ['uk', 'us', 'au']
 
@@ -359,9 +582,7 @@ async function fetchFromGuardian(topic: any, _runId: string): Promise<any[]> {
         if (!res.ok) throw new Error(`Guardian API responded ${res.status} for edition ${edition}`)
 
         const data = await res.json()
-        if (data.response?.status !== 'ok') {
-          throw new Error(`Guardian API error: ${data.response?.message}`)
-        }
+        if (data.response?.status !== 'ok') throw new Error(`Guardian API error: ${data.response?.message}`)
 
         const articles = (data.response?.results ?? []).map((a: any) => ({
           external_id: hashUrl(a.webUrl),
@@ -381,7 +602,7 @@ async function fetchFromGuardian(topic: any, _runId: string): Promise<any[]> {
         }))
 
         allArticles.push(...articles)
-        console.log(`Guardian ${edition} returned ${articles.length} articles for topic ${topic.id}`)
+        console.log(`Guardian ${edition}: ${articles.length} articles`)
       } finally {
         clearTimeout(timeout)
       }
@@ -412,7 +633,6 @@ async function fetchFromGDELT(topic: any): Promise<any[]> {
     if (!res.ok) throw new Error(`GDELT responded ${res.status}`)
 
     const data = await res.json()
-
     return (data.articles ?? [])
       .filter((a: any) => a.title && a.url)
       .map((a: any) => ({
@@ -436,145 +656,7 @@ async function fetchFromGDELT(topic: any): Promise<any[]> {
   }
 }
 
-// ─── RSS ─────────────────────────────────────────────────────────────────────
-
-async function fetchFromRSS(topic: any, _runId: string): Promise<any[]> {
-  if (!topic.keywords?.length) {
-    console.warn(`Topic "${topic.name}" has no keywords — skipping RSS`)
-    return []
-  }
-  const keywords = topic.keywords as string[]
-  const expandedTerms = expandKeywords(keywords)
-  const searchTerms = expandedTerms.map(k => k.toLowerCase())
-
-  const { data: sources, error } = await supabase
-    .from('sources')
-    .select('id, name, rss_url, domain, language, country_code, health_status, consecutive_failures, fetch_priority')
-    .eq('active', true)
-    .eq('approval_status', 'approved')
-    .not('rss_url', 'is', null)
-    .lt('consecutive_failures', 50)
-    .order('fetch_priority', { ascending: false })
-    .limit(500)
-
-  if (error) {
-    console.error('Failed to fetch sources:', error.message)
-    return []
-  }
-
-  if (!sources?.length) {
-    console.warn('No active sources found')
-    return []
-  }
-
-  console.log(`Processing ${sources.length} RSS sources for topic "${topic.name}"`)
-
-  const allArticles: any[] = []
-  const BATCH_SIZE = 20
-
-  for (let i = 0; i < sources.length; i += BATCH_SIZE) {
-    const batch = sources.slice(i, i + BATCH_SIZE)
-    const batchResults = await Promise.allSettled(
-      batch.map(source => fetchSingleRSSFeed(source, searchTerms, topic))
-    )
-    for (const result of batchResults) {
-      if (result.status === 'fulfilled') {
-        allArticles.push(...result.value)
-      }
-    }
-  }
-
-  console.log(`RSS total: ${allArticles.length} relevant articles`)
-
-  const seen = new Set<string>()
-  return allArticles.filter(a => {
-    if (seen.has(a.external_id)) return false
-    seen.add(a.external_id)
-    return true
-  })
-}
-
-async function fetchSingleRSSFeed(
-  source: any,
-  searchTerms: string[],
-  topic: any
-): Promise<any[]> {
-  let feedUrl = source.rss_url
-  if (!feedUrl && source.domain) {
-    const d = source.domain.replace(/^https?:\/\//, '')
-    feedUrl = `https://${d}/feed`
-  }
-  if (!feedUrl) return []
-
-  try {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 8000)
-
-    const res = await fetch(feedUrl, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': 'application/rss+xml, application/xml, text/xml, */*'
-      }
-    })
-    clearTimeout(timeout)
-
-    if (!res.ok) {
-      await supabase.from('sources').update({
-        consecutive_failures: (source.consecutive_failures ?? 0) + 1,
-        health_status: 'error'
-      }).eq('id', source.id)
-      return []
-    }
-
-    const xml = await res.text()
-    if (xml.length > 1_000_000) return []
-
-    const items = parseRSSXML(xml)
-    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-
-    const relevant = items.filter(item => {
-      if (item.pubDate && new Date(item.pubDate) < cutoff) return false
-      const text = `${item.title ?? ''} ${item.description ?? ''}`.toLowerCase()
-      return searchTerms.some(term => text.includes(term))
-    })
-
-    // Reset failures and update timestamps on success
-    await supabase.from('sources').update({
-      consecutive_failures: 0,
-      health_status: 'healthy',
-      last_fetched_at: new Date().toISOString(),
-      last_success_at: new Date().toISOString()
-    }).eq('id', source.id)
-
-    return relevant.map(item => ({
-      external_id: hashUrl(item.link ?? item.guid ?? ''),
-      source_name: source.name ?? source.domain ?? '',
-      source_url: source.domain ?? extractDomainName(feedUrl),
-      title: item.title ?? '',
-      description: item.description ?? null,
-      content: item.content ?? null,
-      author: item.author ?? null,
-      published_at: item.pubDate ?? new Date().toISOString(),
-      url: item.link ?? '',
-      image_url: item.image ?? null,
-      language: source.language ?? topic.language ?? 'en',
-      media_type: 'web',
-      country: source.country_code ?? null,
-      ingestion_source: 'rss',
-    })).filter((a: any) => a.title && a.url)
-
-  } catch (err: any) {
-    if (err.name !== 'AbortError') {
-      console.warn(`RSS feed failed for ${feedUrl}: ${err.message}`)
-    }
-    await supabase.from('sources').update({
-      consecutive_failures: (source.consecutive_failures ?? 0) + 1,
-      health_status: 'error'
-    }).eq('id', source.id)
-    return []
-  }
-}
+// ─── RSS PARSER ──────────────────────────────────────────────────────────────
 
 function parseRSSXML(xml: string): any[] {
   const items: any[] = []
