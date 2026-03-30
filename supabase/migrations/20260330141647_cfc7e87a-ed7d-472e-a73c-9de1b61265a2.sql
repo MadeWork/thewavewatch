@@ -1,0 +1,1 @@
+ALTER TABLE public.monitored_topics ALTER COLUMN sources SET DEFAULT ARRAY['rss', 'guardian', 'perigon', 'gdelt'];
