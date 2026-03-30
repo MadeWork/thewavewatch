@@ -123,6 +123,11 @@ Deno.serve(async (req) => {
     const results = []
 
     for (const topic of topics) {
+      // Safety: skip topics with no keywords
+      if (!topic.keywords?.length) {
+        console.warn(`Topic "${topic.name}" has no keywords — skipping`)
+        continue
+      }
       for (const source of topic.sources ?? ['perigon', 'guardian', 'gdelt']) {
         const runId = crypto.randomUUID()
 
