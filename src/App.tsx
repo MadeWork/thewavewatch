@@ -18,6 +18,7 @@ import Reports from "@/pages/Reports";
 import Social from "@/pages/Social";
 import SettingsPage from "@/pages/SettingsPage";
 import NotFound from "@/pages/NotFound";
+import AdminIngestion from "@/pages/AdminIngestion";
 
 const queryClient = new QueryClient();
 
@@ -42,6 +43,7 @@ const App = () => (
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/social" element={<Social />} />
                 <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/admin/ingestion" element={<AdminIngestion />} />
               </Route>
               <Route path="*" element={<NotFound />} />
             </Routes>
