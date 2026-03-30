@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Bell, Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -18,6 +18,7 @@ export default function NotificationBell() {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [open, setOpen] = useState(false);
+  const channelNameRef = useRef(`app_notifications_bell-${crypto.randomUUID()}`);
 
   const unreadCount = notifications.filter(n => !n.read_at).length;
 
@@ -37,7 +38,7 @@ export default function NotificationBell() {
 
     // Realtime subscription
     const channel = supabase
-      .channel(`app_notifications_bell-${user.id}`)
+      .channel(channelNameRef.current)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "app_notifications", filter: `user_id=eq.${user.id}` },
