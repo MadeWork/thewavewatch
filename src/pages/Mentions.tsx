@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { format, subMonths } from "date-fns";
-import { Search, Download, ExternalLink, ChevronLeft, ChevronRight, X, Filter, Sparkles, Bookmark, List, Table, Tag, StickyNote, CheckSquare, Calendar, Loader2 } from "lucide-react";
+import { Search, Download, ExternalLink, ChevronLeft, ChevronRight, X, Filter, Sparkles, Bookmark, List, Table, Tag, StickyNote, CheckSquare, Calendar, Loader2, Shield } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ErrorBanner from "@/components/ErrorBanner";
 import EmptyState from "@/components/EmptyState";
@@ -23,6 +23,7 @@ export default function Mentions() {
   const [showBookmarksOnly, setShowBookmarksOnly] = useState(false);
   const [dateField, setDateField] = useState<"published_at" | "fetched_at">("published_at");
   const [relevanceFilter, setRelevanceFilter] = useState<"high" | "medium" | "all">("medium");
+  const [majorOnly, setMajorOnly] = useState(false);
 
   const { bookmarks, toggleBookmark, isBookmarked } = useBookmarks();
 
@@ -70,6 +71,11 @@ export default function Mentions() {
     }
     // "all" still excludes noise and duplicates
     result = result.filter(a => (a as any).relevance_label !== "noise" || !(a as any).is_enriched);
+
+    // Major outlets filter
+    if (majorOnly) {
+      result = result.filter(a => (a as any).is_major_outlet === true);
+    }
 
     // Quick search
     if (quickSearch) {
@@ -124,7 +130,7 @@ export default function Mentions() {
       return new Date(dateB).getTime() - new Date(dateA).getTime();
     });
     return result;
-  }, [articles, quickSearch, searchQuery, showBookmarksOnly, bookmarks, dateField, relevanceFilter]);
+  }, [articles, quickSearch, searchQuery, showBookmarksOnly, bookmarks, dateField, relevanceFilter, majorOnly]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -206,6 +212,10 @@ export default function Mentions() {
           <button onClick={() => setShowBookmarksOnly(!showBookmarksOnly)}
             className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition ${showBookmarksOnly ? "bg-primary/20 text-primary" : "bg-bg-elevated text-text-secondary hover:bg-bg-subtle"}`}>
             <Bookmark className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Saved</span>
+          </button>
+          <button onClick={() => { setMajorOnly(!majorOnly); setPage(0); }}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition ${majorOnly ? "bg-primary/20 text-primary" : "bg-bg-elevated text-text-secondary hover:bg-bg-subtle"}`}>
+            <Shield className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Major Only</span>
           </button>
           {/* Date field toggle */}
           <div className="segment-control" style={{ maxWidth: 180 }}>

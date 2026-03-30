@@ -366,10 +366,11 @@ async function fetchRSSUnified(
             if (!td.topic.sources?.includes('rss')) continue
             const matches = td.expandedTerms.some(term => text.includes(term))
             if (matches) {
-              allArticles.push({
+                const domain = source.domain ?? extractDomainName(source.rss_url)
+                allArticles.push({
                 external_id: hashUrl(item.link ?? item.guid ?? ''),
                 source_name: source.name ?? source.domain ?? '',
-                source_url: source.domain ?? extractDomainName(source.rss_url),
+                source_url: domain,
                 title: item.title ?? '',
                 description: item.description ?? null,
                 content: item.content ?? null,
@@ -383,7 +384,8 @@ async function fetchRSSUnified(
                 ingestion_source: 'rss',
                 topic_id: td.topic.id,
                 user_id: td.topic.user_id,
-                ingestion_run_id: undefined, // set in main handler
+                ingestion_run_id: undefined,
+                is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (domain || '').includes(m)),
               })
             }
           }
@@ -552,6 +554,7 @@ function normalisePerigonArticles(articles: any[], fetchSource: string): any[] {
       media_type: 'web',
       country: a.source?.country ?? null,
       ingestion_source: fetchSource,
+      is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (a.source?.domain ?? '').includes(m)),
     }))
 }
 
@@ -610,6 +613,7 @@ async function fetchFromGuardian(topic: any): Promise<any[]> {
           media_type: 'web',
           country: edition === 'us' ? 'US' : edition === 'au' ? 'AU' : 'GB',
           ingestion_source: `guardian-${edition}`,
+          is_major_outlet: true,
         }))
 
         allArticles.push(...articles)
@@ -633,8 +637,9 @@ async function fetchFromGuardian(topic: any): Promise<any[]> {
 // ─── GDELT ───────────────────────────────────────────────────────────────────
 
 async function fetchFromGDELT(topic: any): Promise<any[]> {
-  const query = topic.keywords.join(' ')
-  const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&maxrecords=100&format=json&timespan=1d`
+  const allTerms = expandKeywords(topic.keywords ?? [])
+  const query = `(${allTerms.map((k: string) => k.includes(' ') ? `"${k}"` : k).join(' OR ')}) (theme:RENEWABLE_ENERGY OR theme:ENV_CLIMATECHANGE)`
+  const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&maxrecords=100&format=json&sort=HybridRel&timespan=2d`
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 15000)
@@ -661,6 +666,7 @@ async function fetchFromGDELT(topic: any): Promise<any[]> {
         media_type: 'web',
         country: a.sourcecountry,
         ingestion_source: 'gdelt',
+        is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (a.domain ?? '').includes(m)),
       }))
   } finally {
     clearTimeout(timeout)
