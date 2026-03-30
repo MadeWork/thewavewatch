@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { format, subMonths } from "date-fns";
-import { Search, Download, ExternalLink, ChevronLeft, ChevronRight, X, Filter, Sparkles, Bookmark, List, Table, Tag, StickyNote, CheckSquare, Calendar, Loader2 } from "lucide-react";
+import { Search, Download, ExternalLink, ChevronLeft, ChevronRight, X, Filter, Sparkles, Bookmark, List, Table, Tag, StickyNote, CheckSquare, Calendar, Loader2, Shield } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ErrorBanner from "@/components/ErrorBanner";
 import EmptyState from "@/components/EmptyState";
