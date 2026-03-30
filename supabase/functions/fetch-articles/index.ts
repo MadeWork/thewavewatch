@@ -259,13 +259,13 @@ async function fetchFromPerigon(topic: any, _runId: string): Promise<any[]> {
   const allArticles: any[] = []
   const fetchErrors: string[] = []
 
-  // ── FETCH 1: Expanded keywords + explicit major outlet domains ──
+  // ── FETCH 1: Expanded keywords + top100 sourceGroup (avoids URL length issues) ──
   try {
     const url = new URL('https://api.goperigon.com/v1/all')
     url.searchParams.set('q', expandedQuery)
     url.searchParams.set('from', from)
     url.searchParams.set('language', topic.language ?? 'en')
-    url.searchParams.set('source', MAJOR_OUTLET_DOMAINS.join(','))
+    url.searchParams.set('sourceGroup', 'top100')
     url.searchParams.set('sortBy', 'relevance')
     url.searchParams.set('showReprints', 'false')
     url.searchParams.set('size', '50')
@@ -277,47 +277,48 @@ async function fetchFromPerigon(topic: any, _runId: string): Promise<any[]> {
       const res = await fetch(url.toString(), { signal: controller.signal })
       if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
       const data = await res.json()
-      const articles = normalisePerigonArticles(data.articles ?? [], 'perigon-major')
+      const articles = normalisePerigonArticles(data.articles ?? [], 'perigon-top100-primary')
       allArticles.push(...articles)
-      console.log(`Perigon major outlets: ${articles.length} articles`)
+      console.log(`Perigon top100 primary: ${articles.length} articles`)
     } finally {
       clearTimeout(timeout)
     }
   } catch (err: any) {
-    fetchErrors.push(`major: ${err.message}`)
-    console.error('Perigon major outlets fetch failed:', err.message)
+    fetchErrors.push(`top100-primary: ${err.message}`)
+    console.error('Perigon top100 primary fetch failed:', err.message)
   }
 
-  // ── FETCH 2: Top100 group with expanded query ──
-  try {
-    const url = new URL('https://api.goperigon.com/v1/all')
-    url.searchParams.set('q', expandedQuery)
-    url.searchParams.set('from', from)
-    url.searchParams.set('language', topic.language ?? 'en')
-    url.searchParams.set('sourceGroup', 'top100')
-    url.searchParams.set('sortBy', 'relevance')
-    url.searchParams.set('showReprints', 'false')
-    url.searchParams.set('size', '30')
-    url.searchParams.set('apiKey', apiKey)
-
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 15000)
+  // ── FETCH 1b: Fallback to explicit domains if top100 returned < 5 ──
+  if (allArticles.length < 5) {
     try {
-      const res = await fetch(url.toString(), { signal: controller.signal })
-      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
-      const data = await res.json()
-      const articles = normalisePerigonArticles(data.articles ?? [], 'perigon-top100')
-      allArticles.push(...articles)
-      console.log(`Perigon top100: ${articles.length} articles`)
-    } finally {
-      clearTimeout(timeout)
+      const url = new URL('https://api.goperigon.com/v1/all')
+      url.searchParams.set('q', expandedQuery)
+      url.searchParams.set('from', from)
+      url.searchParams.set('language', topic.language ?? 'en')
+      url.searchParams.set('source', MAJOR_OUTLET_DOMAINS.slice(0, 30).join(','))
+      url.searchParams.set('sortBy', 'relevance')
+      url.searchParams.set('showReprints', 'false')
+      url.searchParams.set('size', '50')
+      url.searchParams.set('apiKey', apiKey)
+
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 15000)
+      try {
+        const res = await fetch(url.toString(), { signal: controller.signal })
+        if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
+        const data = await res.json()
+        const articles = normalisePerigonArticles(data.articles ?? [], 'perigon-major-fallback')
+        allArticles.push(...articles)
+        console.log(`Perigon major fallback: ${articles.length} articles`)
+      } finally {
+        clearTimeout(timeout)
+      }
+    } catch (err: any) {
+      console.warn('Perigon major fallback failed (non-fatal):', err.message)
     }
-  } catch (err: any) {
-    fetchErrors.push(`top100: ${err.message}`)
-    console.error('Perigon top100 fetch failed (non-fatal):', err.message)
   }
 
-  // ── FETCH 3: Original keywords + major outlets + sorted by date (breaking news) ──
+  // ── FETCH 2: Original keywords + major outlets + sorted by date (breaking news) ──
   try {
     const originalQuery = keywords
       .map((k: string) => k.includes(' ') ? `"${k}"` : k)
@@ -521,8 +522,7 @@ async function fetchFromRSS(topic: any, _runId: string): Promise<any[]> {
     .eq('active', true)
     .eq('approval_status', 'approved')
     .not('rss_url', 'is', null)
-    .lt('consecutive_failures', 5)
-    .in('health_status', ['healthy', 'degraded'])
+    .lt('consecutive_failures', 50)
     .order('fetch_priority', { ascending: false })
     .limit(500)
 
