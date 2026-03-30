@@ -10,33 +10,86 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 )
 
-// ─── PERIGON SOURCE CONFIGURATION ────────────────────────────────────────────
-const PERIGON_TIER1_SOURCES = [
-  // ── WIRE SERVICES ──
-  'reuters.com', 'apnews.com', 'afp.com', 'bloomberg.com',
-  // ── UNITED STATES ──
+// ─── KEYWORD EXPANSION ──────────────────────────────────────────────────────
+
+const KEYWORD_EXPANSIONS: Record<string, string[]> = {
+  'marine energy':      ['wave energy', 'wave power', 'tidal energy', 'tidal power', 'ocean energy', 'ocean power', 'offshore energy', 'WEC', 'wave energy converter'],
+  'wave energy':        ['wave power', 'marine energy', 'ocean energy', 'tidal energy', 'WEC', 'offshore renewables'],
+  'wave power':         ['wave energy', 'marine energy', 'ocean energy', 'tidal power'],
+  'tidal energy':       ['tidal power', 'marine energy', 'ocean energy', 'tidal stream', 'tidal current'],
+  'offshore wind':      ['offshore wind farm', 'offshore wind turbine', 'floating wind', 'wind farm'],
+  'renewable energy':   ['clean energy', 'green energy', 'clean power', 'green power', 'decarbonisation', 'net zero energy'],
+  'carbon capture':     ['CCS', 'CCUS', 'carbon sequestration', 'carbon storage', 'net zero'],
+  'electric vehicle':   ['EV', 'electric car', 'battery vehicle', 'EV charging'],
+  'artificial intelligence': ['AI', 'machine learning', 'generative AI', 'large language model', 'LLM'],
+  'climate change':     ['global warming', 'climate crisis', 'net zero', 'carbon emissions', 'greenhouse gas'],
+}
+
+function expandKeywords(keywords: string[]): string[] {
+  const expanded = new Set<string>()
+
+  for (const kw of keywords) {
+    expanded.add(kw)
+    const lower = kw.toLowerCase()
+
+    if (KEYWORD_EXPANSIONS[lower]) {
+      for (const syn of KEYWORD_EXPANSIONS[lower]) {
+        expanded.add(syn)
+      }
+    }
+
+    for (const [key, syns] of Object.entries(KEYWORD_EXPANSIONS)) {
+      if (lower.includes(key) && lower !== key) {
+        for (const syn of syns) expanded.add(syn)
+      }
+    }
+  }
+
+  return Array.from(expanded)
+}
+
+function buildPerigonQuery(keywords: string[]): string {
+  const expanded = expandKeywords(keywords)
+
+  return expanded
+    .map(k => {
+      const trimmed = k.trim()
+      if (!trimmed.includes(' ')) return trimmed
+      return `"${trimmed}"`
+    })
+    .join(' OR ')
+}
+
+// ─── MAJOR OUTLET DOMAINS ────────────────────────────────────────────────────
+
+const MAJOR_OUTLET_DOMAINS = [
+  // Wire services
+  'reuters.com', 'apnews.com', 'bloomberg.com', 'afp.com',
+  // US majors
   'nytimes.com', 'washingtonpost.com', 'wsj.com', 'ft.com',
   'cnbc.com', 'cnn.com', 'nbcnews.com', 'abcnews.go.com',
   'cbsnews.com', 'npr.org', 'politico.com', 'theatlantic.com',
-  'time.com', 'forbes.com', 'usatoday.com', 'latimes.com', 'businessinsider.com',
-  // ── UNITED KINGDOM ──
+  'time.com', 'forbes.com', 'usatoday.com', 'latimes.com',
+  'businessinsider.com',
+  // UK majors
   'theguardian.com', 'bbc.com', 'bbc.co.uk', 'thetimes.co.uk',
-  'telegraph.co.uk', 'independent.co.uk', 'sky.com', 'ft.com',
-  // ── EUROPE — NORDIC ──
-  'dn.se', 'svd.se', 'di.se', 'aftonbladet.se',
+  'telegraph.co.uk', 'independent.co.uk', 'sky.com', 'standard.co.uk',
+  // Nordic
+  'dn.se', 'svd.se', 'di.se', 'aftonbladet.se', 'expressen.se',
   'aftenposten.no', 'dn.no', 'vg.no', 'nrk.no', 'e24.no',
   'berlingske.dk', 'politiken.dk', 'borsen.dk', 'dr.dk',
   'yle.fi', 'hs.fi',
-  // ── EUROPE — MAJOR NATIONAL ──
-  'spiegel.de', 'faz.net', 'sueddeutsche.de', 'zeit.de', 'dw.com',
-  'lemonde.fr', 'lefigaro.fr', 'lesechos.fr',
-  'euractiv.com', 'politico.eu',
-  // ── AUSTRALIA ──
+  // European majors
+  'spiegel.de', 'faz.net', 'sueddeutsche.de', 'dw.com',
+  'lemonde.fr', 'lefigaro.fr', 'euractiv.com', 'politico.eu',
+  // Australia
   'abc.net.au', 'smh.com.au', 'theage.com.au', 'afr.com',
   'theaustralian.com.au', 'news.com.au', 'sbs.com.au',
-  // ── NEW ZEALAND ──
+  // New Zealand
   'nzherald.co.nz', 'stuff.co.nz', 'rnz.co.nz', 'newsroom.co.nz',
-].join(',')
+]
+
+// ─── MAIN HANDLER ────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -187,20 +240,21 @@ async function fetchFromPerigon(topic: any, _runId: string): Promise<any[]> {
   if (!apiKey) throw new Error('PERIGON_API_KEY not configured')
 
   const keywords = topic.keywords as string[]
-  const query = keywords
-    .map((k: string) => k.includes(' ') ? `"${k}"` : k)
-    .join(' OR ')
-
+  const expandedQuery = buildPerigonQuery(keywords)
   const from = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
-  const allArticles: any[] = []
 
-  // ── FETCH 1: Keyword search scoped to top100 sources ──
+  console.log(`Perigon query for topic "${topic.name}": ${expandedQuery}`)
+
+  const allArticles: any[] = []
+  const fetchErrors: string[] = []
+
+  // ── FETCH 1: Expanded keywords + explicit major outlet domains ──
   try {
     const url = new URL('https://api.goperigon.com/v1/all')
-    url.searchParams.set('q', query)
+    url.searchParams.set('q', expandedQuery)
     url.searchParams.set('from', from)
     url.searchParams.set('language', topic.language ?? 'en')
-    url.searchParams.set('sourceGroup', 'top100')
+    url.searchParams.set('source', MAJOR_OUTLET_DOMAINS.join(','))
     url.searchParams.set('sortBy', 'relevance')
     url.searchParams.set('showReprints', 'false')
     url.searchParams.set('size', '50')
@@ -210,53 +264,94 @@ async function fetchFromPerigon(topic: any, _runId: string): Promise<any[]> {
     const timeout = setTimeout(() => controller.abort(), 15000)
     try {
       const res = await fetch(url.toString(), { signal: controller.signal })
-      if (!res.ok) throw new Error(`Perigon responded ${res.status}: ${await res.text()}`)
+      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
       const data = await res.json()
-      const articles = normalisePerigonArticles(data.articles ?? [], 'perigon-top100')
+      const articles = normalisePerigonArticles(data.articles ?? [], 'perigon-major')
       allArticles.push(...articles)
-      console.log(`Perigon top100 returned ${articles.length} articles for topic ${topic.id}`)
+      console.log(`Perigon major outlets: ${articles.length} articles`)
     } finally {
       clearTimeout(timeout)
     }
   } catch (err: any) {
-    console.error('Perigon top100 fetch failed:', err.message)
+    fetchErrors.push(`major: ${err.message}`)
+    console.error('Perigon major outlets fetch failed:', err.message)
   }
 
-  // ── FETCH 2: Broader search with explicit source domain filter ──
+  // ── FETCH 2: Top100 group with expanded query ──
   try {
     const url = new URL('https://api.goperigon.com/v1/all')
-    url.searchParams.set('q', query)
+    url.searchParams.set('q', expandedQuery)
     url.searchParams.set('from', from)
     url.searchParams.set('language', topic.language ?? 'en')
-    url.searchParams.set('source', PERIGON_TIER1_SOURCES)
-    url.searchParams.set('sortBy', 'date')
+    url.searchParams.set('sourceGroup', 'top100')
+    url.searchParams.set('sortBy', 'relevance')
     url.searchParams.set('showReprints', 'false')
-    url.searchParams.set('size', '50')
+    url.searchParams.set('size', '30')
     url.searchParams.set('apiKey', apiKey)
 
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 15000)
     try {
       const res = await fetch(url.toString(), { signal: controller.signal })
-      if (!res.ok) throw new Error(`Perigon explicit sources responded ${res.status}: ${await res.text()}`)
+      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
       const data = await res.json()
-      const articles = normalisePerigonArticles(data.articles ?? [], 'perigon-explicit')
+      const articles = normalisePerigonArticles(data.articles ?? [], 'perigon-top100')
       allArticles.push(...articles)
-      console.log(`Perigon explicit sources returned ${articles.length} articles for topic ${topic.id}`)
+      console.log(`Perigon top100: ${articles.length} articles`)
     } finally {
       clearTimeout(timeout)
     }
   } catch (err: any) {
-    console.error('Perigon explicit sources fetch failed (non-fatal):', err.message)
+    fetchErrors.push(`top100: ${err.message}`)
+    console.error('Perigon top100 fetch failed (non-fatal):', err.message)
   }
 
-  // Deduplicate within batch by URL
+  // ── FETCH 3: Original keywords + major outlets + sorted by date (breaking news) ──
+  try {
+    const originalQuery = keywords
+      .map((k: string) => k.includes(' ') ? `"${k}"` : k)
+      .join(' OR ')
+
+    const url = new URL('https://api.goperigon.com/v1/all')
+    url.searchParams.set('q', originalQuery)
+    url.searchParams.set('from', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+    url.searchParams.set('language', topic.language ?? 'en')
+    url.searchParams.set('source', MAJOR_OUTLET_DOMAINS.join(','))
+    url.searchParams.set('sortBy', 'date')
+    url.searchParams.set('showReprints', 'false')
+    url.searchParams.set('size', '20')
+    url.searchParams.set('apiKey', apiKey)
+
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 15000)
+    try {
+      const res = await fetch(url.toString(), { signal: controller.signal })
+      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
+      const data = await res.json()
+      const articles = normalisePerigonArticles(data.articles ?? [], 'perigon-recent')
+      allArticles.push(...articles)
+      console.log(`Perigon recent: ${articles.length} articles`)
+    } finally {
+      clearTimeout(timeout)
+    }
+  } catch (err: any) {
+    console.warn('Perigon recent fetch failed (non-fatal):', err.message)
+  }
+
+  if (allArticles.length === 0 && fetchErrors.length >= 2) {
+    throw new Error(`Perigon fetches failed: ${fetchErrors.join('; ')}`)
+  }
+
+  // Deduplicate by URL hash
   const seen = new Set<string>()
-  return allArticles.filter(a => {
+  const deduped = allArticles.filter(a => {
     if (seen.has(a.external_id)) return false
     seen.add(a.external_id)
     return true
   })
+
+  console.log(`Perigon total unique: ${deduped.length} (from ${allArticles.length} raw)`)
+  return deduped
 }
 
 function normalisePerigonArticles(articles: any[], fetchSource: string): any[] {
@@ -290,7 +385,8 @@ async function fetchFromGuardian(topic: any, _runId: string): Promise<any[]> {
   }
 
   const keywords = topic.keywords as string[]
-  const query = keywords
+  const allTerms = expandKeywords(keywords)
+  const query = allTerms
     .map((k: string) => k.includes(' ') ? `"${k}"` : k)
     .join(' OR ')
 
