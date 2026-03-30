@@ -134,7 +134,7 @@ export default function AdminIngestion() {
       </div>
 
       {/* Section 1: Health metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <Card>
           <CardContent className="pt-4 pb-3 px-4">
             <div className="flex items-center gap-2 text-muted-foreground mb-1">
