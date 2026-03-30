@@ -664,6 +664,7 @@ async function fetchFromGDELT(topic: any): Promise<any[]> {
         media_type: 'web',
         country: a.sourcecountry,
         ingestion_source: 'gdelt',
+        is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (a.domain ?? '').includes(m)),
       }))
   } finally {
     clearTimeout(timeout)
