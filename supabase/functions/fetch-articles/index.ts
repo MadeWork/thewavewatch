@@ -495,6 +495,181 @@ async function fetchFromGDELT(topic: any): Promise<any[]> {
   }
 }
 
+// ─── RSS ─────────────────────────────────────────────────────────────────────
+
+async function fetchFromRSS(topic: any, _runId: string): Promise<any[]> {
+  const keywords = topic.keywords as string[]
+  const expandedTerms = expandKeywords(keywords)
+  const searchTerms = expandedTerms.map(k => k.toLowerCase())
+
+  const { data: domains, error } = await supabase
+    .from('approved_domains')
+    .select('*')
+    .eq('active', true)
+    .not('feed_url', 'is', null)
+    .order('priority', { ascending: false })
+    .limit(500)
+
+  if (error) {
+    console.error('Failed to fetch approved_domains:', error.message)
+    return []
+  }
+
+  if (!domains?.length) {
+    console.warn('No active RSS domains found')
+    return []
+  }
+
+  console.log(`Processing ${domains.length} RSS feeds for topic "${topic.name}"`)
+
+  const allArticles: any[] = []
+  const feedErrors: string[] = []
+  const BATCH_SIZE = 20
+
+  for (let i = 0; i < domains.length; i += BATCH_SIZE) {
+    const batch = domains.slice(i, i + BATCH_SIZE)
+    const batchResults = await Promise.allSettled(
+      batch.map(domain => fetchSingleRSSFeed(domain, searchTerms, topic))
+    )
+    for (const result of batchResults) {
+      if (result.status === 'fulfilled') {
+        allArticles.push(...result.value)
+      } else {
+        feedErrors.push(result.reason?.message ?? 'unknown error')
+      }
+    }
+  }
+
+  console.log(`RSS fetched ${allArticles.length} relevant articles from ${domains.length} feeds`)
+  if (feedErrors.length > 0) {
+    console.warn(`RSS feed errors (non-fatal): ${feedErrors.length} feeds failed`)
+  }
+
+  const seen = new Set<string>()
+  return allArticles.filter(a => {
+    if (seen.has(a.external_id)) return false
+    seen.add(a.external_id)
+    return true
+  })
+}
+
+async function fetchSingleRSSFeed(
+  domain: any,
+  searchTerms: string[],
+  topic: any
+): Promise<any[]> {
+  let feedUrl = domain.feed_url
+  if (!feedUrl && domain.domain) {
+    const d = domain.domain.replace(/^https?:\/\//, '')
+    feedUrl = `https://${d}/feed`
+  }
+  if (!feedUrl) return []
+
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 8000)
+
+    const res = await fetch(feedUrl, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'WaveWatch/1.0 (media monitoring)' }
+    })
+    clearTimeout(timeout)
+
+    if (!res.ok) return []
+
+    const xml = await res.text()
+    if (xml.length > 1_000_000) return []
+
+    const items = parseRSSXML(xml)
+    const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000)
+
+    const relevant = items.filter(item => {
+      if (item.pubDate && new Date(item.pubDate) < cutoff) return false
+      const text = `${item.title ?? ''} ${item.description ?? ''}`.toLowerCase()
+      return searchTerms.some(term => text.includes(term))
+    })
+
+    return relevant.map(item => ({
+      external_id: hashUrl(item.link ?? item.guid ?? ''),
+      source_name: domain.name ?? extractDomainName(feedUrl),
+      source_url: domain.domain ?? extractDomainName(feedUrl),
+      title: item.title ?? '',
+      description: item.description ?? null,
+      content: item.content ?? null,
+      author: item.author ?? null,
+      published_at: item.pubDate ?? new Date().toISOString(),
+      url: item.link ?? '',
+      image_url: item.image ?? null,
+      language: domain.language ?? topic.language ?? 'en',
+      media_type: 'web',
+      country: domain.country_code ?? null,
+      ingestion_source: 'rss',
+    })).filter((a: any) => a.title && a.url)
+
+  } catch (err: any) {
+    if (err.name !== 'AbortError') {
+      console.warn(`RSS feed failed for ${feedUrl}: ${err.message}`)
+    }
+    return []
+  }
+}
+
+function parseRSSXML(xml: string): any[] {
+  const items: any[] = []
+  const isAtom = xml.includes('<feed') && xml.includes('xmlns')
+
+  if (isAtom) {
+    const entryMatches = xml.matchAll(/<entry[^>]*>([\s\S]*?)<\/entry>/gi)
+    for (const match of entryMatches) {
+      const entry = match[1]
+      items.push({
+        title: extractXMLText(entry, 'title'),
+        link: extractXMLAttr(entry, 'link', 'href') ?? extractXMLText(entry, 'link'),
+        description: extractXMLText(entry, 'summary') ?? extractXMLText(entry, 'content'),
+        pubDate: extractXMLText(entry, 'published') ?? extractXMLText(entry, 'updated'),
+        author: extractXMLText(entry, 'name') ?? extractXMLText(entry, 'author'),
+        guid: extractXMLText(entry, 'id'),
+      })
+    }
+  } else {
+    const itemMatches = xml.matchAll(/<item[^>]*>([\s\S]*?)<\/item>/gi)
+    for (const match of itemMatches) {
+      const item = match[1]
+      items.push({
+        title: extractXMLText(item, 'title'),
+        link: extractXMLText(item, 'link'),
+        description: extractXMLText(item, 'description'),
+        content: extractXMLText(item, 'content:encoded') ?? extractXMLText(item, 'content'),
+        pubDate: extractXMLText(item, 'pubDate') ?? extractXMLText(item, 'dc:date'),
+        author: extractXMLText(item, 'dc:creator') ?? extractXMLText(item, 'author'),
+        guid: extractXMLText(item, 'guid'),
+        image: extractXMLAttr(item, 'media:content', 'url') ??
+               extractXMLAttr(item, 'media:thumbnail', 'url'),
+      })
+    }
+  }
+
+  return items.filter(i => i.title && (i.link || i.guid))
+}
+
+function extractXMLText(xml: string, tag: string): string | null {
+  const cdataMatch = xml.match(new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\/${tag}>`, 'i'))
+  if (cdataMatch) return cdataMatch[1].trim()
+  const textMatch = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\/${tag}>`, 'i'))
+  if (textMatch) return textMatch[1].replace(/<[^>]+>/g, '').trim() || null
+  return null
+}
+
+function extractXMLAttr(xml: string, tag: string, attr: string): string | null {
+  const match = xml.match(new RegExp(`<${tag}[^>]*\\s${attr}="([^"]*)"`, 'i'))
+  return match ? match[1] : null
+}
+
+function extractDomainName(url: string): string {
+  try { return new URL(url).hostname.replace('www.', '') }
+  catch { return url }
+}
+
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 function hashUrl(url: string): string {
