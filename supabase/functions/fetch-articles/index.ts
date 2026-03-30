@@ -637,8 +637,9 @@ async function fetchFromGuardian(topic: any): Promise<any[]> {
 // ─── GDELT ───────────────────────────────────────────────────────────────────
 
 async function fetchFromGDELT(topic: any): Promise<any[]> {
-  const query = topic.keywords.join(' ')
-  const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&maxrecords=100&format=json&timespan=1d`
+  const allTerms = expandKeywords(topic.keywords ?? [])
+  const query = `(${allTerms.map((k: string) => k.includes(' ') ? `"${k}"` : k).join(' OR ')}) (theme:RENEWABLE_ENERGY OR theme:ENV_CLIMATECHANGE)`
+  const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&maxrecords=100&format=json&sort=HybridRel&timespan=2d`
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 15000)
