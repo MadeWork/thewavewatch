@@ -20,3 +20,9 @@ The following secrets must be configured in the backend:
 
 The `schedule-ingestion` edge function is triggered hourly by pg_cron.
 It calls `fetch-articles` for all active monitored topics.
+
+## Enrichment Pipeline
+
+The `enrich-articles` edge function scores articles for relevance using Lovable AI (Gemini Flash Lite).
+It is triggered automatically after each fetch cycle and runs on a 15-minute cron schedule as a safety net.
+Cost: negligible — Gemini Flash Lite scoring 20 articles costs fractions of a cent.
