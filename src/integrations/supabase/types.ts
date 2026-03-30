@@ -326,6 +326,7 @@ export type Database = {
           ingestion_source: string | null
           is_duplicate: boolean | null
           is_enriched: boolean | null
+          is_major_outlet: boolean | null
           key_themes: string[] | null
           language: string | null
           matched_keywords: string[] | null
@@ -374,6 +375,7 @@ export type Database = {
           ingestion_source?: string | null
           is_duplicate?: boolean | null
           is_enriched?: boolean | null
+          is_major_outlet?: boolean | null
           key_themes?: string[] | null
           language?: string | null
           matched_keywords?: string[] | null
@@ -422,6 +424,7 @@ export type Database = {
           ingestion_source?: string | null
           is_duplicate?: boolean | null
           is_enriched?: boolean | null
+          is_major_outlet?: boolean | null
           key_themes?: string[] | null
           language?: string | null
           matched_keywords?: string[] | null
