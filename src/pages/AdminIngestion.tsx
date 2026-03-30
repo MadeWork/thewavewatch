@@ -184,6 +184,15 @@ export default function AdminIngestion() {
             </p>
           </CardContent>
         </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="flex items-center gap-2 text-muted-foreground mb-1">
+              <FileText className="w-3.5 h-3.5" />
+              <span className="text-xs">RSS Feeds</span>
+            </div>
+            <p className="text-2xl font-semibold text-foreground">{health?.rssFeeds ?? "—"}</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Section 2: Run log */}
