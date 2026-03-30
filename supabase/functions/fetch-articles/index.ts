@@ -503,6 +503,10 @@ async function fetchFromGDELT(topic: any): Promise<any[]> {
 // ─── RSS ─────────────────────────────────────────────────────────────────────
 
 async function fetchFromRSS(topic: any, _runId: string): Promise<any[]> {
+  if (!topic.keywords?.length) {
+    console.warn(`Topic "${topic.name}" has no keywords — skipping RSS`)
+    return []
+  }
   const keywords = topic.keywords as string[]
   const expandedTerms = expandKeywords(keywords)
   const searchTerms = expandedTerms.map(k => k.toLowerCase())
