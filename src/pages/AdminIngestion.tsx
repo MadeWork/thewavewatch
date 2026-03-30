@@ -15,6 +15,10 @@ export default function AdminIngestion() {
   const queryClient = useQueryClient();
   const [triggeringAll, setTriggeringAll] = useState(false);
   const [triggeringTopic, setTriggeringTopic] = useState<string | null>(null);
+  const [backfillTopicId, setBackfillTopicId] = useState<string>("");
+  const [backfillMonths, setBackfillMonths] = useState(3);
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<any>(null);
 
   // Pipeline health
   const { data: health } = useQuery({
