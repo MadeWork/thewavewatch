@@ -379,7 +379,7 @@ async function fetchRSSUnified(
                 ingestion_source: 'rss',
                 topic_id: td.topic.id,
                 user_id: td.topic.user_id,
-                ingestion_run_id: null, // set later
+                ingestion_run_id: undefined, // set in main handler
               })
             }
           }
