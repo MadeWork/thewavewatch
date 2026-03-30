@@ -245,6 +245,16 @@ export default function Mentions() {
         />
       )}
 
+      {/* Relevance filter bar */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] text-text-muted mr-1">Quality:</span>
+        {([["high", "Top stories"], ["medium", "All relevant"], ["all", "Everything"]] as const).map(([val, label]) => (
+          <button key={val} onClick={() => { setRelevanceFilter(val as any); setPage(0); }}
+            className={`px-3 py-1.5 rounded-lg text-[11px] transition ${relevanceFilter === val ? "bg-primary text-primary-foreground" : "bg-bg-elevated text-text-secondary hover:bg-bg-subtle"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
       {/* Bulk action bar */}
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-primary/10 border border-primary/20">
@@ -346,9 +356,36 @@ export default function Mentions() {
                     )}
                     {a.language && <span className="px-1 py-0.5 rounded bg-bg-subtle text-text-muted text-[10px]">{a.language}</span>}
                     {src?.region && <span className="px-1.5 py-0.5 rounded bg-bg-subtle text-text-muted text-[10px]">{src.region}</span>}
-                    {(a as any).importance === "high" && <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 text-[10px] font-medium">High</span>}
-                    {(a as any).importance === "low" && <span className="px-1.5 py-0.5 rounded bg-bg-subtle text-text-muted text-[10px]">Low</span>}
-                    {(a as any).story_cluster_id && <span className="px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 text-[10px]">📰 Cluster</span>}
+                    {/* Relevance badge */}
+                    {(a as any).is_enriched ? (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                              (a as any).relevance_label === "high" ? "bg-positive/15 text-positive" :
+                              (a as any).relevance_label === "medium" ? "bg-amber-500/15 text-amber-400" :
+                              "bg-bg-subtle text-text-muted"
+                            }`}>
+                              {(a as any).relevance_label === "high" ? "● High" : (a as any).relevance_label === "medium" ? "● Medium" : "● Low"}
+                            </span>
+                          </TooltipTrigger>
+                          {(a as any).relevance_reason && (
+                            <TooltipContent side="top" className="max-w-xs text-xs">
+                              {(a as any).relevance_reason}
+                            </TooltipContent>
+                          )}
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : (
+                      <span className="px-1.5 py-0.5 rounded bg-bg-subtle text-text-muted text-[10px] flex items-center gap-1">
+                        <Loader2 className="w-2.5 h-2.5 animate-spin" /> Scoring…
+                      </span>
+                    )}
+                    {/* Key themes */}
+                    {(a as any).key_themes?.slice(0, 3).map((theme: string) => (
+                      <span key={theme} className="px-1.5 py-0.5 rounded-full bg-secondary/50 text-secondary-foreground text-[9px]">{theme}</span>
+                    ))}
+                    {(a as any).story_cluster_id && <span className="px-1.5 py-0.5 rounded bg-accent/30 text-accent-foreground text-[10px]">📰 Cluster</span>}
                     {(a as any).discovery_method && <span className="px-1 py-0.5 rounded bg-bg-subtle text-text-muted text-[9px]">{(a as any).discovery_method}</span>}
                     {a.matched_keywords?.map((kw: string) => (
                       <span key={kw} className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px]">{kw}</span>
