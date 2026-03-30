@@ -72,6 +72,11 @@ export default function Mentions() {
     // "all" still excludes noise and duplicates
     result = result.filter(a => (a as any).relevance_label !== "noise" || !(a as any).is_enriched);
 
+    // Major outlets filter
+    if (majorOnly) {
+      result = result.filter(a => (a as any).is_major_outlet === true);
+    }
+
     // Quick search
     if (quickSearch) {
       const q = quickSearch.toLowerCase();
