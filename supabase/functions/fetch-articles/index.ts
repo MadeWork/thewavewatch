@@ -376,9 +376,11 @@ async function fetchRSSUnified(
     .eq('active', true)
     .eq('approval_status', 'approved')
     .not('rss_url', 'is', null)
-    .lt('consecutive_failures', 50)
+    .lt('consecutive_failures', 5)
+    .in('health_status', ['healthy', 'degraded'])
+    .or(`last_fetched_at.is.null,last_fetched_at.lt.${new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString()}`)
     .order('fetch_priority', { ascending: false })
-    .limit(500)
+    .limit(150)
 
   if (error || !sources?.length) {
     if (error) console.error('Failed to fetch sources:', error.message)
@@ -462,7 +464,7 @@ async function fetchSingleRSSFeedUnified(
   if (!feedUrl) return { items: [], success: true, failures: 0 }
 
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 8000)
+  const timeout = setTimeout(() => controller.abort(), 5000)
 
   try {
     const res = await fetch(feedUrl, {

@@ -7,7 +7,7 @@ import SkeletonCard from "@/components/SkeletonCard";
 import EmptyState from "@/components/EmptyState";
 import ErrorBanner from "@/components/ErrorBanner";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { format, subDays, startOfDay, startOfWeek, startOfMonth } from "date-fns";
+import { format, subDays, startOfDay, startOfWeek, startOfMonth, formatDistanceToNow } from "date-fns";
 import { ExternalLink, RefreshCw, Loader2, Star } from "lucide-react";
 import WorldMap from "@/components/WorldMap";
 
@@ -31,6 +31,21 @@ export default function Dashboard() {
       if (error) throw error;
       return data;
     },
+  });
+
+  const { data: lastRun } = useQuery({
+    queryKey: ["last-ingestion-run"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("ingestion_runs")
+        .select("completed_at")
+        .eq("status", "success")
+        .order("completed_at", { ascending: false })
+        .limit(1)
+        .single();
+      return data;
+    },
+    refetchInterval: 60000,
   });
 
   const favArticles = useMemo(() => {
@@ -105,6 +120,14 @@ export default function Dashboard() {
           </>
         )}
       </div>
+
+      {/* Last updated status */}
+      <p className="text-[11px] text-muted-foreground">
+        {lastRun?.completed_at
+          ? `Last updated: ${formatDistanceToNow(new Date(lastRun.completed_at), { addSuffix: true })}`
+          : "No fetch runs yet"}{" "}
+        · Auto-updates at 6am, 12pm &amp; 6pm
+      </p>
 
       {/* Charts row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
