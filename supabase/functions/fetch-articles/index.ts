@@ -378,7 +378,7 @@ async function fetchRSSUnified(
     .not('rss_url', 'is', null)
     .lt('consecutive_failures', 50)
     .order('fetch_priority', { ascending: false })
-    .limit(500)
+    .limit(150)
 
   if (error || !sources?.length) {
     if (error) console.error('Failed to fetch sources:', error.message)
