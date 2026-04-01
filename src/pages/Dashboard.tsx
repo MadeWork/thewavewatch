@@ -8,8 +8,9 @@ import EmptyState from "@/components/EmptyState";
 import ErrorBanner from "@/components/ErrorBanner";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { format, subDays, startOfDay, startOfWeek, startOfMonth, formatDistanceToNow } from "date-fns";
-import { ExternalLink, RefreshCw, Loader2, Star } from "lucide-react";
+import { ExternalLink, RefreshCw, Loader2, Star, Lock } from "lucide-react";
 import WorldMap from "@/components/WorldMap";
+import { isPaywalled } from "@/lib/paywallSources";
 
 const CHART_COLORS = ["hsl(216,90%,66%)", "hsl(160,64%,55%)", "hsl(280,60%,60%)", "hsl(30,90%,60%)", "hsl(0,93%,71%)"];
 
@@ -191,9 +192,15 @@ export default function Dashboard() {
                   className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-bg-elevated/50 transition group">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-foreground font-light truncate group-hover:text-primary transition">{a.title}</p>
-                    <p className="text-xs text-text-muted mt-0.5">
-                      {(a.sources as any)?.name || (a as any).source_name || (a as any).source_domain || "Unknown"} · {format(new Date(a.published_at), "MMM d")}
-                    </p>
+                    <div className="mt-0.5 flex items-center gap-1.5 flex-wrap text-xs text-text-muted">
+                      <span>{(a.sources as any)?.name || (a as any).source_name || (a as any).source_domain || "Unknown"}</span>
+                      {isPaywalled((a as any).source_url || (a as any).source_domain) && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] text-secondary-foreground">
+                          <Lock className="h-2.5 w-2.5" /> Subscription
+                        </span>
+                      )}
+                      <span>· {format(new Date(a.published_at), "MMM d")}</span>
+                    </div>
                   </div>
                   <span className={`sentiment-badge ${a.sentiment === 'positive' ? 'sentiment-positive' : a.sentiment === 'negative' ? 'sentiment-negative' : 'sentiment-neutral'}`}>
                     {a.sentiment}
@@ -228,9 +235,15 @@ export default function Dashboard() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-foreground font-light truncate group-hover:text-primary transition">{a.title}</p>
                     <div className="flex items-center gap-2 mt-0.5">
-                      <p className="text-xs text-text-muted">
-                        {(a.sources as any)?.name || (a as any).source_name || (a as any).source_domain || "Unknown"} · {format(new Date(a.published_at), "MMM d")}
-                      </p>
+                      <div className="flex items-center gap-1.5 flex-wrap text-xs text-text-muted">
+                        <span>{(a.sources as any)?.name || (a as any).source_name || (a as any).source_domain || "Unknown"}</span>
+                        {isPaywalled((a as any).source_url || (a as any).source_domain) && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] text-secondary-foreground">
+                            <Lock className="h-2.5 w-2.5" /> Subscription
+                          </span>
+                        )}
+                        <span>· {format(new Date(a.published_at), "MMM d")}</span>
+                      </div>
                       {a.matched_keywords?.map((kw: string) => (
                         <span key={kw} className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px]">{kw}</span>
                       ))}

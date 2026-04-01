@@ -2,8 +2,9 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
-import { X, ExternalLink, User, Mail, Globe, Quote, Loader2, Sparkles, Twitter, Linkedin, Bookmark, Tag, StickyNote, Plus } from "lucide-react";
+import { X, ExternalLink, User, Mail, Globe, Quote, Loader2, Sparkles, Twitter, Linkedin, Bookmark, Tag, StickyNote, Plus, Lock } from "lucide-react";
 import { useBookmarks, useArticleTags, useArticleNotes } from "@/hooks/useArticleActions";
+import { isPaywalled } from "@/lib/paywallSources";
 
 interface ArticleDetailDrawerProps {
   article: any;
@@ -13,6 +14,7 @@ interface ArticleDetailDrawerProps {
 export default function ArticleDetailDrawer({ article, onClose }: ArticleDetailDrawerProps) {
   const src = article.sources as any;
   const displayName = src?.name || article.source_name || article.source_domain || "Unknown";
+  const showPaywall = isPaywalled(article.source_url || article.source_domain);
 
   const { isBookmarked, toggleBookmark } = useBookmarks();
   const { tags, addTag } = useArticleTags(article.id);
@@ -58,6 +60,11 @@ export default function ArticleDetailDrawer({ article, onClose }: ArticleDetailD
             <p className="text-sm font-medium text-foreground leading-snug">{article.title}</p>
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
               <span className="text-xs text-text-secondary">{displayName}</span>
+              {showPaywall && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] text-secondary-foreground">
+                  <Lock className="h-2.5 w-2.5" /> Subscription
+                </span>
+              )}
               {article.source_domain && <span className="text-[10px] text-text-muted">({article.source_domain})</span>}
               <span className="text-xs text-text-muted">·</span>
               <span className="text-xs text-text-muted">{format(new Date(article.published_at), "MMM d, yyyy HH:mm")}</span>
