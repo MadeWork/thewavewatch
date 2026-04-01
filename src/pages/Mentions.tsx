@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { format, subMonths } from "date-fns";
-import { Search, Download, ExternalLink, ChevronLeft, ChevronRight, X, Filter, Sparkles, Bookmark, List, Table, Tag, StickyNote, CheckSquare, Calendar, Loader2, Shield } from "lucide-react";
+import { Search, Download, ExternalLink, ChevronLeft, ChevronRight, X, Filter, Sparkles, Bookmark, List, Table, Tag, StickyNote, CheckSquare, Calendar, Loader2, Shield, Lock } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ErrorBanner from "@/components/ErrorBanner";
 import EmptyState from "@/components/EmptyState";
@@ -10,6 +10,7 @@ import ArticleDetailDrawer from "@/components/ArticleDetailDrawer";
 import SearchBuilder, { SearchQuery } from "@/components/SearchBuilder";
 import { useBookmarks } from "@/hooks/useArticleActions";
 import { useArticles } from "@/hooks/useArticles";
+import { isPaywalled } from "@/lib/paywallSources";
 
 const PAGE_SIZE = 20;
 
@@ -344,13 +345,23 @@ export default function Mentions() {
               {paged.map(a => {
                 const src = a.sources as any;
                 const displayName = src?.name || a.source_name || a.source_domain || "Unknown";
+                const showPaywall = isPaywalled(a.source_url || a.source_domain);
                 return (
                   <tr key={a.id} className="border-b border-bg-subtle/50 hover:bg-bg-elevated/50 transition cursor-pointer" onClick={() => setSelectedArticle(a)}>
                     <td className="py-2 pr-2" onClick={e => e.stopPropagation()}>
                       <input type="checkbox" checked={selectedIds.has(a.id)} onChange={() => toggleSelect(a.id)} className="rounded" />
                     </td>
                     <td className="py-2 pr-2 text-foreground font-light max-w-[300px] truncate">{renderHighlighted(a.title)}</td>
-                    <td className="py-2 pr-2 text-text-secondary">{displayName}</td>
+                    <td className="py-2 pr-2 text-text-secondary">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span>{displayName}</span>
+                        {showPaywall && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] text-secondary-foreground">
+                            <Lock className="h-2.5 w-2.5" /> Subscription
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="py-2 pr-2 text-text-muted">{src?.country_code || ""}</td>
                     <td className="py-2 pr-2 text-text-muted whitespace-nowrap">{a.published_at ? format(new Date(a.published_at), "MMM d, yyyy") : <span className="italic opacity-60">no date</span>}</td>
                     <td className="py-2 pr-2">
@@ -385,6 +396,7 @@ export default function Mentions() {
           {paged.map(a => {
             const src = a.sources as any;
             const displayName = src?.name || a.source_name || a.source_domain || "Unknown";
+            const showPaywall = isPaywalled(a.source_url || a.source_domain);
             return (
               <div key={a.id} className="monitor-card flex items-start gap-3 hover:bg-bg-elevated/80 transition group cursor-pointer" onClick={() => setSelectedArticle(a)}>
                 <div className="flex items-center gap-2 pt-1" onClick={e => e.stopPropagation()}>
@@ -399,6 +411,11 @@ export default function Mentions() {
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
                     {src?.country_code && <span className="text-xs">{src.country_code}</span>}
                     <span className="text-xs text-text-secondary">{displayName}</span>
+                    {showPaywall && (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] text-secondary-foreground">
+                        <Lock className="h-2.5 w-2.5" /> Subscription
+                      </span>
+                    )}
                     {a.source_domain && <span className="text-[10px] text-text-muted">({a.source_domain})</span>}
                     <span className="text-xs text-text-muted">·</span>
                     {a.published_at ? (

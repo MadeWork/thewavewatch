@@ -1,11 +1,12 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { FileText, Plus, Trash2, Download, BarChart3, TrendingUp, Sparkles } from "lucide-react";
+import { FileText, Plus, Trash2, Download, BarChart3, TrendingUp, Sparkles, Lock } from "lucide-react";
 import { useReportTemplates } from "@/hooks/useArticleActions";
 import { format, subDays } from "date-fns";
 import EmptyState from "@/components/EmptyState";
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from "recharts";
+import { isPaywalled } from "@/lib/paywallSources";
 
 const COLORS = ["hsl(216,90%,66%)", "hsl(160,64%,55%)", "hsl(0,93%,71%)", "hsl(30,90%,60%)", "hsl(280,60%,60%)"];
 
@@ -234,7 +235,15 @@ export default function Reports() {
                     <a key={a.id} href={a.url} target="_blank" rel="noopener noreferrer" className="flex items-start gap-2 p-2 rounded-lg hover:bg-bg-elevated/50 transition group">
                       <div className="flex-1 min-w-0">
                         <p className="text-xs text-foreground font-light truncate group-hover:text-primary">{a.title}</p>
-                        <p className="text-[10px] text-text-muted mt-0.5">{(a.sources as any)?.name || a.source_name || "Unknown"} · {format(new Date(a.published_at), "MMM d")}</p>
+                        <div className="mt-0.5 flex items-center gap-1.5 flex-wrap text-[10px] text-text-muted">
+                          <span>{(a.sources as any)?.name || a.source_name || "Unknown"}</span>
+                          {isPaywalled(a.source_url || a.source_domain) && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] text-secondary-foreground">
+                              <Lock className="h-2.5 w-2.5" /> Subscription
+                            </span>
+                          )}
+                          <span>· {format(new Date(a.published_at), "MMM d")}</span>
+                        </div>
                       </div>
                       <span className={`sentiment-badge text-[10px] ${a.sentiment === "positive" ? "sentiment-positive" : a.sentiment === "negative" ? "sentiment-negative" : "sentiment-neutral"}`}>{a.sentiment}</span>
                     </a>

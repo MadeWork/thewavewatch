@@ -2,10 +2,11 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { format, subMonths, subYears } from "date-fns";
-import { Archive as ArchiveIcon, Search, Download, ChevronLeft, ChevronRight, ExternalLink, TrendingUp } from "lucide-react";
+import { Archive as ArchiveIcon, Search, Download, ChevronLeft, ChevronRight, ExternalLink, TrendingUp, Lock } from "lucide-react";
 import ErrorBanner from "@/components/ErrorBanner";
 import EmptyState from "@/components/EmptyState";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { isPaywalled } from "@/lib/paywallSources";
 
 const PAGE_SIZE = 25;
 
@@ -177,6 +178,7 @@ export default function Archive() {
         <div className="space-y-1.5">
           {paged.map(a => {
             const displayName = (a.sources as any)?.name || a.source_name || a.source_domain || "Unknown";
+            const showPaywall = isPaywalled(a.source_url || a.source_domain);
             return (
               <a key={a.id} href={a.url} target="_blank" rel="noopener noreferrer"
                 className="monitor-card flex items-start gap-3 hover:bg-bg-elevated/80 transition group py-3 px-4">
@@ -184,6 +186,11 @@ export default function Archive() {
                   <p className="text-sm text-foreground font-light group-hover:text-primary transition truncate">{a.title}</p>
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
                     <span className="text-xs text-text-secondary">{displayName}</span>
+                    {showPaywall && (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] text-secondary-foreground">
+                        <Lock className="h-2.5 w-2.5" /> Subscription
+                      </span>
+                    )}
                     <span className="text-xs text-text-muted">{format(new Date(a.published_at), "MMM d, yyyy")}</span>
                     {a.matched_keywords?.slice(0, 3).map((kw: string) => (
                       <span key={kw} className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px]">{kw}</span>
