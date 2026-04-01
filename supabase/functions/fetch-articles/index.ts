@@ -25,6 +25,19 @@ const KEYWORD_EXPANSIONS: Record<string, string[]> = {
   'climate change':     ['global warming', 'climate crisis', 'net zero', 'carbon emissions', 'greenhouse gas'],
 }
 
+function getTopicKeywords(topic: any): string[] {
+  const raw = topic.keywords
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw.filter(k => typeof k === 'string')
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed.filter(k => typeof k === 'string') : []
+    } catch { return [] }
+  }
+  return []
+}
+
 function expandKeywords(keywords: string[]): string[] {
   const expanded = new Set<string>()
   for (const kw of keywords) {
@@ -107,12 +120,46 @@ Deno.serve(async (req) => {
       })
     }
 
+    // Load expanded terms from keywords table for richer matching
+    const { data: keywordRows } = await supabase
+      .from('keywords')
+      .select('text, expanded_terms')
+      .eq('active', true)
+
     // Build per-topic search terms for matching
-    const topicSearchData = topics.map(t => ({
-      topic: t,
-      keywords: t.keywords ?? [],
-      expandedTerms: expandKeywords(t.keywords ?? []).map(k => k.toLowerCase()),
-    }))
+    const topicSearchData = topics.map(t => {
+      const keywords = getTopicKeywords(t)
+      if (!keywords.length) {
+        console.warn(`Topic "${t.name}" has no keywords — will match nothing`)
+      }
+      // Combine topic keywords + KEYWORD_EXPANSIONS + keywords table expanded_terms
+      const allTerms = new Set<string>()
+      const expanded = expandKeywords(keywords)
+      for (const e of expanded) allTerms.add(e.toLowerCase())
+      // Add terms from keywords table
+      for (const row of keywordRows ?? []) {
+        allTerms.add(row.text.toLowerCase())
+        if (row.expanded_terms) {
+          try {
+            const terms = typeof row.expanded_terms === 'string'
+              ? JSON.parse(row.expanded_terms)
+              : row.expanded_terms
+            if (Array.isArray(terms)) {
+              for (const term of terms) {
+                if (typeof term === 'string' && term.length > 2) {
+                  allTerms.add(term.toLowerCase())
+                }
+              }
+            }
+          } catch {}
+        }
+      }
+      return {
+        topic: t,
+        keywords,
+        expandedTerms: Array.from(allTerms),
+      }
+    })
 
     // Create a single ingestion run for the whole batch
     const runId = crypto.randomUUID()
@@ -567,7 +614,11 @@ async function fetchFromGuardian(topic: any): Promise<any[]> {
     return []
   }
 
-  const keywords = topic.keywords as string[]
+  const keywords = getTopicKeywords(topic)
+  if (!keywords.length) {
+    console.warn(`Guardian: Topic "${topic.name}" has no keywords — skipping`)
+    return []
+  }
   const allTerms = expandKeywords(keywords)
   const query = allTerms
     .map((k: string) => k.includes(' ') ? `"${k}"` : k)
@@ -637,7 +688,12 @@ async function fetchFromGuardian(topic: any): Promise<any[]> {
 // ─── GDELT ───────────────────────────────────────────────────────────────────
 
 async function fetchFromGDELT(topic: any): Promise<any[]> {
-  const allTerms = expandKeywords(topic.keywords ?? [])
+  const keywords = getTopicKeywords(topic)
+  if (!keywords.length) {
+    console.warn(`GDELT: Topic "${topic.name}" has no keywords — skipping`)
+    return []
+  }
+  const allTerms = expandKeywords(keywords)
   const query = `(${allTerms.map((k: string) => k.includes(' ') ? `"${k}"` : k).join(' OR ')}) (theme:RENEWABLE_ENERGY OR theme:ENV_CLIMATECHANGE)`
   const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&maxrecords=100&format=json&sort=HybridRel&timespan=2d`
 

@@ -29,7 +29,7 @@ serve(async (req) => {
     // 1. Fetch unenriched articles
     let query = supabase
       .from("articles")
-      .select("id, title, description, source_name, source_url, url, published_at, ingestion_source")
+      .select("id, title, description, source_name, source_url, url, published_at")
       .eq("is_enriched", false)
       .eq("is_duplicate", false)
       .order("created_at", { ascending: true })
@@ -121,7 +121,7 @@ serve(async (req) => {
 
 async function scoreWithAI(apiKey: string, keywords: string, articles: any[]) {
   const articleList = articles.map((a, i) =>
-    `[${i}] ID:${a.id}\nTitle: ${a.title}\nDescription: ${a.description || "N/A"}\nSource: ${a.source_name || a.source_url || "Unknown"}`
+    `[${i}] ID:${a.id}\nTitle: ${a.title}\nDescription: ${(a as any).description || "N/A"}\nSource: ${(a as any).source_name || (a as any).source_url || "Unknown"}`
   ).join("\n\n");
 
   const prompt = `You are a media monitoring relevance scorer for a professional intelligence platform.
