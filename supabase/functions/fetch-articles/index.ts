@@ -688,7 +688,12 @@ async function fetchFromGuardian(topic: any): Promise<any[]> {
 // ─── GDELT ───────────────────────────────────────────────────────────────────
 
 async function fetchFromGDELT(topic: any): Promise<any[]> {
-  const allTerms = expandKeywords(topic.keywords ?? [])
+  const keywords = getTopicKeywords(topic)
+  if (!keywords.length) {
+    console.warn(`GDELT: Topic "${topic.name}" has no keywords — skipping`)
+    return []
+  }
+  const allTerms = expandKeywords(keywords)
   const query = `(${allTerms.map((k: string) => k.includes(' ') ? `"${k}"` : k).join(' OR ')}) (theme:RENEWABLE_ENERGY OR theme:ENV_CLIMATECHANGE)`
   const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&maxrecords=100&format=json&sort=HybridRel&timespan=2d`
 
