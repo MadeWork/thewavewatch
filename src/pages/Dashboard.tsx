@@ -121,6 +121,14 @@ export default function Dashboard() {
         )}
       </div>
 
+      {/* Last updated status */}
+      <p className="text-[11px] text-muted-foreground">
+        {lastRun?.completed_at
+          ? `Last updated: ${formatDistanceToNow(new Date(lastRun.completed_at), { addSuffix: true })}`
+          : "No fetch runs yet"}{" "}
+        · Auto-updates at 6am, 12pm &amp; 6pm
+      </p>
+
       {/* Charts row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
         <div className="monitor-card">
