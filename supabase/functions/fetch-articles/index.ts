@@ -25,6 +25,19 @@ const KEYWORD_EXPANSIONS: Record<string, string[]> = {
   'climate change':     ['global warming', 'climate crisis', 'net zero', 'carbon emissions', 'greenhouse gas'],
 }
 
+function getTopicKeywords(topic: any): string[] {
+  const raw = topic.keywords
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw.filter(k => typeof k === 'string')
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed.filter(k => typeof k === 'string') : []
+    } catch { return [] }
+  }
+  return []
+}
+
 function expandKeywords(keywords: string[]): string[] {
   const expanded = new Set<string>()
   for (const kw of keywords) {
