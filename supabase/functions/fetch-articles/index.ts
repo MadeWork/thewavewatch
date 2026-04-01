@@ -376,7 +376,9 @@ async function fetchRSSUnified(
     .eq('active', true)
     .eq('approval_status', 'approved')
     .not('rss_url', 'is', null)
-    .lt('consecutive_failures', 50)
+    .lt('consecutive_failures', 5)
+    .in('health_status', ['healthy', 'degraded'])
+    .or(`last_fetched_at.is.null,last_fetched_at.lt.${new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString()}`)
     .order('fetch_priority', { ascending: false })
     .limit(150)
 
