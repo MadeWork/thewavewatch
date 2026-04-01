@@ -120,12 +120,46 @@ Deno.serve(async (req) => {
       })
     }
 
+    // Load expanded terms from keywords table for richer matching
+    const { data: keywordRows } = await supabase
+      .from('keywords')
+      .select('text, expanded_terms')
+      .eq('active', true)
+
     // Build per-topic search terms for matching
-    const topicSearchData = topics.map(t => ({
-      topic: t,
-      keywords: t.keywords ?? [],
-      expandedTerms: expandKeywords(t.keywords ?? []).map(k => k.toLowerCase()),
-    }))
+    const topicSearchData = topics.map(t => {
+      const keywords = getTopicKeywords(t)
+      if (!keywords.length) {
+        console.warn(`Topic "${t.name}" has no keywords — will match nothing`)
+      }
+      // Combine topic keywords + KEYWORD_EXPANSIONS + keywords table expanded_terms
+      const allTerms = new Set<string>()
+      const expanded = expandKeywords(keywords)
+      for (const e of expanded) allTerms.add(e.toLowerCase())
+      // Add terms from keywords table
+      for (const row of keywordRows ?? []) {
+        allTerms.add(row.text.toLowerCase())
+        if (row.expanded_terms) {
+          try {
+            const terms = typeof row.expanded_terms === 'string'
+              ? JSON.parse(row.expanded_terms)
+              : row.expanded_terms
+            if (Array.isArray(terms)) {
+              for (const term of terms) {
+                if (typeof term === 'string' && term.length > 2) {
+                  allTerms.add(term.toLowerCase())
+                }
+              }
+            }
+          } catch {}
+        }
+      }
+      return {
+        topic: t,
+        keywords,
+        expandedTerms: Array.from(allTerms),
+      }
+    })
 
     // Create a single ingestion run for the whole batch
     const runId = crypto.randomUUID()
