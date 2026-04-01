@@ -29,7 +29,7 @@ serve(async (req) => {
     // 1. Fetch unenriched articles
     let query = supabase
       .from("articles")
-      .select("id, title, description, source_name, source_url, url, published_at, ingestion_source")
+      .select("id, title, description, source_name, source_url, url, published_at")
       .eq("is_enriched", false)
       .eq("is_duplicate", false)
       .order("created_at", { ascending: true })
