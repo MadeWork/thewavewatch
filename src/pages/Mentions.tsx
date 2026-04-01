@@ -260,6 +260,27 @@ export default function Mentions() {
         </div>
       </div>
 
+      {/* Live fetch banner */}
+      {isFetching && (
+        <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-primary/10 border border-primary/20">
+          <span className="w-2 h-2 rounded-full bg-primary animate-pulse-dot" />
+          <span className="text-xs text-primary font-medium">Fetching latest articles — new mentions will appear automatically</span>
+        </div>
+      )}
+
+      {/* New articles floating pill */}
+      {newCount > 0 && !isLoading && (
+        <button
+          onClick={() => {
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+            setNewCount(0)
+          }}
+          className="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-5 py-2 rounded-full border border-primary/30 bg-card text-primary text-[13px] font-medium cursor-pointer shadow-lg hover:bg-primary/10 transition"
+        >
+          ↑ {newCount} new {newCount === 1 ? 'article' : 'articles'} arrived
+        </button>
+      )}
+
       {/* Quick search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
