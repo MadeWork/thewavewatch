@@ -462,7 +462,7 @@ async function fetchSingleRSSFeedUnified(
   if (!feedUrl) return { items: [], success: true, failures: 0 }
 
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 8000)
+  const timeout = setTimeout(() => controller.abort(), 5000)
 
   try {
     const res = await fetch(feedUrl, {
