@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { format, subMonths } from "date-fns";
@@ -9,6 +9,7 @@ import EmptyState from "@/components/EmptyState";
 import ArticleDetailDrawer from "@/components/ArticleDetailDrawer";
 import SearchBuilder, { SearchQuery } from "@/components/SearchBuilder";
 import { useBookmarks } from "@/hooks/useArticleActions";
+import { useArticles } from "@/hooks/useArticles";
 
 const PAGE_SIZE = 20;
 
@@ -22,20 +23,43 @@ export default function Mentions() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBookmarksOnly, setShowBookmarksOnly] = useState(false);
   const [dateField, setDateField] = useState<"published_at" | "fetched_at">("published_at");
-  const [relevanceFilter, setRelevanceFilter] = useState<"high" | "medium" | "all">("medium");
+  const [relevanceFilter, setRelevanceFilter] = useState<"medium" | "high" | "all">("medium");
   const [majorOnly, setMajorOnly] = useState(false);
+  const [isFetching, setIsFetching] = useState(false);
 
   const { bookmarks, toggleBookmark, isBookmarked } = useBookmarks();
 
-  const { data: articles, isLoading, error } = useQuery({
-    queryKey: ["mentions"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("articles").select("*, sources(name, region, country_code)").neq("source_category", "social" as any).order("published_at", { ascending: false }).limit(1000);
-      if (error) throw error;
-      return data as any[];
-    },
-    refetchInterval: 10000, // Auto-refresh as enrichment completes
-  });
+  const { articles, isLoading, newCount, setNewCount } = useArticles();
+
+  // Track ingestion status in real-time
+  useEffect(() => {
+    const channel = supabase
+      .channel('ingestion-status')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ingestion_runs' },
+        (payload) => {
+          const run = payload.new as any
+          if (run.status === 'running') {
+            setIsFetching(true)
+          }
+          if (run.status === 'success' || run.status === 'failed') {
+            supabase
+              .from('ingestion_runs')
+              .select('id', { count: 'exact', head: true })
+              .eq('status', 'running')
+              .then(({ count }) => {
+                if (!count || count === 0) setIsFetching(false)
+              })
+          }
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [])
+
+  const error = null; // errors handled inside useArticles
 
   const { data: keywordTexts } = useQuery({
     queryKey: ["keywords-texts"],
