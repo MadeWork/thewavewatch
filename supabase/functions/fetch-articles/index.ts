@@ -614,7 +614,11 @@ async function fetchFromGuardian(topic: any): Promise<any[]> {
     return []
   }
 
-  const keywords = topic.keywords as string[]
+  const keywords = getTopicKeywords(topic)
+  if (!keywords.length) {
+    console.warn(`Guardian: Topic "${topic.name}" has no keywords — skipping`)
+    return []
+  }
   const allTerms = expandKeywords(keywords)
   const query = allTerms
     .map((k: string) => k.includes(' ') ? `"${k}"` : k)
