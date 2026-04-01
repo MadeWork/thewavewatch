@@ -33,6 +33,21 @@ export default function Dashboard() {
     },
   });
 
+  const { data: lastRun } = useQuery({
+    queryKey: ["last-ingestion-run"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("ingestion_runs")
+        .select("completed_at")
+        .eq("status", "success")
+        .order("completed_at", { ascending: false })
+        .limit(1)
+        .single();
+      return data;
+    },
+    refetchInterval: 60000,
+  });
+
   const favArticles = useMemo(() => {
     if (!articles || !favKeywords?.length) return [];
     const favTexts = favKeywords.map(k => k.text);
