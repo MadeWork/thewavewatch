@@ -223,6 +223,10 @@ export default function Mentions() {
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-light tracking-tight text-foreground">Mentions</h1>
           <span className="text-xs text-text-muted">({filtered.length})</span>
+          <span className={`inline-flex items-center gap-1.5 text-[10px] ${connected ? 'text-positive' : 'text-text-muted'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-positive animate-pulse' : 'bg-text-muted'}`} />
+            {connected ? 'Live' : 'Connecting...'}
+          </span>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* View toggle */}
