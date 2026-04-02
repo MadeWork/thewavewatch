@@ -257,7 +257,7 @@ Deno.serve(async (req) => {
         const { data: inserted, error: insertError } = await supabase
           .from('articles')
           .upsert(chunk, {
-            onConflict: 'topic_id,external_id,ingestion_source',
+            onConflict: 'url',
             ignoreDuplicates: true,
           })
           .select('id')
