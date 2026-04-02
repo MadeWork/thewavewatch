@@ -78,7 +78,7 @@ export default function Mentions() {
 
   const allCountries = useMemo(() => {
     const c = new Set<string>();
-    (articles ?? []).forEach(a => { const cc = (a.sources as any)?.country_code; if (cc) c.add(cc); });
+    (articles ?? []).forEach(a => { const cc = a.country || (a.sources as any)?.country_code; if (cc) c.add(cc); });
     return Array.from(c).sort();
   }, [articles]);
 

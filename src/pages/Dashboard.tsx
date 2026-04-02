@@ -62,7 +62,7 @@ export default function Dashboard() {
   const weekStart = startOfWeek(now, { weekStartsOn: 1 });
   const monthStart = startOfMonth(now);
 
-  // Use fetched_at for metric cards — published_at is often unreliable / missing
+  // Use created_at for metric cards — published_at is often unreliable / missing
   const todayCount = articles?.filter(a => new Date(a.fetched_at) >= todayStart).length ?? 0;
   const weekCount = articles?.filter(a => new Date(a.fetched_at) >= weekStart).length ?? 0;
   const monthCount = articles?.filter(a => new Date(a.fetched_at) >= monthStart).length ?? 0;

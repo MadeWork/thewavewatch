@@ -70,7 +70,14 @@ serve(async (req) => {
     let duplicates = 0;
 
     for (const article of articles) {
-      const score = scores.find((s: any) => s.id === article.id);
+      const score = scores.find((s: any) => s.id === article.id) ?? {
+        relevance_score: 0.5,
+        relevance_label: 'medium',
+        relevance_reason: 'Unscored — matched keyword filter',
+        sentiment: 'neutral',
+        sentiment_score: 0,
+        key_themes: []
+      };
 
       // Check for duplicates
       const existingDup = recentTitles.find(r => titlesAreSimilar(article.title, r.title));

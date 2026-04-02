@@ -146,7 +146,7 @@ Deno.serve(async (req) => {
               : row.expanded_terms
             if (Array.isArray(terms)) {
               for (const term of terms) {
-                if (typeof term === 'string' && term.length > 2) {
+                if (typeof term === 'string' && term.length > 2 && !/[\u4e00-\u9fff]/.test(term)) {
                   allTerms.add(term.toLowerCase())
                 }
               }
