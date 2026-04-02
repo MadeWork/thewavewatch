@@ -72,7 +72,7 @@ export default function Mentions() {
 
   const allSources = useMemo(() => {
     const s = new Set<string>();
-    (articles ?? []).forEach(a => { const n = (a.sources as any)?.name || a.source_name; if (n) s.add(n); });
+    (articles ?? []).forEach(a => { const n = a.source_name || (a.sources as any)?.name; if (n) s.add(n); });
     return Array.from(s).sort();
   }, [articles]);
 
