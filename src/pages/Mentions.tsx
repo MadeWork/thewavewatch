@@ -30,7 +30,7 @@ export default function Mentions() {
 
   const { bookmarks, toggleBookmark, isBookmarked } = useBookmarks();
 
-  const { articles, isLoading, newCount, setNewCount } = useArticles();
+  const { articles, isLoading, newCount, setNewCount, connected } = useArticles();
 
   // Track ingestion status in real-time
   useEffect(() => {
@@ -72,13 +72,13 @@ export default function Mentions() {
 
   const allSources = useMemo(() => {
     const s = new Set<string>();
-    (articles ?? []).forEach(a => { const n = (a.sources as any)?.name || a.source_name; if (n) s.add(n); });
+    (articles ?? []).forEach(a => { const n = a.source_name || (a.sources as any)?.name; if (n) s.add(n); });
     return Array.from(s).sort();
   }, [articles]);
 
   const allCountries = useMemo(() => {
     const c = new Set<string>();
-    (articles ?? []).forEach(a => { const cc = (a.sources as any)?.country_code; if (cc) c.add(cc); });
+    (articles ?? []).forEach(a => { const cc = a.country || (a.sources as any)?.country_code; if (cc) c.add(cc); });
     return Array.from(c).sort();
   }, [articles]);
 
@@ -223,6 +223,10 @@ export default function Mentions() {
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-light tracking-tight text-foreground">Mentions</h1>
           <span className="text-xs text-text-muted">({filtered.length})</span>
+          <span className={`inline-flex items-center gap-1.5 text-[10px] ${connected ? 'text-positive' : 'text-text-muted'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-positive animate-pulse' : 'bg-text-muted'}`} />
+            {connected ? 'Live' : 'Connecting...'}
+          </span>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* View toggle */}

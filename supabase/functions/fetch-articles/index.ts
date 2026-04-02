@@ -146,7 +146,7 @@ Deno.serve(async (req) => {
               : row.expanded_terms
             if (Array.isArray(terms)) {
               for (const term of terms) {
-                if (typeof term === 'string' && term.length > 2) {
+                if (typeof term === 'string' && term.length > 2 && !/[\u4e00-\u9fff]/.test(term)) {
                   allTerms.add(term.toLowerCase())
                 }
               }
@@ -376,7 +376,7 @@ async function fetchRSSUnified(
     .eq('active', true)
     .eq('approval_status', 'approved')
     .not('rss_url', 'is', null)
-    .lt('consecutive_failures', 5)
+    .lt('consecutive_failures', 10)
     .in('health_status', ['healthy', 'degraded'])
     .or(`last_fetched_at.is.null,last_fetched_at.lt.${new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString()}`)
     .order('fetch_priority', { ascending: false })
