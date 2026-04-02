@@ -239,11 +239,11 @@ Deno.serve(async (req) => {
       for (const a of allArticles) {
         if (!a.ingestion_run_id) a.ingestion_run_id = runId
       }
-      // Deduplicate by external_id + topic_id + ingestion_source
+      // Deduplicate by URL (since url has a unique constraint)
       const seen = new Set<string>()
       const deduped = allArticles.filter(a => {
-        const key = `${a.topic_id}:${a.external_id}:${a.ingestion_source}`
-        if (seen.has(key)) return false
+        const key = a.url
+        if (!key || seen.has(key)) return false
         seen.add(key)
         return true
       })
@@ -257,7 +257,7 @@ Deno.serve(async (req) => {
         const { data: inserted, error: insertError } = await supabase
           .from('articles')
           .upsert(chunk, {
-            onConflict: 'topic_id,external_id,ingestion_source',
+            onConflict: 'url',
             ignoreDuplicates: true,
           })
           .select('id')

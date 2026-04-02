@@ -13,8 +13,8 @@ export function useArticles(topicId?: string) {
     let query = supabase
       .from('articles')
       .select('*')
-      .eq('is_duplicate', false)
-      .not('relevance_label', 'eq', 'noise')
+      .or('is_duplicate.eq.false,is_duplicate.is.null')
+      .or('relevance_label.neq.noise,relevance_label.is.null')
       .order('published_at', { ascending: false })
       .limit(200)
     if (topicId) query = query.eq('topic_id', topicId)
