@@ -30,7 +30,7 @@ export default function Mentions() {
 
   const { bookmarks, toggleBookmark, isBookmarked } = useBookmarks();
 
-  const { articles, isLoading, newCount, setNewCount } = useArticles();
+  const { articles, isLoading, newCount, setNewCount, connected } = useArticles();
 
   // Track ingestion status in real-time
   useEffect(() => {
