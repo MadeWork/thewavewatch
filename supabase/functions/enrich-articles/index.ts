@@ -93,12 +93,12 @@ serve(async (req) => {
       if (isDuplicate) duplicates++;
 
       await supabase.from("articles").update({
-        relevance_score: score?.relevance_score ?? 0.5,
-        relevance_label: score?.relevance_label ?? "medium",
-        relevance_reason: score?.relevance_reason ?? null,
-        sentiment: score?.sentiment ?? "neutral",
-        sentiment_score: score?.sentiment_score ?? 0,
-        key_themes: score?.key_themes ?? [],
+        relevance_score: score.relevance_score,
+        relevance_label: score.relevance_label,
+        relevance_reason: score.relevance_reason,
+        sentiment: score.sentiment,
+        sentiment_score: score.sentiment_score,
+        key_themes: score.key_themes,
         is_duplicate: isDuplicate,
         duplicate_of: duplicateOf,
         is_enriched: true,
