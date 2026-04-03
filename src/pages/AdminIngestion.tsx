@@ -7,9 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
 import { formatDistanceToNow, format, differenceInSeconds } from "date-fns";
 import { useState } from "react";
-import { Activity, Clock, FileText, AlertTriangle, Radio, Play, RefreshCw, Tag, History, Search } from "lucide-react";
+import { Activity, Clock, FileText, AlertTriangle, Radio, Play, RefreshCw, Tag, History, Search, Plus, X, Trash2 } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { toast } from "sonner";
 
 export default function AdminIngestion() {
   const queryClient = useQueryClient();
