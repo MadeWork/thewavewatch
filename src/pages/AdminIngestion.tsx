@@ -332,6 +332,30 @@ export default function AdminIngestion() {
           </Button>
         </CardHeader>
         <CardContent>
+          {showAddTopic && (
+            <div className="mb-4 p-3 rounded-lg border border-border bg-muted/30 space-y-3">
+              <Input
+                placeholder="Topic name, e.g. Offshore Wind"
+                value={newTopicName}
+                onChange={e => setNewTopicName(e.target.value)}
+                className="h-9"
+              />
+              <Input
+                placeholder="Keywords (comma-separated), e.g. offshore wind, floating wind, wind farm"
+                value={newTopicKeywords}
+                onChange={e => setNewTopicKeywords(e.target.value)}
+                className="h-9"
+              />
+              <Button
+                size="sm"
+                onClick={saveTopic}
+                disabled={savingTopic || !newTopicName.trim() || !newTopicKeywords.trim()}
+              >
+                {savingTopic ? <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1" /> : <Plus className="w-3.5 h-3.5 mr-1" />}
+                Create Topic
+              </Button>
+            </div>
+          )}
           {(!topics || topics.length === 0) ? (
             <p className="text-sm text-muted-foreground py-4 text-center">
               No monitored topics. Add topics from the Topics management page.
