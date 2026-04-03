@@ -7,11 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
 import { formatDistanceToNow, format, differenceInSeconds } from "date-fns";
 import { useState } from "react";
-import { Activity, Clock, FileText, AlertTriangle, Radio, Play, RefreshCw, Tag, History, Search } from "lucide-react";
+import { Activity, Clock, FileText, AlertTriangle, Radio, Play, RefreshCw, Tag, History, Search, Plus, X, Trash2 } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { toast } from "sonner";
 
 export default function AdminIngestion() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [triggeringAll, setTriggeringAll] = useState(false);
   const [triggeringTopic, setTriggeringTopic] = useState<string | null>(null);
@@ -19,6 +23,10 @@ export default function AdminIngestion() {
   const [backfillDays, setBackfillDays] = useState(30);
   const [backfilling, setBackfilling] = useState(false);
   const [backfillResult, setBackfillResult] = useState<any>(null);
+  const [showAddTopic, setShowAddTopic] = useState(false);
+  const [newTopicName, setNewTopicName] = useState("");
+  const [newTopicKeywords, setNewTopicKeywords] = useState("");
+  const [savingTopic, setSavingTopic] = useState(false);
 
   // Pipeline health
   const { data: health } = useQuery({
@@ -56,11 +64,35 @@ export default function AdminIngestion() {
         .from("ingestion_runs")
         .select("*, monitored_topics(name)")
         .order("started_at", { ascending: false })
-        .limit(50);
+        .limit(5);
       return (data as any[]) ?? [];
     },
     refetchInterval: 30000,
   });
+
+  const saveTopic = async () => {
+    if (!newTopicName.trim() || !newTopicKeywords.trim() || !user) return;
+    setSavingTopic(true);
+    try {
+      const keywords = newTopicKeywords.split(",").map(k => k.trim()).filter(Boolean);
+      const { error } = await supabase.from("monitored_topics").insert({
+        name: newTopicName.trim(),
+        keywords,
+        user_id: user.id,
+      });
+      if (error) throw error;
+      toast.success(`Topic "${newTopicName.trim()}" created`);
+      setNewTopicName("");
+      setNewTopicKeywords("");
+      setShowAddTopic(false);
+      queryClient.invalidateQueries({ queryKey: ["monitored-topics-admin"] });
+      queryClient.invalidateQueries({ queryKey: ["pipeline-health"] });
+    } catch (err: any) {
+      toast.error(err.message ?? "Failed to save topic");
+    } finally {
+      setSavingTopic(false);
+    }
+  };
 
   // Topics with article counts
   const { data: topics } = useQuery({
@@ -292,10 +324,38 @@ export default function AdminIngestion() {
 
       {/* Section 3: Per-topic breakdown */}
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-3 flex flex-row items-center justify-between">
           <CardTitle className="text-base">Monitored Topics</CardTitle>
+          <Button variant="outline" size="sm" onClick={() => setShowAddTopic(!showAddTopic)}>
+            {showAddTopic ? <X className="w-3.5 h-3.5 mr-1" /> : <Plus className="w-3.5 h-3.5 mr-1" />}
+            {showAddTopic ? "Cancel" : "Add Topic"}
+          </Button>
         </CardHeader>
         <CardContent>
+          {showAddTopic && (
+            <div className="mb-4 p-3 rounded-lg border border-border bg-muted/30 space-y-3">
+              <Input
+                placeholder="Topic name, e.g. Offshore Wind"
+                value={newTopicName}
+                onChange={e => setNewTopicName(e.target.value)}
+                className="h-9"
+              />
+              <Input
+                placeholder="Keywords (comma-separated), e.g. offshore wind, floating wind, wind farm"
+                value={newTopicKeywords}
+                onChange={e => setNewTopicKeywords(e.target.value)}
+                className="h-9"
+              />
+              <Button
+                size="sm"
+                onClick={saveTopic}
+                disabled={savingTopic || !newTopicName.trim() || !newTopicKeywords.trim()}
+              >
+                {savingTopic ? <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1" /> : <Plus className="w-3.5 h-3.5 mr-1" />}
+                Create Topic
+              </Button>
+            </div>
+          )}
           {(!topics || topics.length === 0) ? (
             <p className="text-sm text-muted-foreground py-4 text-center">
               No monitored topics. Add topics from the Topics management page.
