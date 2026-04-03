@@ -64,11 +64,35 @@ export default function AdminIngestion() {
         .from("ingestion_runs")
         .select("*, monitored_topics(name)")
         .order("started_at", { ascending: false })
-        .limit(50);
+        .limit(5);
       return (data as any[]) ?? [];
     },
     refetchInterval: 30000,
   });
+
+  const saveTopic = async () => {
+    if (!newTopicName.trim() || !newTopicKeywords.trim() || !user) return;
+    setSavingTopic(true);
+    try {
+      const keywords = newTopicKeywords.split(",").map(k => k.trim()).filter(Boolean);
+      const { error } = await supabase.from("monitored_topics").insert({
+        name: newTopicName.trim(),
+        keywords,
+        user_id: user.id,
+      });
+      if (error) throw error;
+      toast.success(`Topic "${newTopicName.trim()}" created`);
+      setNewTopicName("");
+      setNewTopicKeywords("");
+      setShowAddTopic(false);
+      queryClient.invalidateQueries({ queryKey: ["monitored-topics-admin"] });
+      queryClient.invalidateQueries({ queryKey: ["pipeline-health"] });
+    } catch (err: any) {
+      toast.error(err.message ?? "Failed to save topic");
+    } finally {
+      setSavingTopic(false);
+    }
+  };
 
   // Topics with article counts
   const { data: topics } = useQuery({
