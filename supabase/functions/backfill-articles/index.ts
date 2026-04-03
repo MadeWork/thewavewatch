@@ -367,7 +367,7 @@ Deno.serve(async (req) => {
 
     const result = {
       topic: topic.name,
-      months: lookbackMonths,
+      days_back: lookbackDays,
       guardian: guardianArticles.length,
       gdelt: gdeltArticles.length,
       perigon: perigonArticles.length,
