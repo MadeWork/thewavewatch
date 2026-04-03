@@ -375,10 +375,6 @@ export default function AdminIngestion() {
                 max={180}
                 step={1}
                 className="py-2"
-              />
-                step={1}
-                className="py-2"
-              />
             </div>
             <Button
               onClick={triggerBackfill}
