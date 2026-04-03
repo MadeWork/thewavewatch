@@ -130,7 +130,7 @@ export default function AdminIngestion() {
           Authorization: `Bearer ${session?.access_token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ topic_id: backfillTopicId, months: backfillMonths }),
+        body: JSON.stringify({ topic_id: backfillTopicId, days_back: backfillDays }),
       });
       const data = await res.json();
       setBackfillResult(data);
