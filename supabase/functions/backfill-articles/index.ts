@@ -271,7 +271,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { topic_id, months = 3 } = await req.json().catch(() => ({}))
+    const { topic_id, months, days_back } = await req.json().catch(() => ({}))
 
     if (!topic_id) {
       return new Response(JSON.stringify({ error: 'topic_id is required' }), {
@@ -280,10 +280,17 @@ Deno.serve(async (req) => {
       })
     }
 
-    const lookbackMonths = Math.min(Math.max(Number(months) || 3, 1), 6)
-    const fromDate = new Date(Date.now() - lookbackMonths * 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    // Support both days_back and months params
+    let lookbackDays: number
+    if (days_back) {
+      lookbackDays = Math.min(Math.max(Number(days_back) || 30, 1), 180)
+    } else {
+      const lookbackMonths = Math.min(Math.max(Number(months) || 3, 1), 6)
+      lookbackDays = lookbackMonths * 30
+    }
+    const fromDate = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
-    console.log(`Backfill starting: topic=${topic_id}, months=${lookbackMonths}, from=${fromDate}`)
+    console.log(`Backfill starting: topic=${topic_id}, days=${lookbackDays}, from=${fromDate}`)
 
     // Fetch topic
     const { data: topic, error: topicError } = await supabase
@@ -360,7 +367,7 @@ Deno.serve(async (req) => {
 
     const result = {
       topic: topic.name,
-      months: lookbackMonths,
+      days_back: lookbackDays,
       guardian: guardianArticles.length,
       gdelt: gdeltArticles.length,
       perigon: perigonArticles.length,
