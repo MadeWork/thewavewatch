@@ -15,6 +15,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
 export default function AdminIngestion() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [triggeringAll, setTriggeringAll] = useState(false);
   const [triggeringTopic, setTriggeringTopic] = useState<string | null>(null);
@@ -22,6 +23,10 @@ export default function AdminIngestion() {
   const [backfillDays, setBackfillDays] = useState(30);
   const [backfilling, setBackfilling] = useState(false);
   const [backfillResult, setBackfillResult] = useState<any>(null);
+  const [showAddTopic, setShowAddTopic] = useState(false);
+  const [newTopicName, setNewTopicName] = useState("");
+  const [newTopicKeywords, setNewTopicKeywords] = useState("");
+  const [savingTopic, setSavingTopic] = useState(false);
 
   // Pipeline health
   const { data: health } = useQuery({
