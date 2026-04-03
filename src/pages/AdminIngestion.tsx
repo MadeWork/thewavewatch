@@ -324,8 +324,12 @@ export default function AdminIngestion() {
 
       {/* Section 3: Per-topic breakdown */}
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-3 flex flex-row items-center justify-between">
           <CardTitle className="text-base">Monitored Topics</CardTitle>
+          <Button variant="outline" size="sm" onClick={() => setShowAddTopic(!showAddTopic)}>
+            {showAddTopic ? <X className="w-3.5 h-3.5 mr-1" /> : <Plus className="w-3.5 h-3.5 mr-1" />}
+            {showAddTopic ? "Cancel" : "Add Topic"}
+          </Button>
         </CardHeader>
         <CardContent>
           {(!topics || topics.length === 0) ? (
