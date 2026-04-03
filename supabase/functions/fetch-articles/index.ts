@@ -120,40 +120,16 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Load expanded terms from keywords table for richer matching
-    const { data: keywordRows } = await supabase
-      .from('keywords')
-      .select('text, expanded_terms')
-      .eq('active', true)
-
-    // Build per-topic search terms for matching
+    // Build per-topic search terms using ONLY topic-specific keywords + expansions
     const topicSearchData = topics.map(t => {
       const keywords = getTopicKeywords(t)
       if (!keywords.length) {
         console.warn(`Topic "${t.name}" has no keywords — will match nothing`)
       }
-      // Combine topic keywords + KEYWORD_EXPANSIONS + keywords table expanded_terms
       const allTerms = new Set<string>()
       const expanded = expandKeywords(keywords)
       for (const e of expanded) allTerms.add(e.toLowerCase())
-      // Add terms from keywords table
-      for (const row of keywordRows ?? []) {
-        allTerms.add(row.text.toLowerCase())
-        if (row.expanded_terms) {
-          try {
-            const terms = typeof row.expanded_terms === 'string'
-              ? JSON.parse(row.expanded_terms)
-              : row.expanded_terms
-            if (Array.isArray(terms)) {
-              for (const term of terms) {
-                if (typeof term === 'string' && term.length > 2 && !/[\u4e00-\u9fff]/.test(term)) {
-                  allTerms.add(term.toLowerCase())
-                }
-              }
-            }
-          } catch {}
-        }
-      }
+      console.log(`Topic "${t.name}": ${allTerms.size} search terms from ${keywords.length} keywords`)
       return {
         topic: t,
         keywords,
