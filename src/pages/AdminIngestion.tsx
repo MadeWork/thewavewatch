@@ -367,12 +367,15 @@ export default function AdminIngestion() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-foreground">Lookback: {backfillMonths} month{backfillMonths > 1 ? "s" : ""}</label>
+              <label className="text-xs font-medium text-foreground">Search {backfillDays} days back</label>
               <Slider
-                value={[backfillMonths]}
-                onValueChange={([v]) => setBackfillMonths(v)}
+                value={[backfillDays]}
+                onValueChange={([v]) => setBackfillDays(v)}
                 min={1}
-                max={6}
+                max={180}
+                step={1}
+                className="py-2"
+              />
                 step={1}
                 className="py-2"
               />
