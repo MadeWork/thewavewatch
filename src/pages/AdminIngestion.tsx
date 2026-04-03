@@ -397,12 +397,14 @@ export default function AdminIngestion() {
           )}
           {backfillResult && !backfillResult.error && (
             <div className="p-3 rounded-lg border border-border bg-card space-y-1">
-              <p className="text-sm font-medium text-foreground">Backfill complete — {backfillResult.topic}</p>
+              <p className="text-sm font-medium text-foreground">
+                ✓ Found {backfillResult.inserted} new articles for "{backfillResult.topic}"
+              </p>
               <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
                 <span>Guardian: {backfillResult.guardian}</span>
                 <span>GDELT: {backfillResult.gdelt}</span>
                 <span>Perigon: {backfillResult.perigon}</span>
-                <span className="text-foreground font-medium">Inserted: {backfillResult.inserted}</span>
+                <span className="text-foreground font-medium">Total inserted: {backfillResult.inserted}</span>
               </div>
             </div>
           )}
