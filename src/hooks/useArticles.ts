@@ -19,6 +19,7 @@ export function useArticles(topicId?: string) {
       .limit(200)
     if (topicId) query = query.eq('topic_id', topicId)
     const { data, error } = await query
+    console.log('useArticles result:', { count: data?.length, error: error?.message, firstTitle: data?.[0]?.title })
     if (error) console.error('useArticles load error:', error.message)
     setArticles(data ?? [])
     setIsLoading(false)
