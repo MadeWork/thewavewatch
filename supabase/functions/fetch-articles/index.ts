@@ -535,13 +535,9 @@ async function fetchPerigonUnified(topicSearchData: TopicSearchData[]): Promise<
         }
       }
 
-      // If no topic matched, assign to first topic (don't lose the article)
+      // If no topic matched, discard — the article isn't relevant
       if (!routed.some(r => r.external_id === article.external_id)) {
-        routed.push({
-          ...article,
-          topic_id: topicSearchData[0].topic.id,
-          user_id: topicSearchData[0].topic.user_id,
-        })
+        console.log(`Perigon: discarding unmatched article "${article.title?.slice(0, 60)}"`)
       }
     }
 
