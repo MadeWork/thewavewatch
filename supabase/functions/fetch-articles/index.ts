@@ -527,6 +527,7 @@ async function fetchPerigonUnified(topicSearchData: TopicSearchData[]): Promise<
   url.searchParams.set('from', from)
   url.searchParams.set('sourceGroup', 'top100')
   url.searchParams.set('source', MAJOR_OUTLET_DOMAINS.slice(0, 30).join(','))
+  url.searchParams.set('category', 'Energy,Environment,Science,Business,Tech')
   url.searchParams.set('sortBy', 'relevance')
   url.searchParams.set('showReprints', 'false')
   url.searchParams.set('size', '100')
