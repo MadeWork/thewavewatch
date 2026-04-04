@@ -13,17 +13,21 @@ const supabase = createClient(
 // ─── KEYWORD EXPANSION ──────────────────────────────────────────────────────
 
 const KEYWORD_EXPANSIONS: Record<string, string[]> = {
-  'marine energy':      ['wave energy', 'wave power', 'tidal energy', 'tidal power', 'ocean energy', 'ocean power', 'sea power', 'blue energy', 'offshore renewables', 'hydrokinetic', 'WEC', 'wave energy converter'],
-  'wave energy':        ['wave power', 'ocean power', 'marine energy', 'ocean energy', 'tidal energy', 'WEC', 'offshore renewables'],
+  'marine energy':      ['wave energy', 'wave power', 'tidal energy', 'tidal power', 'ocean energy', 'ocean power', 'sea power', 'blue energy', 'offshore renewables', 'hydrokinetic', 'wave energy converter'],
+  'wave energy':        ['wave power', 'ocean power', 'marine energy', 'ocean energy', 'tidal energy', 'offshore renewables'],
   'wave power':         ['wave energy', 'marine energy', 'ocean energy', 'tidal power'],
   'tidal energy':       ['tidal power', 'marine energy', 'ocean energy', 'tidal stream', 'tidal current'],
-  'offshore wind':      ['offshore wind farm', 'offshore wind turbine', 'floating wind', 'wind farm'],
+  'offshore wind':      ['offshore wind farm', 'offshore wind turbine', 'floating wind'],
   'renewable energy':   ['clean energy', 'green energy', 'clean power', 'green power', 'decarbonisation', 'net zero energy'],
-  'carbon capture':     ['CCS', 'CCUS', 'carbon sequestration', 'carbon storage', 'net zero'],
-  'electric vehicle':   ['EV', 'electric car', 'battery vehicle', 'EV charging'],
-  'artificial intelligence': ['AI', 'machine learning', 'generative AI', 'large language model', 'LLM'],
-  'climate change':     ['global warming', 'climate crisis', 'net zero', 'carbon emissions', 'greenhouse gas'],
+  'carbon capture':     ['carbon sequestration', 'carbon storage'],
+  'electric vehicle':   ['electric car', 'battery vehicle'],
+  'artificial intelligence': ['machine learning', 'generative ai', 'large language model'],
+  'climate change':     ['global warming', 'climate crisis', 'carbon emissions', 'greenhouse gas'],
 }
+
+// Short/ambiguous terms that MUST NOT be used for substring matching
+// These caused false positives (e.g. WEC = World Endurance Championship, not Wave Energy Converter)
+const BLOCKED_SHORT_TERMS = new Set(['wec', 'ev', 'ai', 'llm', 'ccs', 'ccus'])
 
 function getTopicKeywords(topic: any): string[] {
   const raw = topic.keywords
@@ -52,7 +56,28 @@ function expandKeywords(keywords: string[]): string[] {
       }
     }
   }
+  // Remove blocked short terms that cause false positives
+  for (const blocked of BLOCKED_SHORT_TERMS) {
+    expanded.delete(blocked)
+  }
   return Array.from(expanded)
+}
+
+/** Word-boundary aware matching: ensures multi-word terms match as phrases
+ *  and single-word terms match as whole words (not substrings) */
+function textMatchesTerm(text: string, term: string): boolean {
+  const lower = term.toLowerCase()
+  if (BLOCKED_SHORT_TERMS.has(lower)) return false
+  // For terms shorter than 4 chars, require word boundaries
+  if (lower.length < 4) return false
+  // Use word-boundary regex for all terms
+  try {
+    const escaped = lower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const regex = new RegExp(`\\b${escaped}\\b`, 'i')
+    return regex.test(text)
+  } catch {
+    return text.includes(lower)
+  }
 }
 
 function buildPerigonQuery(keywords: string[]): string {
