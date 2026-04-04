@@ -550,7 +550,7 @@ async function fetchPerigonUnified(topicSearchData: TopicSearchData[]): Promise<
 
       for (const td of topicSearchData) {
         if (!td.topic.sources?.includes('perigon')) continue
-        const matches = td.expandedTerms.some(term => text.includes(term))
+        const matches = td.expandedTerms.some(term => textMatchesTerm(text, term))
         if (matches) {
           routed.push({
             ...article,
