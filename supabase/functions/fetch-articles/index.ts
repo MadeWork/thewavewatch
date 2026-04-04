@@ -13,16 +13,11 @@ const supabase = createClient(
 // ─── KEYWORD EXPANSION ──────────────────────────────────────────────────────
 
 const KEYWORD_EXPANSIONS: Record<string, string[]> = {
-  'marine energy':      ['wave energy', 'wave power', 'tidal energy', 'tidal power', 'ocean energy', 'ocean power', 'sea power', 'blue energy', 'offshore renewables', 'hydrokinetic', 'wave energy converter'],
-  'wave energy':        ['wave power', 'ocean power', 'marine energy', 'ocean energy', 'tidal energy', 'offshore renewables'],
+  'marine energy':      ['wave energy', 'wave power', 'tidal energy', 'tidal power', 'ocean energy', 'ocean power', 'hydrokinetic', 'wave energy converter'],
+  'wave energy':        ['wave power', 'ocean power', 'marine energy', 'ocean energy', 'tidal energy'],
   'wave power':         ['wave energy', 'marine energy', 'ocean energy', 'tidal power'],
   'tidal energy':       ['tidal power', 'marine energy', 'ocean energy', 'tidal stream', 'tidal current'],
-  'offshore wind':      ['offshore wind farm', 'offshore wind turbine', 'floating wind'],
-  'renewable energy':   ['clean energy', 'green energy', 'clean power', 'green power', 'decarbonisation', 'net zero energy'],
-  'carbon capture':     ['carbon sequestration', 'carbon storage'],
-  'electric vehicle':   ['electric car', 'battery vehicle'],
-  'artificial intelligence': ['machine learning', 'generative ai', 'large language model'],
-  'climate change':     ['global warming', 'climate crisis', 'carbon emissions', 'greenhouse gas'],
+  'ocean energy':       ['wave energy', 'wave power', 'tidal energy', 'marine energy', 'hydrokinetic'],
 }
 
 // Short/ambiguous terms that MUST NOT be used for substring matching
