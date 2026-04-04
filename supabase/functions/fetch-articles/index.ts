@@ -414,7 +414,7 @@ async function fetchRSSUnified(
 
           for (const td of topicSearchData) {
             if (!td.topic.sources?.includes('rss')) continue
-            const matches = td.expandedTerms.some(term => text.includes(term))
+            const matches = td.expandedTerms.some(term => textMatchesTerm(text, term))
             if (matches) {
                 const domain = source.domain ?? extractDomainName(source.rss_url)
                 allArticles.push({
