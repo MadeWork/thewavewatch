@@ -593,23 +593,28 @@ async function fetchPerigonUnified(topicSearchData: TopicSearchData[]): Promise<
 function normalisePerigonArticles(articles: any[], fetchSource: string): any[] {
   return articles
     .filter((a: any) => a.title && a.url && a.source?.domain)
-    .map((a: any) => ({
-      external_id: hashUrl(a.url),
-      source_name: a.source?.name ?? a.source?.domain ?? 'Unknown',
-      source_url: a.source?.domain ?? '',
-      title: a.title,
-      description: a.description ?? a.summary ?? null,
-      content: a.content ?? null,
-      author: a.authorsByline ?? (a.authors?.[0]?.name ?? null),
-      published_at: a.pubDate ?? a.addDate ?? new Date().toISOString(),
-      url: a.url,
-      image_url: a.imageUrl ?? null,
-      language: a.language ?? 'en',
-      media_type: 'web',
-      country: a.source?.country ?? null,
-      ingestion_source: fetchSource,
-      is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (a.source?.domain ?? '').includes(m)),
-    }))
+    .map((a: any) => {
+      const pubDate = new Date(a.pubDate ?? a.addDate ?? Date.now())
+      const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
+      return {
+        external_id: hashUrl(a.url),
+        source_name: a.source?.name ?? a.source?.domain ?? 'Unknown',
+        source_url: a.source?.domain ?? '',
+        title: a.title,
+        description: a.description ?? a.summary ?? null,
+        content: a.content ?? null,
+        author: a.authorsByline ?? (a.authors?.[0]?.name ?? null),
+        published_at: a.pubDate ?? a.addDate ?? new Date().toISOString(),
+        url: a.url,
+        image_url: a.imageUrl ?? null,
+        language: a.language ?? 'en',
+        media_type: 'web',
+        country: a.source?.country ?? null,
+        ingestion_source: fetchSource,
+        is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (a.source?.domain ?? '').includes(m)),
+        articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
+      }
+    })
 }
 
 // ─── THE GUARDIAN ────────────────────────────────────────────────────────────
