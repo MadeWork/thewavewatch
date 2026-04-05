@@ -118,18 +118,20 @@ export default function Dashboard() {
       )}
 
       {/* Metrics */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
         {isLoading ? (
           <>
+            <SkeletonCard />
             <SkeletonCard />
             <SkeletonCard />
             <SkeletonCard />
           </>
         ) : (
           <>
-            <MetricCard label="Today" value={todayCount} subtitle="articles fetched" />
-            <MetricCard label="This Week" value={weekCount} subtitle="articles fetched" />
-            <MetricCard label="This Month" value={monthCount} subtitle="articles fetched" />
+            <MetricCard label="Today" value={todayCount} subtitle="last 24h" />
+            <MetricCard label="This Week" value={weekCount} subtitle="last 7d" />
+            <MetricCard label="Total" value={totalCount} subtitle="all articles" />
+            <MetricCard label="Archive" value={archiveCount} subtitle="older than 30d" />
           </>
         )}
       </div>
