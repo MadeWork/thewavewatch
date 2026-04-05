@@ -7,7 +7,7 @@ import SkeletonCard from "@/components/SkeletonCard";
 import EmptyState from "@/components/EmptyState";
 import ErrorBanner from "@/components/ErrorBanner";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { format, subDays, startOfDay, startOfWeek, startOfMonth, formatDistanceToNow } from "date-fns";
+import { format, subDays, formatDistanceToNow } from "date-fns";
 import { ExternalLink, RefreshCw, Loader2, Star, Lock } from "lucide-react";
 import WorldMap from "@/components/WorldMap";
 import { isPaywalled } from "@/lib/paywallSources";
