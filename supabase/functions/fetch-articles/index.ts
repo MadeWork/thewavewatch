@@ -372,11 +372,10 @@ async function fetchRSSUnified(
     .eq('active', true)
     .eq('approval_status', 'approved')
     .not('rss_url', 'is', null)
-    .lt('consecutive_failures', 10)
+    .lt('consecutive_failures', 30)
     .in('health_status', ['healthy', 'degraded'])
-    .or(`last_fetched_at.is.null,last_fetched_at.lt.${new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString()}`)
     .order('fetch_priority', { ascending: false })
-    .limit(150)
+    .limit(300)
 
   if (error || !sources?.length) {
     if (error) console.error('Failed to fetch sources:', error.message)
