@@ -95,6 +95,11 @@ export default function Mentions() {
   const filtered = useMemo(() => {
     let result = articles ?? [];
 
+    // Era filter
+    if (eraFilter === 'Live (7d)') result = result.filter(a => a.published_at && new Date(a.published_at) >= new Date(Date.now() - 7*24*60*60*1000))
+    else if (eraFilter === 'Recent (30d)') result = result.filter(a => a.published_at && new Date(a.published_at) >= new Date(Date.now() - 30*24*60*60*1000) && new Date(a.published_at) < new Date(Date.now() - 7*24*60*60*1000))
+    else if (eraFilter === 'Archive (30d+)') result = result.filter(a => a.published_at && new Date(a.published_at) < new Date(Date.now() - 30*24*60*60*1000))
+
     // Exclude duplicates
     result = result.filter(a => !(a as any).is_duplicate);
 
