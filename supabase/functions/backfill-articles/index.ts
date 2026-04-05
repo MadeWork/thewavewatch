@@ -1,391 +1,132 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-}
-
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-)
-
-const MAJOR_OUTLET_DOMAINS = [
-  'reuters.com', 'apnews.com', 'bloomberg.com', 'afp.com',
-  'nytimes.com', 'washingtonpost.com', 'wsj.com', 'ft.com',
-  'cnbc.com', 'cnn.com', 'nbcnews.com', 'abcnews.go.com',
-  'cbsnews.com', 'npr.org', 'politico.com', 'theatlantic.com',
-  'time.com', 'forbes.com', 'usatoday.com', 'latimes.com',
-  'businessinsider.com',
-  'theguardian.com', 'bbc.com', 'bbc.co.uk', 'thetimes.co.uk',
-  'telegraph.co.uk', 'independent.co.uk', 'sky.com', 'standard.co.uk',
-  'heraldscotland.com', 'scotsman.com',
-  'dn.se', 'svd.se', 'di.se',
-  'spiegel.de', 'faz.net', 'dw.com',
-  'lemonde.fr', 'lefigaro.fr', 'euractiv.com', 'politico.eu',
-  'abc.net.au', 'smh.com.au', 'afr.com', 'nzherald.co.nz',
-]
-
-const KEYWORD_EXPANSIONS: Record<string, string[]> = {
-  'marine energy':      ['wave energy', 'wave power', 'tidal energy', 'tidal power', 'ocean energy', 'ocean power', 'sea power', 'blue energy', 'offshore renewables', 'hydrokinetic', 'WEC'],
-  'wave energy':        ['wave power', 'ocean power', 'marine energy', 'ocean energy', 'tidal energy'],
-  'wave power':         ['wave energy', 'marine energy', 'ocean energy', 'tidal power'],
-  'tidal energy':       ['tidal power', 'marine energy', 'ocean energy', 'tidal stream'],
-  'offshore wind':      ['offshore wind farm', 'floating wind', 'wind farm'],
-  'renewable energy':   ['clean energy', 'green energy', 'clean power', 'decarbonisation', 'net zero energy'],
-  'carbon capture':     ['CCS', 'CCUS', 'carbon sequestration', 'net zero'],
-  'climate change':     ['global warming', 'climate crisis', 'net zero', 'carbon emissions'],
-}
-
-function expandKeywords(keywords: string[]): string[] {
-  const expanded = new Set<string>()
-  for (const kw of keywords) {
-    expanded.add(kw)
-    const lower = kw.toLowerCase()
-    if (KEYWORD_EXPANSIONS[lower]) {
-      for (const syn of KEYWORD_EXPANSIONS[lower]) expanded.add(syn)
-    }
-  }
-  return Array.from(expanded)
-}
-
-function hashUrl(url: string): string {
-  let hash = 0
-  for (let i = 0; i < url.length; i++) {
-    hash = ((hash << 5) - hash) + url.charCodeAt(i)
-    hash |= 0
-  }
-  return Math.abs(hash).toString(36)
-}
-
-function isMajorOutlet(domain: string): boolean {
-  if (!domain) return false
-  const d = domain.replace(/^(www\.|https?:\/\/)/, '').toLowerCase()
-  return MAJOR_OUTLET_DOMAINS.some(m => d.includes(m))
-}
-
-function parseGDELTDate(dateStr: string): string {
-  if (!dateStr || dateStr.length < 14) return new Date().toISOString()
-  const y = dateStr.slice(0, 4), mo = dateStr.slice(4, 6), d = dateStr.slice(6, 8)
-  const h = dateStr.slice(8, 10), mi = dateStr.slice(10, 12), s = dateStr.slice(12, 14)
-  return `${y}-${mo}-${d}T${h}:${mi}:${s}Z`
-}
-
-// ─── GUARDIAN BACKFILL ───────────────────────────────────────────────────────
-
-async function backfillGuardian(keywords: string[], fromDate: string, topicId: string, userId: string): Promise<any[]> {
-  const apiKey = Deno.env.get('GUARDIAN_API_KEY')
-  if (!apiKey) {
-    console.warn('GUARDIAN_API_KEY not set — skipping Guardian backfill')
-    return []
-  }
-
-  const allTerms = expandKeywords(keywords)
-  const query = allTerms.map(k => k.includes(' ') ? `"${k}"` : k).join(' OR ')
-  const allArticles: any[] = []
-  const editions = ['uk', 'us', 'au']
-
-  for (const edition of editions) {
-    // Paginate up to 5 pages (50 results per page = 250 per edition)
-    for (let page = 1; page <= 5; page++) {
-      try {
-        const url = new URL('https://content.guardianapis.com/search')
-        url.searchParams.set('q', query)
-        url.searchParams.set('from-date', fromDate)
-        url.searchParams.set('order-by', 'relevance')
-        url.searchParams.set('show-fields', 'headline,trailText,bodyText,thumbnail,byline,wordcount')
-        url.searchParams.set('page-size', '50')
-        url.searchParams.set('page', String(page))
-        url.searchParams.set('edition', edition)
-        url.searchParams.set('api-key', apiKey)
-
-        const controller = new AbortController()
-        const timeout = setTimeout(() => controller.abort(), 15000)
-        try {
-          const res = await fetch(url.toString(), { signal: controller.signal })
-          if (!res.ok) break
-
-          const data = await res.json()
-          if (data.response?.status !== 'ok') break
-
-          const results = data.response?.results ?? []
-          if (results.length === 0) break
-
-          const articles = results.map((a: any) => ({
-            external_id: hashUrl(a.webUrl),
-            source_name: 'The Guardian',
-            source_url: 'theguardian.com',
-            title: a.fields?.headline ?? a.webTitle,
-            description: a.fields?.trailText ?? null,
-            content: a.fields?.bodyText ?? null,
-            author: a.fields?.byline ?? null,
-            published_at: a.webPublicationDate,
-            url: a.webUrl,
-            image_url: a.fields?.thumbnail ?? null,
-            language: 'en',
-            media_type: 'web',
-            country: edition === 'us' ? 'US' : edition === 'au' ? 'AU' : 'GB',
-            ingestion_source: `guardian-backfill-${edition}`,
-            topic_id: topicId,
-            user_id: userId,
-            is_major_outlet: true,
-          }))
-
-          allArticles.push(...articles)
-          console.log(`Guardian backfill ${edition} page ${page}: ${articles.length} articles`)
-
-          if (results.length < 50) break // no more pages
-        } finally {
-          clearTimeout(timeout)
-        }
-      } catch (err: any) {
-        console.error(`Guardian backfill ${edition} page ${page} failed:`, err.message)
-        break
-      }
-    }
-  }
-
-  return allArticles
-}
-
-// ─── GDELT BACKFILL ──────────────────────────────────────────────────────────
-
-async function backfillGDELT(keywords: string[], fromDate: string, topicId: string, userId: string): Promise<any[]> {
-  const allTerms = expandKeywords(keywords)
-  // Use GDELT's HybridRel sorting which prioritises major outlets
-  const query = `(${allTerms.map(k => k.includes(' ') ? `"${k}"` : k).join(' OR ')}) (theme:RENEWABLE_ENERGY OR theme:ENV_CLIMATECHANGE)`
-
-  // Calculate timespan in days from fromDate
-  const fromMs = new Date(fromDate).getTime()
-  const nowMs = Date.now()
-  const days = Math.min(Math.ceil((nowMs - fromMs) / (24 * 60 * 60 * 1000)), 180)
-
-  const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&maxrecords=250&format=json&sort=HybridRel&timespan=${days}d`
-
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 30000)
-
-  try {
-    const res = await fetch(url, { signal: controller.signal })
-    if (!res.ok) throw new Error(`GDELT responded ${res.status}`)
-
-    const data = await res.json()
-    const articles = (data.articles ?? [])
-      .filter((a: any) => a.title && a.url)
-      .map((a: any) => ({
-        external_id: hashUrl(a.url),
-        source_name: a.domain ?? 'Unknown',
-        source_url: a.domain ?? '',
-        title: a.title,
-        description: null,
-        content: null,
-        author: null,
-        published_at: parseGDELTDate(a.seendate),
-        url: a.url,
-        image_url: null,
-        language: a.language ?? 'en',
-        media_type: 'web',
-        country: a.sourcecountry,
-        ingestion_source: 'gdelt-backfill',
-        topic_id: topicId,
-        user_id: userId,
-        is_major_outlet: isMajorOutlet(a.domain ?? ''),
-      }))
-
-    console.log(`GDELT backfill: ${articles.length} articles (${days}d lookback)`)
-    return articles
-  } catch (err: any) {
-    console.error('GDELT backfill failed:', err.message)
-    return []
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
-// ─── PERIGON BACKFILL ────────────────────────────────────────────────────────
-
-async function backfillPerigon(keywords: string[], fromDate: string, topicId: string, userId: string): Promise<any[]> {
-  const apiKey = Deno.env.get('PERIGON_API_KEY')
-  if (!apiKey) {
-    console.warn('PERIGON_API_KEY not set — skipping Perigon backfill')
-    return []
-  }
-
-  const allTerms = expandKeywords(keywords)
-  const query = allTerms.map(k => k.includes(' ') ? `"${k}"` : k).join(' OR ')
-
-  const url = new URL('https://api.goperigon.com/v1/all')
-  url.searchParams.set('q', query)
-  url.searchParams.set('from', fromDate)
-  url.searchParams.set('sourceGroup', 'top100')
-  url.searchParams.set('sortBy', 'relevance')
-  url.searchParams.set('showReprints', 'false')
-  url.searchParams.set('size', '100')
-  url.searchParams.set('apiKey', apiKey)
-
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 15000)
-
-  try {
-    const res = await fetch(url.toString(), { signal: controller.signal })
-    if (!res.ok) throw new Error(`Perigon responded ${res.status}`)
-
-    const data = await res.json()
-    const articles = (data.articles ?? [])
-      .filter((a: any) => a.title && a.url && a.source?.domain)
-      .map((a: any) => ({
-        external_id: hashUrl(a.url),
-        source_name: a.source?.name ?? a.source?.domain ?? 'Unknown',
-        source_url: a.source?.domain ?? '',
-        title: a.title,
-        description: a.description ?? a.summary ?? null,
-        content: a.content ?? null,
-        author: a.authorsByline ?? (a.authors?.[0]?.name ?? null),
-        published_at: a.pubDate ?? a.addDate ?? new Date().toISOString(),
-        url: a.url,
-        image_url: a.imageUrl ?? null,
-        language: a.language ?? 'en',
-        media_type: 'web',
-        country: a.source?.country ?? null,
-        ingestion_source: 'perigon-backfill',
-        topic_id: topicId,
-        user_id: userId,
-        is_major_outlet: isMajorOutlet(a.source?.domain ?? ''),
-      }))
-
-    console.log(`Perigon backfill: ${articles.length} articles`)
-    return articles
-  } catch (err: any) {
-    console.error('Perigon backfill failed:', err.message)
-    return []
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
-// ─── MAIN HANDLER ────────────────────────────────────────────────────────────
+const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
+const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
-  }
-
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
   try {
-    const { topic_id, months, days_back } = await req.json().catch(() => ({}))
+    const body = await req.json().catch(() => ({}))
+    const { topic_id, days_back: rawDays = 30 } = body
+    const days_back = Math.min(Number(rawDays) || 30, 120)
+    if (!topic_id) return new Response(JSON.stringify({ error: 'topic_id required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
-    if (!topic_id) {
-      return new Response(JSON.stringify({ error: 'topic_id is required' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+    const { data: topic } = await supabase.from('monitored_topics').select('*').eq('id', topic_id).single()
+    if (!topic) return new Response(JSON.stringify({ error: 'Topic not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+
+    let keywords: string[] = []
+    const raw = topic.keywords
+    if (Array.isArray(raw)) keywords = raw.filter((k: any) => typeof k === 'string')
+    else if (typeof raw === 'string') { try { keywords = JSON.parse(raw) } catch {} }
+    if (!keywords.length) return new Response(JSON.stringify({ error: 'No keywords' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+
+    const fromDate = new Date(Date.now() - days_back * 24 * 60 * 60 * 1000)
+    const fromDateStr = fromDate.toISOString().split('T')[0]
+    const allArticles: any[] = []
+    const sourceCounts: Record<string, number> = { guardian: 0, gdelt: 0, perigon: 0, google: 0 }
+
+    const setEra = (pubDate: string | null) => {
+      if (!pubDate) return 'archive'
+      const ageDays = (Date.now() - new Date(pubDate).getTime()) / (1000 * 60 * 60 * 24)
+      if (ageDays <= 7) return 'live'
+      if (ageDays <= 30) return 'recent'
+      return 'archive'
     }
 
-    // Support both days_back and months params
-    let lookbackDays: number
-    if (days_back) {
-      lookbackDays = Math.min(Math.max(Number(days_back) || 30, 1), 180)
-    } else {
-      const lookbackMonths = Math.min(Math.max(Number(months) || 3, 1), 6)
-      lookbackDays = lookbackMonths * 30
-    }
-    const fromDate = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-
-    console.log(`Backfill starting: topic=${topic_id}, days=${lookbackDays}, from=${fromDate}`)
-
-    // Fetch topic
-    const { data: topic, error: topicError } = await supabase
-      .from('monitored_topics')
-      .select('*')
-      .eq('id', topic_id)
-      .single()
-
-    if (topicError || !topic) {
-      return new Response(JSON.stringify({ error: 'Topic not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+    // GUARDIAN
+    const guardianKey = Deno.env.get('GUARDIAN_API_KEY')
+    if (guardianKey) {
+      try {
+        const query = keywords.map((k: string) => k.includes(' ') ? `"${k}"` : k).join(' OR ')
+        const url = new URL('https://content.guardianapis.com/search')
+        url.searchParams.set('q', query)
+        url.searchParams.set('from-date', fromDateStr)
+        url.searchParams.set('order-by', 'relevance')
+        url.searchParams.set('show-fields', 'headline,trailText,byline,thumbnail')
+        url.searchParams.set('page-size', '50')
+        url.searchParams.set('api-key', guardianKey)
+        const res = await fetch(url.toString())
+        if (res.ok) {
+          const data = await res.json()
+          const articles = (data.response?.results ?? []).map((a: any) => ({ external_id: hashUrl(a.webUrl), topic_id: topic.id, user_id: topic.user_id, source_name: 'The Guardian', source_url: 'theguardian.com', title: a.fields?.headline ?? a.webTitle, description: a.fields?.trailText ?? null, author: a.fields?.byline ?? null, published_at: a.webPublicationDate, url: a.webUrl, image_url: a.fields?.thumbnail ?? null, language: 'en', media_type: 'web', ingestion_source: 'guardian-backfill', articles_era: setEra(a.webPublicationDate), is_duplicate: false }))
+          allArticles.push(...articles)
+          sourceCounts.guardian = articles.length
+        }
+      } catch (err: any) { console.error('Guardian backfill:', err.message) }
     }
 
-    const keywords = topic.keywords ?? []
-    if (keywords.length === 0) {
-      return new Response(JSON.stringify({ error: 'Topic has no keywords' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    // Run all three sources in parallel
-    const [guardianArticles, gdeltArticles, perigonArticles] = await Promise.all([
-      backfillGuardian(keywords, fromDate, topic.id, topic.user_id),
-      backfillGDELT(keywords, fromDate, topic.id, topic.user_id),
-      backfillPerigon(keywords, fromDate, topic.id, topic.user_id),
-    ])
-
-    const allArticles = [...guardianArticles, ...gdeltArticles, ...perigonArticles]
-
-    // Deduplicate
-    const seen = new Set<string>()
-    const deduped = allArticles.filter(a => {
-      const key = `${a.topic_id}:${a.external_id}:${a.ingestion_source}`
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-
-    console.log(`Backfill: ${deduped.length} unique articles (${allArticles.length} raw)`)
-
-    // Bulk upsert in chunks
-    let insertedCount = 0
-    const CHUNK_SIZE = 200
-    for (let i = 0; i < deduped.length; i += CHUNK_SIZE) {
-      const chunk = deduped.slice(i, i + CHUNK_SIZE)
-      const { data: inserted, error: insertError } = await supabase
-        .from('articles')
-        .upsert(chunk, {
-          onConflict: 'url',
-          ignoreDuplicates: true,
-        })
-        .select('id')
-
-      if (insertError) {
-        console.error('Backfill upsert error:', insertError.message)
+    // GDELT
+    try {
+      const gdeltQuery = keywords.slice(0, 3).join(' ')
+      const startDt = fromDate.toISOString().replace(/[-:T]/g, '').slice(0, 14)
+      const endDt = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)
+      const res = await fetch(`https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(gdeltQuery)}&mode=artlist&maxrecords=100&format=json&startdatetime=${startDt}&enddatetime=${endDt}`)
+      if (res.ok) {
+        const data = await res.json()
+        const articles = (data.articles ?? []).filter((a: any) => a.title && a.url).map((a: any) => { const pub = parseGDELTDate(a.seendate); return { external_id: hashUrl(a.url), topic_id: topic.id, user_id: topic.user_id, source_name: a.domain ?? 'Unknown', source_url: a.domain ?? '', title: a.title, description: null, author: null, published_at: pub, url: a.url, image_url: null, language: a.language ?? 'en', media_type: 'web', ingestion_source: 'gdelt-backfill', articles_era: setEra(pub), is_duplicate: false } })
+        allArticles.push(...articles)
+        sourceCounts.gdelt = articles.length
       }
-      insertedCount += inserted?.length ?? 0
+    } catch (err: any) { console.error('GDELT backfill:', err.message) }
+
+    // PERIGON
+    const perigonKey = Deno.env.get('PERIGON_API_KEY')
+    if (perigonKey) {
+      try {
+        const query = keywords.map((k: string) => k.includes(' ') ? `"${k}"` : k).join(' OR ')
+        const url = new URL('https://api.goperigon.com/v1/all')
+        url.searchParams.set('q', query)
+        url.searchParams.set('from', fromDate.toISOString())
+        url.searchParams.set('sortBy', 'relevance')
+        url.searchParams.set('showReprints', 'false')
+        url.searchParams.set('size', '50')
+        url.searchParams.set('apiKey', perigonKey)
+        const res = await fetch(url.toString())
+        if (res.ok) {
+          const data = await res.json()
+          const articles = (data.articles ?? []).filter((a: any) => a.title && a.url && a.source?.domain).map((a: any) => ({ external_id: hashUrl(a.url), topic_id: topic.id, user_id: topic.user_id, source_name: a.source?.name ?? a.source?.domain ?? 'Unknown', source_url: a.source?.domain ?? '', title: a.title, description: a.description ?? a.summary ?? null, author: a.authorsByline ?? null, published_at: a.pubDate ?? a.addDate ?? new Date().toISOString(), url: a.url, image_url: a.imageUrl ?? null, language: a.language ?? 'en', media_type: 'web', ingestion_source: 'perigon-backfill', articles_era: setEra(a.pubDate ?? a.addDate), is_duplicate: false }))
+          allArticles.push(...articles)
+          sourceCounts.perigon = articles.length
+        }
+      } catch (err: any) { console.error('Perigon backfill:', err.message) }
     }
 
-    // Trigger enrichment
-    const projectUrl = Deno.env.get('SUPABASE_URL')!
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    fetch(`${projectUrl}/functions/v1/enrich-articles`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${serviceKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({}),
-    }).catch(err => console.error('Failed to trigger enrichment after backfill:', err))
+    // GOOGLE NEWS
+    try {
+      const gnQuery = keywords.slice(0, 3).map((k: string) => k.includes(' ') ? `"${k}"` : k).join(' OR ')
+      const res = await fetch(`https://news.google.com/rss/search?q=${encodeURIComponent(gnQuery)}&hl=en&gl=GB&ceid=GB:en`, { headers: { 'User-Agent': 'WaveWatch/1.0 media monitoring' } })
+      if (res.ok) {
+        const xml = await res.text()
+        const items = parseRSSXML(xml)
+        const articles = items.filter((item: any) => item.title && item.link).map((item: any) => ({ external_id: hashUrl(item.link ?? ''), topic_id: topic.id, user_id: topic.user_id, source_name: extractDomainName(item.link ?? ''), source_url: extractDomainName(item.link ?? ''), title: item.title, description: item.description ?? null, author: null, published_at: item.pubDate ?? new Date().toISOString(), url: item.link, image_url: null, language: 'en', media_type: 'web', ingestion_source: 'google-news-backfill', articles_era: setEra(item.pubDate), is_duplicate: false }))
+        allArticles.push(...articles)
+        sourceCounts.google = articles.length
+      }
+    } catch (err: any) { console.error('Google News backfill:', err.message) }
 
-    const result = {
-      topic: topic.name,
-      days_back: lookbackDays,
-      guardian: guardianArticles.length,
-      gdelt: gdeltArticles.length,
-      perigon: perigonArticles.length,
-      total_unique: deduped.length,
-      inserted: insertedCount,
-    }
+    if (!allArticles.length) return new Response(JSON.stringify({ inserted: 0, found: 0, message: 'No articles found' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
-    console.log('Backfill complete:', JSON.stringify(result))
+    const seen = new Set<string>()
+    const deduped = allArticles.filter(a => { if (!a.external_id || seen.has(a.external_id)) return false; seen.add(a.external_id); return true })
 
-    return new Response(JSON.stringify(result), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('backfill-articles error:', msg)
-    return new Response(JSON.stringify({ error: msg }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    const { data: inserted, error: insertError } = await supabase.from('articles').upsert(deduped, { onConflict: 'url', ignoreDuplicates: true }).select('id')
+    if (insertError) return new Response(JSON.stringify({ error: insertError.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+
+    return new Response(JSON.stringify({ inserted: inserted?.length ?? 0, found: allArticles.length, days_back, sources: sourceCounts }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+  } catch (err: any) {
+    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   }
 })
+
+function hashUrl(url: string): string { let h = 0; for (let i = 0; i < url.length; i++) { h = ((h << 5) - h) + url.charCodeAt(i); h |= 0 } return Math.abs(h).toString(36) }
+function parseGDELTDate(d: string): string { if (!d || d.length < 14) return new Date().toISOString(); return `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}T${d.slice(8,10)}:${d.slice(10,12)}:${d.slice(12,14)}Z` }
+function extractDomainName(url: string): string { try { return new URL(url).hostname.replace('www.', '') } catch { return url } }
+function parseRSSXML(xml: string): any[] {
+  const items: any[] = []
+  const isAtom = xml.includes('<feed') && xml.includes('xmlns')
+  if (isAtom) { for (const m of xml.matchAll(/<entry[^>]*>([\s\S]*?)<\/entry>/gi)) { const e = m[1]; items.push({ title: extractXMLText(e,'title'), link: extractXMLAttr(e,'link','href') ?? extractXMLText(e,'link'), description: extractXMLText(e,'summary') ?? extractXMLText(e,'content'), pubDate: extractXMLText(e,'published') ?? extractXMLText(e,'updated'), guid: extractXMLText(e,'id') }) } }
+  else { for (const m of xml.matchAll(/<item[^>]*>([\s\S]*?)<\/item>/gi)) { const i = m[1]; items.push({ title: extractXMLText(i,'title'), link: extractXMLText(i,'link'), description: extractXMLText(i,'description'), pubDate: extractXMLText(i,'pubDate') ?? extractXMLText(i,'dc:date'), guid: extractXMLText(i,'guid') }) } }
+  return items.filter(i => i.title && (i.link || i.guid))
+}
+function extractXMLText(xml: string, tag: string): string | null { const c = xml.match(new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\/${tag}>`, 'i')); if (c) return c[1].trim(); const t = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\/${tag}>`, 'i')); if (t) return t[1].replace(/<[^>]+>/g, '').trim() || null; return null }
+function extractXMLAttr(xml: string, tag: string, attr: string): string | null { const m = xml.match(new RegExp(`<${tag}[^>]*\\s${attr}="([^"]*)"`, 'i')); return m ? m[1] : null }
