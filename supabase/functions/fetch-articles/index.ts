@@ -661,23 +661,28 @@ async function fetchFromGuardian(topic: any): Promise<any[]> {
         const data = await res.json()
         if (data.response?.status !== 'ok') throw new Error(`Guardian API error: ${data.response?.message}`)
 
-        const articles = (data.response?.results ?? []).map((a: any) => ({
-          external_id: hashUrl(a.webUrl),
-          source_name: 'The Guardian',
-          source_url: 'theguardian.com',
-          title: a.fields?.headline ?? a.webTitle,
-          description: a.fields?.trailText ?? null,
-          content: a.fields?.bodyText ?? null,
-          author: a.fields?.byline ?? null,
-          published_at: a.webPublicationDate,
-          url: a.webUrl,
-          image_url: a.fields?.thumbnail ?? null,
-          language: 'en',
-          media_type: 'web',
-          country: edition === 'us' ? 'US' : edition === 'au' ? 'AU' : 'GB',
-          ingestion_source: `guardian-${edition}`,
-          is_major_outlet: true,
-        }))
+        const articles = (data.response?.results ?? []).map((a: any) => {
+          const pubDate = new Date(a.webPublicationDate ?? Date.now())
+          const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
+          return {
+            external_id: hashUrl(a.webUrl),
+            source_name: 'The Guardian',
+            source_url: 'theguardian.com',
+            title: a.fields?.headline ?? a.webTitle,
+            description: a.fields?.trailText ?? null,
+            content: a.fields?.bodyText ?? null,
+            author: a.fields?.byline ?? null,
+            published_at: a.webPublicationDate,
+            url: a.webUrl,
+            image_url: a.fields?.thumbnail ?? null,
+            language: 'en',
+            media_type: 'web',
+            country: edition === 'us' ? 'US' : edition === 'au' ? 'AU' : 'GB',
+            ingestion_source: `guardian-${edition}`,
+            is_major_outlet: true,
+            articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
+          }
+        })
 
         allArticles.push(...articles)
         console.log(`Guardian ${edition}: ${articles.length} articles`)
