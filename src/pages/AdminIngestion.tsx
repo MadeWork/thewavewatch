@@ -23,6 +23,7 @@ export default function AdminIngestion() {
   const [backfillDays, setBackfillDays] = useState(30);
   const [backfilling, setBackfilling] = useState(false);
   const [backfillResult, setBackfillResult] = useState<any>(null);
+  const [backfillError, setBackfillError] = useState<string | null>(null);
   const [showAddTopic, setShowAddTopic] = useState(false);
   const [newTopicName, setNewTopicName] = useState("");
   const [newTopicKeywords, setNewTopicKeywords] = useState("");
