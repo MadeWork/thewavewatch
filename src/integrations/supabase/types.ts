@@ -306,6 +306,7 @@ export type Database = {
       articles: {
         Row: {
           ai_summary: string | null
+          articles_era: string | null
           author: string | null
           author_email: string | null
           author_name: string | null
@@ -355,6 +356,7 @@ export type Database = {
         }
         Insert: {
           ai_summary?: string | null
+          articles_era?: string | null
           author?: string | null
           author_email?: string | null
           author_name?: string | null
@@ -404,6 +406,7 @@ export type Database = {
         }
         Update: {
           ai_summary?: string | null
+          articles_era?: string | null
           author?: string | null
           author_email?: string | null
           author_name?: string | null
