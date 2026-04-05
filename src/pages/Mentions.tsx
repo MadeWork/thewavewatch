@@ -450,6 +450,7 @@ export default function Mentions() {
                     ) : (
                       <span className="text-xs text-text-muted italic opacity-60">imported {format(new Date(a.fetched_at), "MMM d")}</span>
                     )}
+                    {(() => { const b = getEraBadge(a); return b ? <span className={b.className}>{b.label}</span> : null })()}
                     {a.published_at && dateField === "fetched_at" && (
                       <span className="text-[9px] text-text-muted opacity-60">pub: {format(new Date(a.published_at), "MMM d")}</span>
                     )}
