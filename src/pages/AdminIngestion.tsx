@@ -154,24 +154,17 @@ export default function AdminIngestion() {
     if (!backfillTopicId) return;
     setBackfilling(true);
     setBackfillResult(null);
+    setBackfillError(null);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/backfill-articles`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session?.access_token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ topic_id: backfillTopicId, days_back: backfillDays }),
+      const { data, error } = await supabase.functions.invoke('backfill-articles', {
+        body: { topic_id: backfillTopicId, days_back: backfillDays },
       });
-      const data = await res.json();
+      if (error) throw error;
       setBackfillResult(data);
       queryClient.invalidateQueries({ queryKey: ["pipeline-health"] });
       queryClient.invalidateQueries({ queryKey: ["monitored-topics-admin"] });
-    } catch (err) {
-      console.error("Backfill failed:", err);
-      setBackfillResult({ error: "Backfill request failed" });
+    } catch (err: any) {
+      setBackfillError(err.message ?? "Backfill failed");
     } finally {
       setBackfilling(false);
     }
