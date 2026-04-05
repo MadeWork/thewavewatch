@@ -14,6 +14,15 @@ import { isPaywalled } from "@/lib/paywallSources";
 
 const PAGE_SIZE = 20;
 
+function getEraBadge(article: any): { label: string; className: string } | null {
+  const pubDate = article.published_at ? new Date(article.published_at) : null
+  if (!pubDate) return null
+  const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
+  if (ageDays > 30) return { label: `${Math.round(ageDays)}d ago`, className: 'text-muted-foreground bg-muted text-xs px-2 py-0.5 rounded-full' }
+  if (ageDays > 7) return { label: `${Math.round(ageDays)}d ago`, className: 'text-blue-400 bg-blue-500/10 text-xs px-2 py-0.5 rounded-full' }
+  return null
+}
+
 export default function Mentions() {
   const [page, setPage] = useState(0);
   const [viewMode, setViewMode] = useState<"list" | "table">("list");
@@ -27,6 +36,7 @@ export default function Mentions() {
   const [relevanceFilter, setRelevanceFilter] = useState<"medium" | "high" | "all">("medium");
   const [majorOnly, setMajorOnly] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
+  const [eraFilter, setEraFilter] = useState<string>('All');
 
   const { bookmarks, toggleBookmark, isBookmarked } = useBookmarks();
 
@@ -84,6 +94,11 @@ export default function Mentions() {
 
   const filtered = useMemo(() => {
     let result = articles ?? [];
+
+    // Era filter
+    if (eraFilter === 'Live (7d)') result = result.filter(a => a.published_at && new Date(a.published_at) >= new Date(Date.now() - 7*24*60*60*1000))
+    else if (eraFilter === 'Recent (30d)') result = result.filter(a => a.published_at && new Date(a.published_at) >= new Date(Date.now() - 30*24*60*60*1000) && new Date(a.published_at) < new Date(Date.now() - 7*24*60*60*1000))
+    else if (eraFilter === 'Archive (30d+)') result = result.filter(a => a.published_at && new Date(a.published_at) < new Date(Date.now() - 30*24*60*60*1000))
 
     // Exclude duplicates
     result = result.filter(a => !(a as any).is_duplicate);
@@ -155,7 +170,7 @@ export default function Mentions() {
       return new Date(dateB).getTime() - new Date(dateA).getTime();
     });
     return result;
-  }, [articles, quickSearch, searchQuery, showBookmarksOnly, bookmarks, dateField, relevanceFilter, majorOnly]);
+  }, [articles, quickSearch, searchQuery, showBookmarksOnly, bookmarks, dateField, relevanceFilter, majorOnly, eraFilter]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -305,6 +320,14 @@ export default function Mentions() {
         />
       )}
 
+      {/* Era filter */}
+      <div className="flex gap-2 items-center flex-wrap">
+        <span className="text-xs text-muted-foreground">Period:</span>
+        {['All','Live (7d)','Recent (30d)','Archive (30d+)'].map(period => (
+          <button key={period} onClick={() => { setEraFilter(period); setPage(0); }} className={`text-xs px-3 py-1 rounded-full border transition-colors ${eraFilter === period ? 'bg-primary text-primary-foreground border-primary' : 'bg-background text-muted-foreground border-border hover:border-primary'}`}>{period}</button>
+        ))}
+      </div>
+
       {/* Relevance filter bar */}
       <div className="flex items-center gap-1.5">
         <span className="text-[10px] text-text-muted mr-1">Quality:</span>
@@ -427,6 +450,7 @@ export default function Mentions() {
                     ) : (
                       <span className="text-xs text-text-muted italic opacity-60">imported {format(new Date(a.fetched_at), "MMM d")}</span>
                     )}
+                    {(() => { const b = getEraBadge(a); return b ? <span className={b.className}>{b.label}</span> : null })()}
                     {a.published_at && dateField === "fetched_at" && (
                       <span className="text-[9px] text-text-muted opacity-60">pub: {format(new Date(a.published_at), "MMM d")}</span>
                     )}
