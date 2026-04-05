@@ -320,6 +320,14 @@ export default function Mentions() {
         />
       )}
 
+      {/* Era filter */}
+      <div className="flex gap-2 items-center flex-wrap">
+        <span className="text-xs text-muted-foreground">Period:</span>
+        {['All','Live (7d)','Recent (30d)','Archive (30d+)'].map(period => (
+          <button key={period} onClick={() => { setEraFilter(period); setPage(0); }} className={`text-xs px-3 py-1 rounded-full border transition-colors ${eraFilter === period ? 'bg-primary text-primary-foreground border-primary' : 'bg-background text-muted-foreground border-border hover:border-primary'}`}>{period}</button>
+        ))}
+      </div>
+
       {/* Relevance filter bar */}
       <div className="flex items-center gap-1.5">
         <span className="text-[10px] text-text-muted mr-1">Quality:</span>
