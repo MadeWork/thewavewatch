@@ -73,14 +73,11 @@ export default function Dashboard() {
   }, [articles, favKeywords]);
 
   const now = new Date();
-  const todayStart = startOfDay(now);
-  const weekStart = startOfWeek(now, { weekStartsOn: 1 });
-  const monthStart = startOfMonth(now);
 
-  // Use created_at for metric cards — published_at is often unreliable / missing
-  const todayCount = articles?.filter(a => new Date(a.fetched_at) >= todayStart).length ?? 0;
-  const weekCount = articles?.filter(a => new Date(a.fetched_at) >= weekStart).length ?? 0;
-  const monthCount = articles?.filter(a => new Date(a.fetched_at) >= monthStart).length ?? 0;
+  const todayCount = dashCounts?.todayCount ?? 0;
+  const weekCount = dashCounts?.weekCount ?? 0;
+  const totalCount = dashCounts?.totalCount ?? 0;
+  const archiveCount = dashCounts?.archiveCount ?? 0;
 
   const lineData = Array.from({ length: 30 }, (_, i) => {
     const date = subDays(now, 29 - i);
