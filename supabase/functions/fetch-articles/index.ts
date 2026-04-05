@@ -409,8 +409,17 @@ async function fetchRSSUnified(
           for (const td of topicSearchData) {
             if (!td.topic.sources?.includes('rss')) continue
             const matches = td.expandedTerms.some(term => textMatchesTerm(text, term))
+            // For high-priority sources, also match broad energy terms
+            if (!matches && (source.fetch_priority ?? 0) >= 80) {
+              const broadMatch = BROAD_ENERGY_TERMS.some(term => text.includes(term))
+              if (broadMatch) {
+                // Still require at least one topic term for high-priority broad match
+              }
+            }
             if (matches) {
                 const domain = source.domain ?? extractDomainName(source.rss_url)
+                const pubDate = item.pubDate ? new Date(item.pubDate) : new Date()
+                const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
                 allArticles.push({
                 external_id: hashUrl(item.link ?? item.guid ?? ''),
                 source_name: source.name ?? source.domain ?? '',
@@ -430,6 +439,7 @@ async function fetchRSSUnified(
                 user_id: td.topic.user_id,
                 ingestion_run_id: undefined,
                 is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (domain || '').includes(m)),
+                articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
               })
             }
           }
