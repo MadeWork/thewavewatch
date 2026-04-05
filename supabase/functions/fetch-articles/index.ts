@@ -85,6 +85,9 @@ function buildPerigonQuery(keywords: string[]): string {
     .join(' OR ')
 }
 
+// ─── BROAD ENERGY TERMS (for high-priority source matching) ─────────────────
+const BROAD_ENERGY_TERMS = ['renewable','clean energy','offshore','ocean','maritime','marine','tidal','wave power','corpower','minesto','orbital marine','energy transition','net zero','decarboni','floating wind','seabed','hydrokinetic','blue energy']
+
 // ─── MAJOR OUTLET DOMAINS ────────────────────────────────────────────────────
 
 const MAJOR_OUTLET_DOMAINS = [
