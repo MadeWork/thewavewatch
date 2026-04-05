@@ -724,23 +724,29 @@ async function fetchFromGDELT(topic: any): Promise<any[]> {
     const data = await res.json()
     return (data.articles ?? [])
       .filter((a: any) => a.title && a.url)
-      .map((a: any) => ({
-        external_id: hashUrl(a.url),
-        source_name: a.domain ?? 'Unknown',
-        source_url: a.domain ?? '',
-        title: a.title,
-        description: null,
-        content: null,
-        author: null,
-        published_at: parseGDELTDate(a.seendate),
-        url: a.url,
-        image_url: null,
-        language: a.language ?? topic.language ?? 'en',
-        media_type: 'web',
-        country: a.sourcecountry,
-        ingestion_source: 'gdelt',
-        is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (a.domain ?? '').includes(m)),
-      }))
+      .map((a: any) => {
+        const pubDateStr = parseGDELTDate(a.seendate)
+        const pubDate = new Date(pubDateStr)
+        const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
+        return {
+          external_id: hashUrl(a.url),
+          source_name: a.domain ?? 'Unknown',
+          source_url: a.domain ?? '',
+          title: a.title,
+          description: null,
+          content: null,
+          author: null,
+          published_at: pubDateStr,
+          url: a.url,
+          image_url: null,
+          language: a.language ?? topic.language ?? 'en',
+          media_type: 'web',
+          country: a.sourcecountry,
+          ingestion_source: 'gdelt',
+          is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (a.domain ?? '').includes(m)),
+          articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
+        }
+      })
   } finally {
     clearTimeout(timeout)
   }
