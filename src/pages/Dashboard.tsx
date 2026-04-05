@@ -25,6 +25,21 @@ export default function Dashboard() {
     },
   });
 
+  const { data: dashCounts } = useQuery({
+    queryKey: ["dashboard-counts"],
+    queryFn: async () => {
+      const now = Date.now()
+      const [{ count: todayCount }, { count: weekCount }, { count: totalCount }, { count: archiveCount }] = await Promise.all([
+        supabase.from('articles').select('id', { count: 'exact', head: true }).gte('published_at', new Date(now - 24*60*60*1000).toISOString()),
+        supabase.from('articles').select('id', { count: 'exact', head: true }).gte('published_at', new Date(now - 7*24*60*60*1000).toISOString()),
+        supabase.from('articles').select('id', { count: 'exact', head: true }),
+        supabase.from('articles').select('id', { count: 'exact', head: true }).lt('published_at', new Date(now - 30*24*60*60*1000).toISOString()),
+      ])
+      return { todayCount: todayCount ?? 0, weekCount: weekCount ?? 0, totalCount: totalCount ?? 0, archiveCount: archiveCount ?? 0 }
+    },
+    refetchInterval: 60000,
+  });
+
   const { data: favKeywords } = useQuery({
     queryKey: ["keywords-favorites"],
     queryFn: async () => {
