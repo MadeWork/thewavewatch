@@ -85,6 +85,9 @@ function buildPerigonQuery(keywords: string[]): string {
     .join(' OR ')
 }
 
+// ─── BROAD ENERGY TERMS (for high-priority source matching) ─────────────────
+const BROAD_ENERGY_TERMS = ['renewable','clean energy','offshore','ocean','maritime','marine','tidal','wave power','corpower','minesto','orbital marine','energy transition','net zero','decarboni','floating wind','seabed','hydrokinetic','blue energy']
+
 // ─── MAJOR OUTLET DOMAINS ────────────────────────────────────────────────────
 
 const MAJOR_OUTLET_DOMAINS = [
@@ -372,11 +375,10 @@ async function fetchRSSUnified(
     .eq('active', true)
     .eq('approval_status', 'approved')
     .not('rss_url', 'is', null)
-    .lt('consecutive_failures', 10)
+    .lt('consecutive_failures', 30)
     .in('health_status', ['healthy', 'degraded'])
-    .or(`last_fetched_at.is.null,last_fetched_at.lt.${new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString()}`)
     .order('fetch_priority', { ascending: false })
-    .limit(150)
+    .limit(300)
 
   if (error || !sources?.length) {
     if (error) console.error('Failed to fetch sources:', error.message)
@@ -410,8 +412,17 @@ async function fetchRSSUnified(
           for (const td of topicSearchData) {
             if (!td.topic.sources?.includes('rss')) continue
             const matches = td.expandedTerms.some(term => textMatchesTerm(text, term))
+            // For high-priority sources, also match broad energy terms
+            if (!matches && (source.fetch_priority ?? 0) >= 80) {
+              const broadMatch = BROAD_ENERGY_TERMS.some(term => text.includes(term))
+              if (broadMatch) {
+                // Still require at least one topic term for high-priority broad match
+              }
+            }
             if (matches) {
                 const domain = source.domain ?? extractDomainName(source.rss_url)
+                const pubDate = item.pubDate ? new Date(item.pubDate) : new Date()
+                const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
                 allArticles.push({
                 external_id: hashUrl(item.link ?? item.guid ?? ''),
                 source_name: source.name ?? source.domain ?? '',
@@ -431,6 +442,7 @@ async function fetchRSSUnified(
                 user_id: td.topic.user_id,
                 ingestion_run_id: undefined,
                 is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (domain || '').includes(m)),
+                articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
               })
             }
           }
@@ -581,23 +593,28 @@ async function fetchPerigonUnified(topicSearchData: TopicSearchData[]): Promise<
 function normalisePerigonArticles(articles: any[], fetchSource: string): any[] {
   return articles
     .filter((a: any) => a.title && a.url && a.source?.domain)
-    .map((a: any) => ({
-      external_id: hashUrl(a.url),
-      source_name: a.source?.name ?? a.source?.domain ?? 'Unknown',
-      source_url: a.source?.domain ?? '',
-      title: a.title,
-      description: a.description ?? a.summary ?? null,
-      content: a.content ?? null,
-      author: a.authorsByline ?? (a.authors?.[0]?.name ?? null),
-      published_at: a.pubDate ?? a.addDate ?? new Date().toISOString(),
-      url: a.url,
-      image_url: a.imageUrl ?? null,
-      language: a.language ?? 'en',
-      media_type: 'web',
-      country: a.source?.country ?? null,
-      ingestion_source: fetchSource,
-      is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (a.source?.domain ?? '').includes(m)),
-    }))
+    .map((a: any) => {
+      const pubDate = new Date(a.pubDate ?? a.addDate ?? Date.now())
+      const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
+      return {
+        external_id: hashUrl(a.url),
+        source_name: a.source?.name ?? a.source?.domain ?? 'Unknown',
+        source_url: a.source?.domain ?? '',
+        title: a.title,
+        description: a.description ?? a.summary ?? null,
+        content: a.content ?? null,
+        author: a.authorsByline ?? (a.authors?.[0]?.name ?? null),
+        published_at: a.pubDate ?? a.addDate ?? new Date().toISOString(),
+        url: a.url,
+        image_url: a.imageUrl ?? null,
+        language: a.language ?? 'en',
+        media_type: 'web',
+        country: a.source?.country ?? null,
+        ingestion_source: fetchSource,
+        is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (a.source?.domain ?? '').includes(m)),
+        articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
+      }
+    })
 }
 
 // ─── THE GUARDIAN ────────────────────────────────────────────────────────────
@@ -644,23 +661,28 @@ async function fetchFromGuardian(topic: any): Promise<any[]> {
         const data = await res.json()
         if (data.response?.status !== 'ok') throw new Error(`Guardian API error: ${data.response?.message}`)
 
-        const articles = (data.response?.results ?? []).map((a: any) => ({
-          external_id: hashUrl(a.webUrl),
-          source_name: 'The Guardian',
-          source_url: 'theguardian.com',
-          title: a.fields?.headline ?? a.webTitle,
-          description: a.fields?.trailText ?? null,
-          content: a.fields?.bodyText ?? null,
-          author: a.fields?.byline ?? null,
-          published_at: a.webPublicationDate,
-          url: a.webUrl,
-          image_url: a.fields?.thumbnail ?? null,
-          language: 'en',
-          media_type: 'web',
-          country: edition === 'us' ? 'US' : edition === 'au' ? 'AU' : 'GB',
-          ingestion_source: `guardian-${edition}`,
-          is_major_outlet: true,
-        }))
+        const articles = (data.response?.results ?? []).map((a: any) => {
+          const pubDate = new Date(a.webPublicationDate ?? Date.now())
+          const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
+          return {
+            external_id: hashUrl(a.webUrl),
+            source_name: 'The Guardian',
+            source_url: 'theguardian.com',
+            title: a.fields?.headline ?? a.webTitle,
+            description: a.fields?.trailText ?? null,
+            content: a.fields?.bodyText ?? null,
+            author: a.fields?.byline ?? null,
+            published_at: a.webPublicationDate,
+            url: a.webUrl,
+            image_url: a.fields?.thumbnail ?? null,
+            language: 'en',
+            media_type: 'web',
+            country: edition === 'us' ? 'US' : edition === 'au' ? 'AU' : 'GB',
+            ingestion_source: `guardian-${edition}`,
+            is_major_outlet: true,
+            articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
+          }
+        })
 
         allArticles.push(...articles)
         console.log(`Guardian ${edition}: ${articles.length} articles`)
@@ -702,23 +724,29 @@ async function fetchFromGDELT(topic: any): Promise<any[]> {
     const data = await res.json()
     return (data.articles ?? [])
       .filter((a: any) => a.title && a.url)
-      .map((a: any) => ({
-        external_id: hashUrl(a.url),
-        source_name: a.domain ?? 'Unknown',
-        source_url: a.domain ?? '',
-        title: a.title,
-        description: null,
-        content: null,
-        author: null,
-        published_at: parseGDELTDate(a.seendate),
-        url: a.url,
-        image_url: null,
-        language: a.language ?? topic.language ?? 'en',
-        media_type: 'web',
-        country: a.sourcecountry,
-        ingestion_source: 'gdelt',
-        is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (a.domain ?? '').includes(m)),
-      }))
+      .map((a: any) => {
+        const pubDateStr = parseGDELTDate(a.seendate)
+        const pubDate = new Date(pubDateStr)
+        const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
+        return {
+          external_id: hashUrl(a.url),
+          source_name: a.domain ?? 'Unknown',
+          source_url: a.domain ?? '',
+          title: a.title,
+          description: null,
+          content: null,
+          author: null,
+          published_at: pubDateStr,
+          url: a.url,
+          image_url: null,
+          language: a.language ?? topic.language ?? 'en',
+          media_type: 'web',
+          country: a.sourcecountry,
+          ingestion_source: 'gdelt',
+          is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (a.domain ?? '').includes(m)),
+          articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
+        }
+      })
   } finally {
     clearTimeout(timeout)
   }
