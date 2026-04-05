@@ -23,6 +23,7 @@ export default function AdminIngestion() {
   const [backfillDays, setBackfillDays] = useState(30);
   const [backfilling, setBackfilling] = useState(false);
   const [backfillResult, setBackfillResult] = useState<any>(null);
+  const [backfillError, setBackfillError] = useState<string | null>(null);
   const [showAddTopic, setShowAddTopic] = useState(false);
   const [newTopicName, setNewTopicName] = useState("");
   const [newTopicKeywords, setNewTopicKeywords] = useState("");
@@ -153,24 +154,17 @@ export default function AdminIngestion() {
     if (!backfillTopicId) return;
     setBackfilling(true);
     setBackfillResult(null);
+    setBackfillError(null);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/backfill-articles`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session?.access_token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ topic_id: backfillTopicId, days_back: backfillDays }),
+      const { data, error } = await supabase.functions.invoke('backfill-articles', {
+        body: { topic_id: backfillTopicId, days_back: backfillDays },
       });
-      const data = await res.json();
+      if (error) throw error;
       setBackfillResult(data);
       queryClient.invalidateQueries({ queryKey: ["pipeline-health"] });
       queryClient.invalidateQueries({ queryKey: ["monitored-topics-admin"] });
-    } catch (err) {
-      console.error("Backfill failed:", err);
-      setBackfillResult({ error: "Backfill request failed" });
+    } catch (err: any) {
+      setBackfillError(err.message ?? "Backfill failed");
     } finally {
       setBackfilling(false);
     }
@@ -410,8 +404,15 @@ export default function AdminIngestion() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-xs text-muted-foreground">
-            Search archives up to 6 months back using Guardian, GDELT, and Perigon APIs. Best for filling gaps from major outlets.
+            Search archives up to 4 months back using Guardian, GDELT, Perigon and Google News. Best for filling gaps from major outlets.
           </p>
+          {/* Quick select buttons */}
+          <div className="flex gap-2 flex-wrap mb-3">
+            <span className="text-sm text-muted-foreground self-center">Quick:</span>
+            {[{label:'Last week',days:7},{label:'Last month',days:30},{label:'3 months',days:90},{label:'4 months',days:120}].map(({label,days}) => (
+              <button key={days} onClick={() => setBackfillDays(days)} className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${backfillDays === days ? 'border-blue-500 text-blue-400 bg-blue-500/10' : 'border-border text-muted-foreground hover:border-blue-500 hover:text-blue-400'}`}>{label}</button>
+            ))}
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-foreground">Topic</label>
@@ -432,7 +433,7 @@ export default function AdminIngestion() {
                 value={[backfillDays]}
                 onValueChange={([v]) => setBackfillDays(v)}
                 min={1}
-                max={180}
+                max={120}
                 step={1}
                 className="py-2"
               />
@@ -450,26 +451,29 @@ export default function AdminIngestion() {
             </Button>
           </div>
           {backfilling && (
-            <div className="space-y-1">
-              <Progress value={undefined} className="h-1.5" />
-              <p className="text-xs text-muted-foreground text-center">Searching Guardian, GDELT & Perigon archives…</p>
+            <div className="mt-4 p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
+              <div className="flex items-center gap-3 mb-2">
+                <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                <span className="text-sm text-blue-400">Searching {backfillDays} days of archives...</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Checking Guardian, GDELT, Perigon and Google News. This may take 30–60 seconds.</p>
             </div>
           )}
-          {backfillResult && !backfillResult.error && (
-            <div className="p-3 rounded-lg border border-border bg-card space-y-1">
-              <p className="text-sm font-medium text-foreground">
-                ✓ Found {backfillResult.inserted} new articles for "{backfillResult.topic}"
-              </p>
-              <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                <span>Guardian: {backfillResult.guardian}</span>
-                <span>GDELT: {backfillResult.gdelt}</span>
-                <span>Perigon: {backfillResult.perigon}</span>
-                <span className="text-foreground font-medium">Total inserted: {backfillResult.inserted}</span>
+          {backfillResult && !backfilling && (
+            <div className="mt-4 p-4 rounded-lg bg-green-500/10 border border-green-500/20">
+              <p className="text-sm text-green-400 font-medium mb-1">✓ Found {backfillResult.found} articles, added {backfillResult.inserted} new ones to archive</p>
+              <div className="flex gap-3 text-xs text-muted-foreground flex-wrap">
+                <span>Guardian: {backfillResult.sources?.guardian ?? 0}</span>
+                <span>GDELT: {backfillResult.sources?.gdelt ?? 0}</span>
+                <span>Perigon: {backfillResult.sources?.perigon ?? 0}</span>
+                <span>Google News: {backfillResult.sources?.google ?? 0}</span>
               </div>
             </div>
           )}
-          {backfillResult?.error && (
-            <p className="text-xs text-destructive">{backfillResult.error}</p>
+          {backfillError && !backfilling && (
+            <div className="mt-4 p-4 rounded-lg bg-red-500/10 border border-red-500/20">
+              <p className="text-sm text-red-400">{backfillError}</p>
+            </div>
           )}
         </CardContent>
       </Card>

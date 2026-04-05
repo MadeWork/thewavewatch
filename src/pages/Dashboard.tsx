@@ -7,7 +7,7 @@ import SkeletonCard from "@/components/SkeletonCard";
 import EmptyState from "@/components/EmptyState";
 import ErrorBanner from "@/components/ErrorBanner";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { format, subDays, startOfDay, startOfWeek, startOfMonth, formatDistanceToNow } from "date-fns";
+import { format, subDays, formatDistanceToNow } from "date-fns";
 import { ExternalLink, RefreshCw, Loader2, Star, Lock } from "lucide-react";
 import WorldMap from "@/components/WorldMap";
 import { isPaywalled } from "@/lib/paywallSources";
@@ -23,6 +23,21 @@ export default function Dashboard() {
       if (error) throw error;
       return data;
     },
+  });
+
+  const { data: dashCounts } = useQuery({
+    queryKey: ["dashboard-counts"],
+    queryFn: async () => {
+      const now = Date.now()
+      const [{ count: todayCount }, { count: weekCount }, { count: totalCount }, { count: archiveCount }] = await Promise.all([
+        supabase.from('articles').select('id', { count: 'exact', head: true }).gte('published_at', new Date(now - 24*60*60*1000).toISOString()),
+        supabase.from('articles').select('id', { count: 'exact', head: true }).gte('published_at', new Date(now - 7*24*60*60*1000).toISOString()),
+        supabase.from('articles').select('id', { count: 'exact', head: true }),
+        supabase.from('articles').select('id', { count: 'exact', head: true }).lt('published_at', new Date(now - 30*24*60*60*1000).toISOString()),
+      ])
+      return { todayCount: todayCount ?? 0, weekCount: weekCount ?? 0, totalCount: totalCount ?? 0, archiveCount: archiveCount ?? 0 }
+    },
+    refetchInterval: 60000,
   });
 
   const { data: favKeywords } = useQuery({
@@ -58,14 +73,11 @@ export default function Dashboard() {
   }, [articles, favKeywords]);
 
   const now = new Date();
-  const todayStart = startOfDay(now);
-  const weekStart = startOfWeek(now, { weekStartsOn: 1 });
-  const monthStart = startOfMonth(now);
 
-  // Use created_at for metric cards — published_at is often unreliable / missing
-  const todayCount = articles?.filter(a => new Date(a.fetched_at) >= todayStart).length ?? 0;
-  const weekCount = articles?.filter(a => new Date(a.fetched_at) >= weekStart).length ?? 0;
-  const monthCount = articles?.filter(a => new Date(a.fetched_at) >= monthStart).length ?? 0;
+  const todayCount = dashCounts?.todayCount ?? 0;
+  const weekCount = dashCounts?.weekCount ?? 0;
+  const totalCount = dashCounts?.totalCount ?? 0;
+  const archiveCount = dashCounts?.archiveCount ?? 0;
 
   const lineData = Array.from({ length: 30 }, (_, i) => {
     const date = subDays(now, 29 - i);
@@ -106,18 +118,20 @@ export default function Dashboard() {
       )}
 
       {/* Metrics */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
         {isLoading ? (
           <>
+            <SkeletonCard />
             <SkeletonCard />
             <SkeletonCard />
             <SkeletonCard />
           </>
         ) : (
           <>
-            <MetricCard label="Today" value={todayCount} subtitle="articles fetched" />
-            <MetricCard label="This Week" value={weekCount} subtitle="articles fetched" />
-            <MetricCard label="This Month" value={monthCount} subtitle="articles fetched" />
+            <MetricCard label="Today" value={todayCount} subtitle="last 24h" />
+            <MetricCard label="This Week" value={weekCount} subtitle="last 7d" />
+            <MetricCard label="Total" value={totalCount} subtitle="all articles" />
+            <MetricCard label="Archive" value={archiveCount} subtitle="older than 30d" />
           </>
         )}
       </div>
