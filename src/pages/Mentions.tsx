@@ -14,6 +14,15 @@ import { isPaywalled } from "@/lib/paywallSources";
 
 const PAGE_SIZE = 20;
 
+function getEraBadge(article: any): { label: string; className: string } | null {
+  const pubDate = article.published_at ? new Date(article.published_at) : null
+  if (!pubDate) return null
+  const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
+  if (ageDays > 30) return { label: `${Math.round(ageDays)}d ago`, className: 'text-muted-foreground bg-muted text-xs px-2 py-0.5 rounded-full' }
+  if (ageDays > 7) return { label: `${Math.round(ageDays)}d ago`, className: 'text-blue-400 bg-blue-500/10 text-xs px-2 py-0.5 rounded-full' }
+  return null
+}
+
 export default function Mentions() {
   const [page, setPage] = useState(0);
   const [viewMode, setViewMode] = useState<"list" | "table">("list");
