@@ -36,6 +36,7 @@ export default function Mentions() {
   const [relevanceFilter, setRelevanceFilter] = useState<"medium" | "high" | "all">("medium");
   const [majorOnly, setMajorOnly] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
+  const [eraFilter, setEraFilter] = useState<string>('All');
 
   const { bookmarks, toggleBookmark, isBookmarked } = useBookmarks();
 
