@@ -17,7 +17,8 @@ function json(data: any, status = 200) {
   })
 }
 
-// Parse CSV string into rows
+// Parse CSV string into rows, auto-detecting the header row
+// LinkedIn exports often have a description row before the real headers
 function parseCSV(text: string): Record<string, string>[] {
   const lines = text.split('\n').filter(l => l.trim())
   if (lines.length < 2) return []
@@ -43,8 +44,28 @@ function parseCSV(text: string): Record<string, string>[] {
     return result
   }
 
-  const headers = splitCSVLine(lines[0]).map(h => h.toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_'))
-  return lines.slice(1).map(line => {
+  // Known LinkedIn column names to detect the real header row
+  const knownHeaders = ['date', 'impressions', 'clicks', 'likes', 'comments', 'shares', 'reposts', 'engagement', 'reactions', 'followers']
+
+  function normalize(h: string): string {
+    return h.toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '')
+  }
+
+  // Find the header row: first line where at least 2 known column names appear
+  let headerIdx = 0
+  for (let i = 0; i < Math.min(lines.length, 10); i++) {
+    const cols = splitCSVLine(lines[i]).map(c => normalize(c))
+    const matches = cols.filter(c => knownHeaders.some(k => c.includes(k)))
+    if (matches.length >= 2) {
+      headerIdx = i
+      break
+    }
+  }
+
+  const headers = splitCSVLine(lines[headerIdx]).map(h => normalize(h))
+  console.log('Detected header row:', headerIdx, 'headers:', headers.join(', '))
+
+  return lines.slice(headerIdx + 1).map(line => {
     const vals = splitCSVLine(line)
     const row: Record<string, string> = {}
     headers.forEach((h, i) => { row[h] = vals[i] ?? '' })
