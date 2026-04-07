@@ -162,15 +162,21 @@ Deno.serve(async (req) => {
       if (res.ok) {
         const xml = await res.text()
         const items = parseRSSXML(xml)
-        const articles = items.filter((item: any) => item.title && item.link).map((item: any) => makeArticle({
-          external_id: hashUrl(item.link ?? ''), topic_id: topic.id, user_id: topic.user_id,
-          source_name: extractDomainName(item.link ?? ''),
-          source_url: extractDomainName(item.link ?? ''),
-          title: item.title, description: item.description ?? null, author: null,
-          published_at: item.pubDate ?? new Date().toISOString(),
-          url: item.link, image_url: null, language: 'en',
-          media_type: 'web', ingestion_source: 'google-news-backfill',
-        }))
+        const articles = items.filter((item: any) => item.title && item.link).map((item: any) => {
+          // Google News titles often end with " - Source Name"
+          const titleParts = (item.title ?? '').split(' - ')
+          const sourceName = titleParts.length > 1 ? titleParts[titleParts.length - 1].trim() : ''
+          return makeArticle({
+            external_id: hashUrl(item.link ?? ''), topic_id: topic.id, user_id: topic.user_id,
+            source_name: sourceName || 'Google News',
+            source_url: '',
+            title: titleParts.length > 1 ? titleParts.slice(0, -1).join(' - ').trim() : item.title,
+            description: item.description ?? null, author: null,
+            published_at: item.pubDate ?? new Date().toISOString(),
+            url: item.link, image_url: null, language: 'en',
+            media_type: 'web', ingestion_source: 'google-news-backfill',
+          })
+        })
         allArticles.push(...articles)
         sourceCounts.google = articles.length
         console.log(`Google News: ${articles.length} results`)
@@ -261,20 +267,61 @@ Deno.serve(async (req) => {
 
     if (!allArticles.length) return json({ inserted: 0, found: 0, sources: sourceCounts, errors })
 
-    // Resolve Google News redirect URLs to actual publisher URLs
-    const gnArticles = allArticles.filter(a => a.url?.includes('news.google.com'))
-    if (gnArticles.length) {
-      console.log(`Resolving ${gnArticles.length} Google News URLs...`)
-      await Promise.allSettled(gnArticles.map(async (a) => {
-        const resolved = await resolveGoogleNewsUrl(a.url)
-        if (resolved !== a.url) {
-          a.url = resolved
-          a.source_domain = extractDomainName(resolved)
-          a.source_name = extractDomainName(resolved)
-          a.external_id = hashUrl(resolved)
-        }
-      }))
+    // Map source names from Google News titles to domains
+    const SOURCE_NAME_TO_DOMAIN: Record<string, string> = {
+      'Reuters': 'reuters.com', 'AP News': 'apnews.com', 'Bloomberg': 'bloomberg.com',
+      'The New York Times': 'nytimes.com', 'The Washington Post': 'washingtonpost.com',
+      'The Wall Street Journal': 'wsj.com', 'Financial Times': 'ft.com',
+      'CNBC': 'cnbc.com', 'CNN': 'cnn.com', 'BBC': 'bbc.co.uk', 'BBC News': 'bbc.co.uk',
+      'The Guardian': 'theguardian.com', 'Euronews': 'euronews.com',
+      'EURACTIV': 'euractiv.com', 'Politico': 'politico.eu', 'POLITICO Europe': 'politico.eu',
+      'DW': 'dw.com', 'Der Spiegel': 'spiegel.de', 'Handelsblatt': 'handelsblatt.com',
+      'Le Monde': 'lemonde.fr', 'Le Figaro': 'lefigaro.fr', 'El País': 'elpais.com',
+      'Herald Scotland': 'heraldscotland.com', 'HeraldScotland': 'heraldscotland.com',
+      'The Scotsman': 'scotsman.com', 'Press and Journal': 'pressandjournal.co.uk',
+      'The Telegraph': 'telegraph.co.uk', 'The Independent': 'independent.co.uk',
+      'Sky News': 'sky.com', 'The Times': 'thetimes.co.uk',
+      'Dagens Nyheter': 'dn.se', 'SVD': 'svd.se', 'Aftenposten': 'aftenposten.no',
+      'NRK': 'nrk.no', 'Berlingske': 'berlingske.dk', 'Yle': 'yle.fi',
+      'ABC News': 'abc.net.au', 'Sydney Morning Herald': 'smh.com.au',
+      'NZ Herald': 'nzherald.co.nz', 'Stuff': 'stuff.co.nz', 'RNZ': 'rnz.co.nz',
+      'Carbon Brief': 'carbonbrief.org', 'Energy Monitor': 'energymonitor.ai',
+      'NPR': 'npr.org', 'Forbes': 'forbes.com',
+      'Offshore-Energy.biz': 'offshore-energy.biz', 'Offshore Energy': 'offshore-energy.biz',
+      'reNEWS': 'renews.biz', 'reNews': 'renews.biz',
+      'Recharge': 'rechargenews.com', 'Recharge News': 'rechargenews.com',
+      'Nature': 'nature.com', 'The World Economic Forum': 'weforum.org',
     }
+    const MAJOR_DOMAINS = [
+      'reuters.com','apnews.com','bloomberg.com','afp.com','nytimes.com','washingtonpost.com',
+      'wsj.com','ft.com','cnbc.com','cnn.com','bbc.com','bbc.co.uk','theguardian.com',
+      'euronews.com','euractiv.com','politico.eu','politico.com',
+      'spiegel.de','faz.net','sueddeutsche.de','dw.com','handelsblatt.com',
+      'lemonde.fr','lefigaro.fr','elpais.com',
+      'heraldscotland.com','scotsman.com','pressandjournal.co.uk',
+      'telegraph.co.uk','independent.co.uk','sky.com','thetimes.co.uk',
+      'dn.se','svd.se','di.se','aftenposten.no','dn.no','vg.no','nrk.no',
+      'berlingske.dk','politiken.dk','yle.fi',
+      'abc.net.au','smh.com.au','nzherald.co.nz','stuff.co.nz','rnz.co.nz',
+      'carbonbrief.org','energymonitor.ai','npr.org','forbes.com',
+      'offshore-energy.biz','renews.biz','rechargenews.com','nature.com',
+    ]
+
+    // For Google News articles, resolve source_domain from source_name
+    for (const a of allArticles) {
+      if (a.url?.includes('news.google.com') && a.source_name) {
+        const mapped = SOURCE_NAME_TO_DOMAIN[a.source_name]
+        if (mapped) {
+          a.source_domain = mapped
+          a.is_major_outlet = MAJOR_DOMAINS.some(m => mapped.includes(m))
+        }
+      }
+      // Final is_major_outlet check for all articles
+      if (!a.is_major_outlet) {
+        a.is_major_outlet = MAJOR_DOMAINS.some(m => (a.source_domain || '').includes(m))
+      }
+    }
+    console.log(`Major outlets found: ${allArticles.filter(a => a.is_major_outlet).length}/${allArticles.length}`)
 
     // Dedupe by URL
     const seen = new Set<string>()
