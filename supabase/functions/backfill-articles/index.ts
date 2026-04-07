@@ -162,15 +162,21 @@ Deno.serve(async (req) => {
       if (res.ok) {
         const xml = await res.text()
         const items = parseRSSXML(xml)
-        const articles = items.filter((item: any) => item.title && item.link).map((item: any) => makeArticle({
-          external_id: hashUrl(item.link ?? ''), topic_id: topic.id, user_id: topic.user_id,
-          source_name: extractDomainName(item.link ?? ''),
-          source_url: extractDomainName(item.link ?? ''),
-          title: item.title, description: item.description ?? null, author: null,
-          published_at: item.pubDate ?? new Date().toISOString(),
-          url: item.link, image_url: null, language: 'en',
-          media_type: 'web', ingestion_source: 'google-news-backfill',
-        }))
+        const articles = items.filter((item: any) => item.title && item.link).map((item: any) => {
+          // Google News titles often end with " - Source Name"
+          const titleParts = (item.title ?? '').split(' - ')
+          const sourceName = titleParts.length > 1 ? titleParts[titleParts.length - 1].trim() : ''
+          return makeArticle({
+            external_id: hashUrl(item.link ?? ''), topic_id: topic.id, user_id: topic.user_id,
+            source_name: sourceName || 'Google News',
+            source_url: '',
+            title: titleParts.length > 1 ? titleParts.slice(0, -1).join(' - ').trim() : item.title,
+            description: item.description ?? null, author: null,
+            published_at: item.pubDate ?? new Date().toISOString(),
+            url: item.link, image_url: null, language: 'en',
+            media_type: 'web', ingestion_source: 'google-news-backfill',
+          })
+        })
         allArticles.push(...articles)
         sourceCounts.google = articles.length
         console.log(`Google News: ${articles.length} results`)
