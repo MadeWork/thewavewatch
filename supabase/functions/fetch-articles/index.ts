@@ -613,10 +613,12 @@ function normalisePerigonArticles(articles: any[], fetchSource: string): any[] {
     .map((a: any) => {
       const pubDate = new Date(a.pubDate ?? a.addDate ?? Date.now())
       const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
+      const domain = a.source?.domain ?? extractDomain(a.url) ?? ''
       return {
         external_id: hashUrl(a.url),
-        source_name: a.source?.name ?? a.source?.domain ?? 'Unknown',
-        source_url: a.source?.domain ?? '',
+        source_name: a.source?.name ?? domain ?? 'Unknown',
+        source_url: domain,
+        source_domain: domain,
         title: a.title,
         description: a.description ?? a.summary ?? null,
         content: a.content ?? null,
@@ -628,7 +630,7 @@ function normalisePerigonArticles(articles: any[], fetchSource: string): any[] {
         media_type: 'web',
         country: a.source?.country ?? null,
         ingestion_source: fetchSource,
-        is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (a.source?.domain ?? '').includes(m)),
+        is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (domain).includes(m)),
         articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
       }
     })
