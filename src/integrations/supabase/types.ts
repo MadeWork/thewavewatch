@@ -311,12 +311,14 @@ export type Database = {
           author_email: string | null
           author_name: string | null
           author_url: string | null
+          comment_count: number | null
           confidence: number | null
           content: string | null
           country: string | null
           description: string | null
           discovery_method: string | null
           duplicate_of: string | null
+          engagement_score: number | null
           enriched_at: string | null
           external_id: string | null
           fetched_at: string
@@ -361,12 +363,14 @@ export type Database = {
           author_email?: string | null
           author_name?: string | null
           author_url?: string | null
+          comment_count?: number | null
           confidence?: number | null
           content?: string | null
           country?: string | null
           description?: string | null
           discovery_method?: string | null
           duplicate_of?: string | null
+          engagement_score?: number | null
           enriched_at?: string | null
           external_id?: string | null
           fetched_at?: string
@@ -411,12 +415,14 @@ export type Database = {
           author_email?: string | null
           author_name?: string | null
           author_url?: string | null
+          comment_count?: number | null
           confidence?: number | null
           content?: string | null
           country?: string | null
           description?: string | null
           discovery_method?: string | null
           duplicate_of?: string | null
+          engagement_score?: number | null
           enriched_at?: string | null
           external_id?: string | null
           fetched_at?: string

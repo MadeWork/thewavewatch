@@ -10,7 +10,7 @@ import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { formatDistanceToNow, format, differenceInSeconds } from "date-fns";
 import { useState } from "react";
-import { Activity, Clock, FileText, AlertTriangle, Radio, Play, RefreshCw, Tag, History, Search, Plus, X, Trash2 } from "lucide-react";
+import { Activity, Clock, FileText, AlertTriangle, Radio, Play, RefreshCw, Tag, History, Search, Plus, X, Trash2, MessageSquare } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
@@ -28,6 +28,8 @@ export default function AdminIngestion() {
   const [newTopicName, setNewTopicName] = useState("");
   const [newTopicKeywords, setNewTopicKeywords] = useState("");
   const [savingTopic, setSavingTopic] = useState(false);
+  const [isSocialFetching, setIsSocialFetching] = useState(false);
+  const [socialResult, setSocialResult] = useState<any>(null);
 
   // Pipeline health
   const { data: health } = useQuery({
@@ -187,13 +189,58 @@ export default function AdminIngestion() {
           <h1 className="text-xl font-semibold text-foreground">Ingestion Pipeline</h1>
           <p className="text-sm text-muted-foreground mt-1">Monitor and control the article ingestion system</p>
         </div>
-        <Button onClick={() => triggerFetch()} disabled={triggeringAll} size="sm">
-          {triggeringAll ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : <Play className="w-4 h-4 mr-2" />}
-          Run All Now
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={() => triggerFetch()} disabled={triggeringAll} size="sm">
+            {triggeringAll ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : <Play className="w-4 h-4 mr-2" />}
+            Run All Now
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isSocialFetching}
+            onClick={async () => {
+              setIsSocialFetching(true);
+              setSocialResult(null);
+              try {
+                const { data: topic } = await supabase
+                  .from('monitored_topics')
+                  .select('id')
+                  .eq('is_active', true)
+                  .limit(1)
+                  .single();
+                const { data, error } = await supabase.functions.invoke('social-fetch', {
+                  body: { topic_id: topic?.id },
+                });
+                if (error) throw error;
+                setSocialResult(data);
+              } catch (err: any) {
+                setSocialResult({ error: err.message });
+              } finally {
+                setIsSocialFetching(false);
+              }
+            }}
+          >
+            {isSocialFetching ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : <MessageSquare className="w-4 h-4 mr-2" />}
+            {isSocialFetching ? 'Fetching social…' : 'Fetch Social'}
+          </Button>
+        </div>
       </div>
 
-      {/* Section 1: Health metrics */}
+      {socialResult && (
+        <div className={`p-3 rounded-lg border text-sm ${socialResult.error ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'}`}>
+          {socialResult.error ? (
+            <>Error: {socialResult.error}</>
+          ) : (
+            <>
+              ✓ Found {socialResult.found}, inserted {socialResult.inserted} —
+              Reddit: {socialResult.sources?.reddit ?? 0} searches,
+              YouTube: {socialResult.sources?.youtube ?? 0} searches
+              {socialResult.errors?.length ? ` · ${socialResult.errors[0]}` : ''}
+            </>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <Card>
           <CardContent className="pt-4 pb-3 px-4">
