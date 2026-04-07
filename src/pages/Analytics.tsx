@@ -69,7 +69,22 @@ export default function Insights() {
   const [csvResult, setCsvResult] = useState<any>(null);
   const [blogScraping, setBlogScraping] = useState(false);
   const [blogResult, setBlogResult] = useState<any>(null);
+  const [selectedKeywords, setSelectedKeywords] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch keywords from DB
+  const { data: keywords } = useQuery({
+    queryKey: ["insights-keywords"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("keywords")
+        .select("id, text, color_tag, active")
+        .eq("active", true)
+        .order("match_count", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
 
   const { data: articles, isLoading, error } = useQuery({
     queryKey: ["insights-articles"],
