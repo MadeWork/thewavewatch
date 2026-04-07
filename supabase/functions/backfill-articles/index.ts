@@ -163,7 +163,71 @@ Deno.serve(async (req) => {
       } else {
         errors.push(`Google News: HTTP ${res.status}`)
       }
-    } catch (err: any) { console.error('Google News:', err.message); errors.push(`Google News: ${err.message}`) }
+    // FIRECRAWL — site-restricted deep search across major outlets
+    const firecrawlKey = Deno.env.get('FIRECRAWL_API_KEY')
+    if (firecrawlKey) {
+      const MAJOR_OUTLETS = [
+        // Europe
+        'bbc.co.uk', 'bbc.com', 'theguardian.com', 'ft.com', 'reuters.com',
+        'euronews.com', 'politico.eu', 'spiegel.de', 'lemonde.fr', 'dn.se',
+        'thelocal.com', 'dw.com', 'rte.ie', 'irishtimes.com',
+        // US
+        'nytimes.com', 'washingtonpost.com', 'bloomberg.com', 'cnbc.com',
+        'forbes.com', 'wsj.com', 'apnews.com',
+        // Energy/Industry
+        'renewableenergyworld.com', 'rechargenews.com', 'energymonitor.ai',
+        'windpowermonthly.com', 'rivieramm.com', 'offshorewind.biz',
+      ]
+
+      // Build site-restricted queries: one per keyword, batching sites
+      const siteFilter = MAJOR_OUTLETS.map(d => `site:${d}`).join(' OR ')
+      const fcQueries = keywords.slice(0, 4).map((k: string) => ({
+        query: `"${k}" (${siteFilter})`,
+        keyword: k,
+      }))
+
+      for (const fq of fcQueries) {
+        try {
+          const res = await fetch('https://api.firecrawl.dev/v1/search', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${firecrawlKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: fq.query, limit: 5 }),
+            signal: AbortSignal.timeout(15000),
+          })
+          if (res.ok) {
+            const data = await res.json()
+            const results = data.data || data.results || []
+            const articles = results
+              .filter((r: any) => r.url && r.title && !isBlockedUrl(r.url))
+              .map((r: any) => makeArticle({
+                external_id: hashUrl(r.url), topic_id: topic.id, user_id: topic.user_id,
+                source_name: r.metadata?.ogSiteName || extractDomainName(r.url),
+                source_url: extractDomainName(r.url),
+                source_domain: extractDomainName(r.url),
+                title: r.title, description: r.description || r.metadata?.description || null,
+                author: r.metadata?.author || null,
+                published_at: r.metadata?.publishedTime || r.metadata?.ogArticlePublishedTime || null,
+                url: r.url, image_url: r.metadata?.ogImage || null,
+                language: r.metadata?.language?.split('-')[0] || 'en',
+                media_type: 'web', ingestion_source: 'firecrawl-backfill',
+                matched_keywords: [fq.keyword],
+                discovery_method: 'firecrawl',
+              }))
+            allArticles.push(...articles)
+            sourceCounts.firecrawl += articles.length
+            console.log(`Firecrawl "${fq.keyword}": ${articles.length} results`)
+          } else {
+            const errBody = await res.text().catch(() => '')
+            console.error(`Firecrawl "${fq.keyword}": HTTP ${res.status} ${errBody}`)
+            errors.push(`Firecrawl: HTTP ${res.status}`)
+          }
+        } catch (err: any) {
+          console.error(`Firecrawl "${fq.keyword}":`, err.message)
+          errors.push(`Firecrawl: ${err.message}`)
+        }
+      }
+      console.log(`Firecrawl total: ${sourceCounts.firecrawl} results`)
+    }
 
     console.log(`Total found: ${allArticles.length}`)
 
