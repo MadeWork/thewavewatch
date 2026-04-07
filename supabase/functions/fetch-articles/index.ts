@@ -435,12 +435,15 @@ async function fetchRSSUnified(
 
             if (exactMatch || broadMatch) {
                 const domain = source.domain ?? extractDomainName(source.rss_url)
+                const resolvedDomain = extractDomain(item.link ?? '') ?? domain
                 const pubDate = item.pubDate ? new Date(item.pubDate) : new Date()
                 const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
+                const matchedKws = td.keywords.filter(kw => textMatchesTerm(text, kw))
                 allArticles.push({
                 external_id: hashUrl(item.link ?? item.guid ?? ''),
                 source_name: source.name ?? source.domain ?? '',
                 source_url: domain,
+                source_domain: resolvedDomain,
                 title: item.title ?? '',
                 description: item.description ?? null,
                 content: item.content ?? null,
@@ -455,7 +458,8 @@ async function fetchRSSUnified(
                 topic_id: td.topic.id,
                 user_id: td.topic.user_id,
                 ingestion_run_id: undefined,
-                is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (domain || '').includes(m)),
+                matched_keywords: matchedKws,
+                is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (resolvedDomain || '').includes(m)),
                 articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
               })
             }
