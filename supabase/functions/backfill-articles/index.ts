@@ -218,6 +218,9 @@ Deno.serve(async (req) => {
             allArticles.push(...articles)
             sourceCounts.firecrawl += articles.length
             console.log(`Firecrawl "${fq.keyword}": ${articles.length} results`)
+          } else if (res.status === 402) {
+            console.warn('Firecrawl credits exhausted — stopping Firecrawl searches')
+            break
           } else {
             const errBody = await res.text().catch(() => '')
             console.error(`Firecrawl "${fq.keyword}": HTTP ${res.status} ${errBody}`)

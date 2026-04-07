@@ -140,7 +140,6 @@ export default function SettingsPage() {
     company_name: "",
     company_logo_url: "",
     digest_email: "",
-    fetch_frequency_minutes: 60,
     timezone: "UTC",
     fetch_schedule: "daily_2am",
   });
