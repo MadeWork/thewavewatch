@@ -687,6 +687,7 @@ async function fetchFromGuardian(topic: any): Promise<any[]> {
             external_id: hashUrl(a.webUrl),
             source_name: 'The Guardian',
             source_url: 'theguardian.com',
+            source_domain: 'theguardian.com',
             title: a.fields?.headline ?? a.webTitle,
             description: a.fields?.trailText ?? null,
             content: a.fields?.bodyText ?? null,
@@ -698,6 +699,7 @@ async function fetchFromGuardian(topic: any): Promise<any[]> {
             media_type: 'web',
             country: edition === 'us' ? 'US' : edition === 'au' ? 'AU' : 'GB',
             ingestion_source: `guardian-${edition}`,
+            matched_keywords: keywords.filter(kw => textMatchesTerm(`${a.fields?.headline ?? ''} ${a.fields?.trailText ?? ''}`, kw)),
             is_major_outlet: true,
             articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
           }
