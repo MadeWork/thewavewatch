@@ -577,10 +577,12 @@ async function fetchPerigonUnified(topicSearchData: TopicSearchData[]): Promise<
         if (!td.topic.sources?.includes('perigon')) continue
         const matches = td.expandedTerms.some(term => textMatchesTerm(text, term))
         if (matches) {
+          const matchedKws = td.keywords.filter(kw => textMatchesTerm(text, kw))
           routed.push({
             ...article,
             topic_id: td.topic.id,
             user_id: td.topic.user_id,
+            matched_keywords: matchedKws,
           })
         }
       }
