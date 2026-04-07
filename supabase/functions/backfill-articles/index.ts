@@ -283,6 +283,16 @@ function isBlockedUrl(url: string): boolean {
     return blocked.some(d => h === d || h.endsWith('.' + d))
   } catch { return false }
 }
+async function resolveGoogleNewsUrl(gnUrl: string): Promise<string> {
+  if (!gnUrl.includes('news.google.com')) return gnUrl
+  try {
+    const resp = await fetch(gnUrl, { redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 (compatible; WaveWatch/1.0)' }, signal: AbortSignal.timeout(5000) })
+    const finalUrl = resp.url
+    await resp.text().catch(() => {})
+    if (finalUrl && !finalUrl.includes('news.google.com') && !finalUrl.includes('consent.google.com')) return finalUrl
+    return gnUrl
+  } catch { return gnUrl }
+}
 function parseRSSXML(xml: string): any[] {
   const items: any[] = []
   const isAtom = xml.includes('<feed') && xml.includes('xmlns')
