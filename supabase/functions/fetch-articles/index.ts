@@ -102,6 +102,7 @@ const MAJOR_OUTLET_DOMAINS = [
   // UK majors
   'theguardian.com', 'bbc.com', 'bbc.co.uk', 'thetimes.co.uk',
   'telegraph.co.uk', 'independent.co.uk', 'sky.com', 'standard.co.uk',
+  'heraldscotland.com', 'scotsman.com', 'pressandjournal.co.uk',
   // European majors
   'euronews.com', 'euractiv.com', 'politico.eu',
   'spiegel.de', 'faz.net', 'sueddeutsche.de', 'dw.com', 'handelsblatt.com',
@@ -119,6 +120,12 @@ const MAJOR_OUTLET_DOMAINS = [
   // Key energy/climate
   'carbonbrief.org', 'energymonitor.ai',
 ]
+
+function extractDomain(url: string): string | null {
+  try {
+    return new URL(url.startsWith('http') ? url : `https://${url}`).hostname.replace(/^www\./, '')
+  } catch { return null }
+}
 
 // ─── MAIN HANDLER (UNIFIED) ─────────────────────────────────────────────────
 
@@ -228,12 +235,17 @@ Deno.serve(async (req) => {
       if (!td.topic.sources?.includes('gdelt')) continue
       try {
         const gdeltArticles = await fetchFromGDELT(td.topic)
-        const mapped = gdeltArticles.map(a => ({
-          ...a,
-          topic_id: td.topic.id,
-          user_id: td.topic.user_id,
-          ingestion_run_id: runId,
-        }))
+        const mapped = gdeltArticles.map(a => {
+          const text = `${a.title ?? ''} ${a.description ?? ''}`.toLowerCase()
+          const matchedKws = td.keywords.filter(kw => textMatchesTerm(text, kw))
+          return {
+            ...a,
+            topic_id: td.topic.id,
+            user_id: td.topic.user_id,
+            ingestion_run_id: runId,
+            matched_keywords: matchedKws,
+          }
+        })
         allArticles.push(...mapped)
         sourceResults.push({ source: `gdelt-${td.topic.name}`, count: mapped.length })
       } catch (err: any) {
@@ -256,6 +268,14 @@ Deno.serve(async (req) => {
         seen.add(key)
         return true
       })
+
+      // Sanitize dates to prevent "time zone not recognized" errors
+      for (const a of deduped) {
+        if (a.published_at) {
+          const d = new Date(a.published_at)
+          a.published_at = isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString()
+        }
+      }
 
       console.log(`Bulk upserting ${deduped.length} articles (from ${allArticles.length} raw)`)
 
@@ -428,12 +448,15 @@ async function fetchRSSUnified(
 
             if (exactMatch || broadMatch) {
                 const domain = source.domain ?? extractDomainName(source.rss_url)
+                const resolvedDomain = extractDomain(item.link ?? '') ?? domain
                 const pubDate = item.pubDate ? new Date(item.pubDate) : new Date()
                 const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
+                const matchedKws = td.keywords.filter(kw => textMatchesTerm(text, kw))
                 allArticles.push({
                 external_id: hashUrl(item.link ?? item.guid ?? ''),
                 source_name: source.name ?? source.domain ?? '',
                 source_url: domain,
+                source_domain: resolvedDomain,
                 title: item.title ?? '',
                 description: item.description ?? null,
                 content: item.content ?? null,
@@ -448,7 +471,8 @@ async function fetchRSSUnified(
                 topic_id: td.topic.id,
                 user_id: td.topic.user_id,
                 ingestion_run_id: undefined,
-                is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (domain || '').includes(m)),
+                matched_keywords: matchedKws,
+                is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (resolvedDomain || '').includes(m)),
                 articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
               })
             }
@@ -566,10 +590,12 @@ async function fetchPerigonUnified(topicSearchData: TopicSearchData[]): Promise<
         if (!td.topic.sources?.includes('perigon')) continue
         const matches = td.expandedTerms.some(term => textMatchesTerm(text, term))
         if (matches) {
+          const matchedKws = td.keywords.filter(kw => textMatchesTerm(text, kw))
           routed.push({
             ...article,
             topic_id: td.topic.id,
             user_id: td.topic.user_id,
+            matched_keywords: matchedKws,
           })
         }
       }
@@ -602,10 +628,12 @@ function normalisePerigonArticles(articles: any[], fetchSource: string): any[] {
     .map((a: any) => {
       const pubDate = new Date(a.pubDate ?? a.addDate ?? Date.now())
       const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
+      const domain = a.source?.domain ?? extractDomain(a.url) ?? ''
       return {
         external_id: hashUrl(a.url),
-        source_name: a.source?.name ?? a.source?.domain ?? 'Unknown',
-        source_url: a.source?.domain ?? '',
+        source_name: a.source?.name ?? domain ?? 'Unknown',
+        source_url: domain,
+        source_domain: domain,
         title: a.title,
         description: a.description ?? a.summary ?? null,
         content: a.content ?? null,
@@ -617,7 +645,7 @@ function normalisePerigonArticles(articles: any[], fetchSource: string): any[] {
         media_type: 'web',
         country: a.source?.country ?? null,
         ingestion_source: fetchSource,
-        is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (a.source?.domain ?? '').includes(m)),
+        is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (domain).includes(m)),
         articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
       }
     })
@@ -674,6 +702,7 @@ async function fetchFromGuardian(topic: any): Promise<any[]> {
             external_id: hashUrl(a.webUrl),
             source_name: 'The Guardian',
             source_url: 'theguardian.com',
+            source_domain: 'theguardian.com',
             title: a.fields?.headline ?? a.webTitle,
             description: a.fields?.trailText ?? null,
             content: a.fields?.bodyText ?? null,
@@ -685,6 +714,7 @@ async function fetchFromGuardian(topic: any): Promise<any[]> {
             media_type: 'web',
             country: edition === 'us' ? 'US' : edition === 'au' ? 'AU' : 'GB',
             ingestion_source: `guardian-${edition}`,
+            matched_keywords: keywords.filter(kw => textMatchesTerm(`${a.fields?.headline ?? ''} ${a.fields?.trailText ?? ''}`, kw)),
             is_major_outlet: true,
             articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
           }
@@ -734,10 +764,12 @@ async function fetchFromGDELT(topic: any): Promise<any[]> {
         const pubDateStr = parseGDELTDate(a.seendate)
         const pubDate = new Date(pubDateStr)
         const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
+        const gdeltDomain = extractDomain(a.url) ?? a.domain ?? ''
         return {
           external_id: hashUrl(a.url),
           source_name: a.domain ?? 'Unknown',
           source_url: a.domain ?? '',
+          source_domain: gdeltDomain,
           title: a.title,
           description: null,
           content: null,
@@ -749,7 +781,7 @@ async function fetchFromGDELT(topic: any): Promise<any[]> {
           media_type: 'web',
           country: a.sourcecountry,
           ingestion_source: 'gdelt',
-          is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (a.domain ?? '').includes(m)),
+          is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => gdeltDomain.includes(m)),
           articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
         }
       })
