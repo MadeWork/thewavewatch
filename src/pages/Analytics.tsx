@@ -412,7 +412,41 @@ export default function Insights() {
         ))}
       </div>
 
-      {isLoading ? (
+      {/* Keyword filter bar */}
+      {keywords && keywords.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <Tag className="w-3.5 h-3.5 text-text-muted shrink-0" />
+          <span className="text-[10px] text-text-muted shrink-0">Filter by keyword:</span>
+          {keywords.map(kw => {
+            const isSelected = selectedKeywords.includes(kw.text);
+            return (
+              <button
+                key={kw.id}
+                onClick={() => setSelectedKeywords(prev =>
+                  isSelected ? prev.filter(k => k !== kw.text) : [...prev, kw.text]
+                )}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition border ${
+                  isSelected
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-bg-elevated text-text-secondary border-border hover:border-primary/50"
+                }`}
+                style={isSelected && kw.color_tag ? { backgroundColor: kw.color_tag, borderColor: kw.color_tag } : undefined}
+              >
+                {kw.text}
+              </button>
+            );
+          })}
+          {selectedKeywords.length > 0 && (
+            <button
+              onClick={() => setSelectedKeywords([])}
+              className="px-2 py-1 rounded-full text-[10px] text-text-muted hover:text-foreground transition"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
+      )}
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[1,2,3,4].map(i => <SkeletonCard key={i} />)}
         </div>
