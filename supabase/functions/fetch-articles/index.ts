@@ -235,12 +235,17 @@ Deno.serve(async (req) => {
       if (!td.topic.sources?.includes('gdelt')) continue
       try {
         const gdeltArticles = await fetchFromGDELT(td.topic)
-        const mapped = gdeltArticles.map(a => ({
-          ...a,
-          topic_id: td.topic.id,
-          user_id: td.topic.user_id,
-          ingestion_run_id: runId,
-        }))
+        const mapped = gdeltArticles.map(a => {
+          const text = `${a.title ?? ''} ${a.description ?? ''}`.toLowerCase()
+          const matchedKws = td.keywords.filter(kw => textMatchesTerm(text, kw))
+          return {
+            ...a,
+            topic_id: td.topic.id,
+            user_id: td.topic.user_id,
+            ingestion_run_id: runId,
+            matched_keywords: matchedKws,
+          }
+        })
         allArticles.push(...mapped)
         sourceResults.push({ source: `gdelt-${td.topic.name}`, count: mapped.length })
       } catch (err: any) {
