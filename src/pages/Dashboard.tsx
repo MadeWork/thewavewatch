@@ -64,19 +64,30 @@ export default function Dashboard() {
     refetchInterval: 60000,
   });
 
+  const [activeKeywordFilters, setActiveKeywordFilters] = useState<Set<string>>(new Set());
+
+  const toggleKeywordFilter = (keyword: string) => {
+    setActiveKeywordFilters(prev => {
+      const next = new Set(prev);
+      if (next.has(keyword)) next.delete(keyword);
+      else next.add(keyword);
+      return next;
+    });
+  };
+
   const favArticles = useMemo(() => {
     if (!articles || !favKeywords?.length) return [];
-    const favTexts = favKeywords.map(k => k.text.toLowerCase());
+    const filterTexts = activeKeywordFilters.size > 0
+      ? Array.from(activeKeywordFilters).map(k => k.toLowerCase())
+      : favKeywords.map(k => k.text.toLowerCase());
     return articles
       .filter(a => {
-        // Check matched_keywords first
-        if (a.matched_keywords?.some((kw: string) => favTexts.includes(kw.toLowerCase()))) return true;
-        // Fallback: check title and description
+        if (a.matched_keywords?.some((kw: string) => filterTexts.includes(kw.toLowerCase()))) return true;
         const text = `${a.title ?? ''} ${a.description ?? ''}`.toLowerCase();
-        return favTexts.some(fav => text.includes(fav));
+        return filterTexts.some(fav => text.includes(fav));
       })
       .slice(0, 10);
-  }, [articles, favKeywords]);
+  }, [articles, favKeywords, activeKeywordFilters]);
 
   const now = new Date();
 
