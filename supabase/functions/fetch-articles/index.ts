@@ -749,10 +749,12 @@ async function fetchFromGDELT(topic: any): Promise<any[]> {
         const pubDateStr = parseGDELTDate(a.seendate)
         const pubDate = new Date(pubDateStr)
         const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
+        const gdeltDomain = extractDomain(a.url) ?? a.domain ?? ''
         return {
           external_id: hashUrl(a.url),
           source_name: a.domain ?? 'Unknown',
           source_url: a.domain ?? '',
+          source_domain: gdeltDomain,
           title: a.title,
           description: null,
           content: null,
@@ -764,7 +766,7 @@ async function fetchFromGDELT(topic: any): Promise<any[]> {
           media_type: 'web',
           country: a.sourcecountry,
           ingestion_source: 'gdelt',
-          is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => (a.domain ?? '').includes(m)),
+          is_major_outlet: MAJOR_OUTLET_DOMAINS.some(m => gdeltDomain.includes(m)),
           articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
         }
       })
