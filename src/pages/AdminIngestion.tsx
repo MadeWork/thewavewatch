@@ -226,7 +226,21 @@ export default function AdminIngestion() {
         </div>
       </div>
 
-      {/* Section 1: Health metrics */}
+      {socialResult && (
+        <div className={`p-3 rounded-lg border text-sm ${socialResult.error ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'}`}>
+          {socialResult.error ? (
+            <>Error: {socialResult.error}</>
+          ) : (
+            <>
+              ✓ Found {socialResult.found}, inserted {socialResult.inserted} —
+              Reddit: {socialResult.sources?.reddit ?? 0} searches,
+              YouTube: {socialResult.sources?.youtube ?? 0} searches
+              {socialResult.errors?.length ? ` · ${socialResult.errors[0]}` : ''}
+            </>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <Card>
           <CardContent className="pt-4 pb-3 px-4">
