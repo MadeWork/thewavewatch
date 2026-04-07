@@ -120,7 +120,7 @@ export default function Mentions() {
     // Quick search
     if (quickSearch) {
       const q = quickSearch.toLowerCase();
-      result = result.filter(a => a.title.toLowerCase().includes(q) || a.snippet?.toLowerCase().includes(q));
+      result = result.filter(a => a.title.toLowerCase().includes(q) || a.description?.toLowerCase().includes(q));
     }
 
     // Bookmarks filter
@@ -133,7 +133,7 @@ export default function Mentions() {
       const sq = searchQuery;
       if (sq.terms.length > 0) {
         result = result.filter(a => {
-          const text = `${a.title} ${a.snippet || ""} ${(a.matched_keywords || []).join(" ")}`.toLowerCase();
+          const text = `${a.title} ${a.description || ""} ${(a.matched_keywords || []).join(" ")}`.toLowerCase();
           return sq.terms.every(t => {
             const val = t.exact ? `"${t.value.toLowerCase()}"` : t.value.toLowerCase();
             const matches = t.exact ? text.includes(t.value.toLowerCase()) : text.includes(val);
@@ -165,8 +165,8 @@ export default function Mentions() {
       const enrichedA = (a as any).is_enriched ? 1 : 0;
       const enrichedB = (b as any).is_enriched ? 1 : 0;
       if (enrichedA !== enrichedB) return enrichedB - enrichedA;
-      const dateA = a.published_at || a.fetched_at;
-      const dateB = b.published_at || b.fetched_at;
+      const dateA = a.published_at || a.created_at || a.fetched_at;
+      const dateB = b.published_at || b.created_at || b.fetched_at;
       return new Date(dateB).getTime() - new Date(dateA).getTime();
     });
     return result;
@@ -193,7 +193,7 @@ export default function Mentions() {
     const rows = [["Title", "Source", "Domain", "Country", "Language", "Date", "Sentiment", "Keywords", "URL"]];
     toExport.forEach(a => {
       const s = a.sources as any;
-      rows.push([a.title, s?.name || a.source_name || "", a.source_domain || "", s?.country_code || "", a.language || "", format(new Date(a.published_at), "yyyy-MM-dd"), a.sentiment || "", (a.matched_keywords || []).join("; "), a.url]);
+      rows.push([a.title, s?.name || a.source_name || "", a.source_url ?? a.source_domain ?? "", s?.country_code || "", a.language || "", format(new Date(a.published_at), "yyyy-MM-dd"), a.sentiment || "", (a.matched_keywords || []).join("; "), a.url]);
     });
     const csv = rows.map(r => r.map(c => `"${(c || "").replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -219,15 +219,6 @@ export default function Mentions() {
     return parts.map((part, i) => i % 2 === 1 ? <mark key={i} className="bg-primary/30 text-foreground rounded px-0.5">{part}</mark> : part);
   };
 
-  const COUNTRY_NAMES: Record<string, string> = {
-    US: "United States", GB: "United Kingdom", DE: "Germany", FR: "France", SE: "Sweden",
-    PT: "Portugal", QA: "Qatar", JP: "Japan", AU: "Australia", BR: "Brazil", IN: "India",
-    CN: "China", ZA: "South Africa", NG: "Nigeria", EG: "Egypt", KR: "South Korea",
-    CA: "Canada", MX: "Mexico", AR: "Argentina", RU: "Russia", IT: "Italy",
-    NO: "Norway", DK: "Denmark", FI: "Finland", ES: "Spain", NL: "Netherlands",
-    BE: "Belgium", CH: "Switzerland", AT: "Austria", IE: "Ireland", SG: "Singapore",
-    NZ: "New Zealand", PL: "Poland", CZ: "Czech Republic", GR: "Greece",
-  };
 
   if (error) return <ErrorBanner message="Failed to load mentions." />;
 
@@ -434,7 +425,7 @@ export default function Mentions() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-foreground font-light group-hover:text-primary transition">{renderHighlighted(a.title)}</p>
-                  {a.snippet && <p className="text-xs text-text-muted mt-1 line-clamp-2">{renderHighlighted(a.snippet || "")}</p>}
+                  {a.description && <p className="text-xs text-text-muted mt-1 line-clamp-2">{renderHighlighted(a.description || "")}</p>}
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
                     {src?.country_code && <span className="text-xs">{src.country_code}</span>}
                     <span className="text-xs text-text-secondary">{displayName}</span>
@@ -443,12 +434,12 @@ export default function Mentions() {
                         <Lock className="h-2.5 w-2.5" /> Subscription
                       </span>
                     )}
-                    {a.source_domain && <span className="text-[10px] text-text-muted">({a.source_domain})</span>}
+                    {a.source_url && <span className="text-[10px] text-text-muted">({a.source_url})</span>}
                     <span className="text-xs text-text-muted">·</span>
                     {a.published_at ? (
                       <span className="text-xs text-text-muted">{format(new Date(a.published_at), "MMM d, yyyy HH:mm")}</span>
                     ) : (
-                      <span className="text-xs text-text-muted italic opacity-60">imported {format(new Date(a.fetched_at), "MMM d")}</span>
+                      <span className="text-xs text-text-muted italic opacity-60">imported {format(new Date(a.created_at || a.fetched_at), "MMM d")}</span>
                     )}
                     {(() => { const b = getEraBadge(a); return b ? <span className={b.className}>{b.label}</span> : null })()}
                     {a.published_at && dateField === "fetched_at" && (
