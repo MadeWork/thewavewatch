@@ -12,7 +12,6 @@ import Mentions from "@/pages/Mentions";
 import Keywords from "@/pages/Keywords";
 import Sources from "@/pages/Sources";
 import Insights from "@/pages/Analytics";
-import Social from "@/pages/Social";
 import Alerts from "@/pages/Alerts";
 import Archive from "@/pages/Archive";
 import SettingsPage from "@/pages/SettingsPage";
@@ -38,7 +37,6 @@ const App = () => (
                 <Route path="/keywords" element={<Keywords />} />
                 <Route path="/sources" element={<Sources />} />
                 <Route path="/analytics" element={<Insights />} />
-                <Route path="/social" element={<Social />} />
                 <Route path="/alerts" element={<Alerts />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/admin/ingestion" element={<AdminIngestion />} />
