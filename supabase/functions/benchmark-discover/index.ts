@@ -110,19 +110,26 @@ function getXmlTag(content: string, tag: string): string {
   return m ? m[1].trim() : "";
 }
 
+const MONTH_NAMES: Record<string, string> = { january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',july:'07',august:'08',september:'09',october:'10',november:'11',december:'12',jan:'01',feb:'02',mar:'03',apr:'04',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12' };
+
 function extractDateFromUrl(url: string): string | null {
   try {
     const path = new URL(url).pathname;
-    // /2024/03/15/ style
     const slashMatch = path.match(/\/(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\/|$)/);
-    // -2024-03-15 slug style (Reuters modern)
     const slugMatch = path.match(/(?:-|\/)(\d{4})-(\d{2})-(\d{2})(?:\/|$)/);
     const match = slashMatch || slugMatch;
     if (match) {
       const d = new Date(`${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}T12:00:00Z`);
-      if (!isNaN(d.getTime()) && d.getTime() > new Date("2000-01-01").getTime()) return d.toISOString();
+      if (!isNaN(d.getTime()) && d.getTime() > new Date("2000-01-01").getTime() && d.getTime() < Date.now() + 86400000) return d.toISOString();
     }
-    // Reuters legacy /article/...-YYYYMMDD or embedded 8-digit date
+    const monthNameMatch = path.match(/\/(\d{4})\/(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)(?:\/|$)/i);
+    if (monthNameMatch) {
+      const mm = MONTH_NAMES[monthNameMatch[2].toLowerCase()];
+      if (mm) {
+        const d = new Date(`${monthNameMatch[1]}-${mm}-15T12:00:00Z`);
+        if (!isNaN(d.getTime()) && d.getTime() > new Date("2000-01-01").getTime() && d.getTime() < Date.now() + 86400000) return d.toISOString();
+      }
+    }
     const compactMatch = path.match(/[/-](\d{4})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?:[/-]|$)/);
     if (compactMatch) {
       const d = new Date(`${compactMatch[1]}-${compactMatch[2]}-${compactMatch[3]}T12:00:00Z`);
