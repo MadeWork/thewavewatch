@@ -1,12 +1,13 @@
-import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useMemo, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend
 } from "recharts";
 import { format, subDays } from "date-fns";
-import { Download, TrendingUp, TrendingDown, Minus, FileText, BarChart3, Lock } from "lucide-react";
+import { Download, TrendingUp, TrendingDown, Minus, FileText, BarChart3, Lock, Upload, RefreshCw, Rss } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
 import SkeletonCard from "@/components/SkeletonCard";
 import ErrorBanner from "@/components/ErrorBanner";
 import EmptyState from "@/components/EmptyState";
@@ -35,7 +36,7 @@ const COMPETITORS = [
 ];
 
 type Period = "7d" | "30d" | "90d";
-type Tab = "overview" | "sov" | "coverage" | "top_stories" | "export";
+type Tab = "overview" | "sov" | "coverage" | "top_stories" | "owned" | "export";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
