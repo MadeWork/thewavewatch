@@ -11,11 +11,9 @@ import Dashboard from "@/pages/Dashboard";
 import Mentions from "@/pages/Mentions";
 import Keywords from "@/pages/Keywords";
 import Sources from "@/pages/Sources";
-import Analytics from "@/pages/Analytics";
+import Insights from "@/pages/Analytics";
 import Alerts from "@/pages/Alerts";
 import Archive from "@/pages/Archive";
-import Reports from "@/pages/Reports";
-import Social from "@/pages/Social";
 import SettingsPage from "@/pages/SettingsPage";
 import NotFound from "@/pages/NotFound";
 import AdminIngestion from "@/pages/AdminIngestion";
@@ -38,10 +36,8 @@ const App = () => (
                 <Route path="/archive" element={<Archive />} />
                 <Route path="/keywords" element={<Keywords />} />
                 <Route path="/sources" element={<Sources />} />
-                <Route path="/analytics" element={<Analytics />} />
+                <Route path="/analytics" element={<Insights />} />
                 <Route path="/alerts" element={<Alerts />} />
-                <Route path="/reports" element={<Reports />} />
-                <Route path="/social" element={<Social />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/admin/ingestion" element={<AdminIngestion />} />
               </Route>
