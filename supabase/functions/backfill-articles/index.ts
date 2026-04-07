@@ -163,6 +163,8 @@ Deno.serve(async (req) => {
       } else {
         errors.push(`Google News: HTTP ${res.status}`)
       }
+    } catch (err: any) { console.error('Google News:', err.message); errors.push(`Google News: ${err.message}`) }
+
     // FIRECRAWL — site-restricted deep search across major outlets
     const firecrawlKey = Deno.env.get('FIRECRAWL_API_KEY')
     if (firecrawlKey) {
