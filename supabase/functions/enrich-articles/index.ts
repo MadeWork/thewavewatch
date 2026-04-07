@@ -66,9 +66,6 @@ Deno.serve(async (req) => {
     // 4. Near-duplicate detection
     const recentTitles = await getRecentTitles(supabase, articles.map(a => a.id));
 
-    let enriched = 0;
-    let duplicates = 0;
-
     const updates: any[] = []
     let enriched = 0
     let duplicates = 0
