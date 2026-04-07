@@ -73,18 +73,14 @@ function parseCSV(text: string): Record<string, string>[] {
   })
 }
 
-// LinkedIn CSV column mapping (LinkedIn exports vary, handle common formats)
+// LinkedIn CSV column mapping — handles both "Updates" (per-post) and "Engagement" (daily aggregate) exports
 function mapLinkedInRow(row: Record<string, string>, userId: string): any | null {
-  // LinkedIn "Updates" export columns (common format):
-  // "Post title", "Post link", "Type", "Campaign name", "Posted on", 
-  // "Impressions", "Clicks", "Click through rate", "Likes", "Comments", "Reposts", "Engagement rate"
+  const keys = Object.keys(row)
   
-  const title = row.post_title || row.title || row.content || row.update || row.post || ''
-  if (!title && !row.post_link) return null
-
-  const url = row.post_link || row.url || row.link || ''
-  const publishedAt = row.posted_on || row.date || row.published_date || row.created_date || ''
+  // Detect format: daily aggregate has "date" + "impressions_total" but no "post_title"
+  const isAggregate = keys.some(k => k.includes('impressions_total') || k.includes('impressions_organic'))
   
+  const publishedAt = row.date || row.posted_on || row.published_date || row.created_date || ''
   let parsedDate: string | null = null
   if (publishedAt) {
     try {
@@ -92,6 +88,43 @@ function mapLinkedInRow(row: Record<string, string>, userId: string): any | null
       if (!isNaN(d.getTime())) parsedDate = d.toISOString()
     } catch {}
   }
+  if (!parsedDate) return null // skip rows without a valid date
+
+  if (isAggregate) {
+    // Daily aggregate row — create one article per day
+    const impressions = parseInt(row.impressions_total || row.impressions_organic || '0') || 0
+    const clicks = parseInt(row.clicks_total || row.clicks_organic || '0') || 0
+    const reactions = parseInt(row.reactions_total || row.reactions_organic || '0') || 0
+    const comments = parseInt(row.comments_total || row.comments_organic || '0') || 0
+    const reposts = parseInt(row.reposts_total || row.reposts_organic || '0') || 0
+    const dateLabel = publishedAt.slice(0, 10)
+
+    return {
+      title: `LinkedIn Daily Metrics — ${dateLabel}`,
+      url: `linkedin-daily-${dateLabel}`,
+      description: `Impressions: ${impressions}, Clicks: ${clicks}, Reactions: ${reactions}, Comments: ${comments}, Reposts: ${reposts}`,
+      source_name: 'LinkedIn',
+      source_url: 'linkedin.com',
+      source_category: 'owned',
+      media_type: 'social',
+      ingestion_source: 'linkedin-csv',
+      published_at: parsedDate,
+      user_id: userId,
+      language: 'en',
+      impressions,
+      clicks,
+      shares: reposts,
+      engagement_score: reactions,
+      comment_count: comments,
+      matched_keywords: [],
+      is_duplicate: false,
+    }
+  }
+
+  // Per-post format
+  const title = row.post_title || row.title || row.content || row.update || row.post || ''
+  if (!title && !row.post_link) return null
+  const url = row.post_link || row.url || row.link || ''
 
   return {
     title: title.slice(0, 500) || 'LinkedIn Post',
