@@ -9,21 +9,24 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}))
     const { topic_id, days_back: rawDays = 30 } = body
     const days_back = Math.min(Number(rawDays) || 30, 120)
-    if (!topic_id) return new Response(JSON.stringify({ error: 'topic_id required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    if (!topic_id) return json({ error: 'topic_id required' }, 400)
 
     const { data: topic } = await supabase.from('monitored_topics').select('*').eq('id', topic_id).single()
-    if (!topic) return new Response(JSON.stringify({ error: 'Topic not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    if (!topic) return json({ error: 'Topic not found' }, 404)
 
     let keywords: string[] = []
     const raw = topic.keywords
     if (Array.isArray(raw)) keywords = raw.filter((k: any) => typeof k === 'string')
     else if (typeof raw === 'string') { try { keywords = JSON.parse(raw) } catch {} }
-    if (!keywords.length) return new Response(JSON.stringify({ error: 'No keywords' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    if (!keywords.length) return json({ error: 'No keywords' }, 400)
+
+    console.log(`Backfill: topic="${topic.name}", keywords=${JSON.stringify(keywords)}, days=${days_back}`)
 
     const fromDate = new Date(Date.now() - days_back * 24 * 60 * 60 * 1000)
     const fromDateStr = fromDate.toISOString().split('T')[0]
     const allArticles: any[] = []
     const sourceCounts: Record<string, number> = { guardian: 0, gdelt: 0, perigon: 0, google: 0 }
+    const errors: string[] = []
 
     const setEra = (pubDate: string | null) => {
       if (!pubDate) return 'archive'
@@ -32,6 +35,13 @@ Deno.serve(async (req) => {
       if (ageDays <= 30) return 'recent'
       return 'archive'
     }
+
+    const makeArticle = (fields: any) => ({
+      source_category: 'media',
+      is_duplicate: false,
+      ...fields,
+      articles_era: setEra(fields.published_at),
+    })
 
     // GUARDIAN
     const guardianKey = Deno.env.get('GUARDIAN_API_KEY')
@@ -45,14 +55,25 @@ Deno.serve(async (req) => {
         url.searchParams.set('show-fields', 'headline,trailText,byline,thumbnail')
         url.searchParams.set('page-size', '50')
         url.searchParams.set('api-key', guardianKey)
-        const res = await fetch(url.toString())
+        const res = await fetch(url.toString(), { signal: AbortSignal.timeout(10000) })
         if (res.ok) {
           const data = await res.json()
-          const articles = (data.response?.results ?? []).map((a: any) => ({ external_id: hashUrl(a.webUrl), topic_id: topic.id, user_id: topic.user_id, source_name: 'The Guardian', source_url: 'theguardian.com', title: a.fields?.headline ?? a.webTitle, description: a.fields?.trailText ?? null, author: a.fields?.byline ?? null, published_at: a.webPublicationDate, url: a.webUrl, image_url: a.fields?.thumbnail ?? null, language: 'en', media_type: 'web', ingestion_source: 'guardian-backfill', articles_era: setEra(a.webPublicationDate), is_duplicate: false }))
+          const articles = (data.response?.results ?? []).map((a: any) => makeArticle({
+            external_id: hashUrl(a.webUrl), topic_id: topic.id, user_id: topic.user_id,
+            source_name: 'The Guardian', source_url: 'theguardian.com',
+            title: a.fields?.headline ?? a.webTitle, description: a.fields?.trailText ?? null,
+            author: a.fields?.byline ?? null, published_at: a.webPublicationDate,
+            url: a.webUrl, image_url: a.fields?.thumbnail ?? null,
+            language: 'en', media_type: 'web', ingestion_source: 'guardian-backfill',
+          }))
           allArticles.push(...articles)
           sourceCounts.guardian = articles.length
+          console.log(`Guardian: ${articles.length} results`)
+        } else {
+          console.error(`Guardian: HTTP ${res.status}`)
+          errors.push(`Guardian: HTTP ${res.status}`)
         }
-      } catch (err: any) { console.error('Guardian backfill:', err.message) }
+      } catch (err: any) { console.error('Guardian:', err.message); errors.push(`Guardian: ${err.message}`) }
     }
 
     // GDELT
@@ -60,14 +81,27 @@ Deno.serve(async (req) => {
       const gdeltQuery = keywords.slice(0, 3).join(' ')
       const startDt = fromDate.toISOString().replace(/[-:T]/g, '').slice(0, 14)
       const endDt = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)
-      const res = await fetch(`https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(gdeltQuery)}&mode=artlist&maxrecords=100&format=json&startdatetime=${startDt}&enddatetime=${endDt}`)
+      const res = await fetch(`https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(gdeltQuery)}&mode=artlist&maxrecords=100&format=json&startdatetime=${startDt}&enddatetime=${endDt}`, { signal: AbortSignal.timeout(15000) })
       if (res.ok) {
         const data = await res.json()
-        const articles = (data.articles ?? []).filter((a: any) => a.title && a.url).map((a: any) => { const pub = parseGDELTDate(a.seendate); return { external_id: hashUrl(a.url), topic_id: topic.id, user_id: topic.user_id, source_name: a.domain ?? 'Unknown', source_url: a.domain ?? '', title: a.title, description: null, author: null, published_at: pub, url: a.url, image_url: null, language: a.language ?? 'en', media_type: 'web', ingestion_source: 'gdelt-backfill', articles_era: setEra(pub), is_duplicate: false } })
+        const articles = (data.articles ?? []).filter((a: any) => a.title && a.url).map((a: any) => {
+          const pub = parseGDELTDate(a.seendate)
+          return makeArticle({
+            external_id: hashUrl(a.url), topic_id: topic.id, user_id: topic.user_id,
+            source_name: a.domain ?? 'Unknown', source_url: a.domain ?? '',
+            title: a.title, description: null, author: null, published_at: pub,
+            url: a.url, image_url: null, language: a.language ?? 'en',
+            media_type: 'web', ingestion_source: 'gdelt-backfill',
+          })
+        })
         allArticles.push(...articles)
         sourceCounts.gdelt = articles.length
+        console.log(`GDELT: ${articles.length} results`)
+      } else {
+        console.error(`GDELT: HTTP ${res.status}`)
+        errors.push(`GDELT: HTTP ${res.status}`)
       }
-    } catch (err: any) { console.error('GDELT backfill:', err.message) }
+    } catch (err: any) { console.error('GDELT:', err.message); errors.push(`GDELT: ${err.message}`) }
 
     // PERIGON
     const perigonKey = Deno.env.get('PERIGON_API_KEY')
@@ -81,52 +115,122 @@ Deno.serve(async (req) => {
         url.searchParams.set('showReprints', 'false')
         url.searchParams.set('size', '50')
         url.searchParams.set('apiKey', perigonKey)
-        const res = await fetch(url.toString())
+        const res = await fetch(url.toString(), { signal: AbortSignal.timeout(10000) })
         if (res.ok) {
           const data = await res.json()
-          const articles = (data.articles ?? []).filter((a: any) => a.title && a.url && a.source?.domain).map((a: any) => ({ external_id: hashUrl(a.url), topic_id: topic.id, user_id: topic.user_id, source_name: a.source?.name ?? a.source?.domain ?? 'Unknown', source_url: a.source?.domain ?? '', title: a.title, description: a.description ?? a.summary ?? null, author: a.authorsByline ?? null, published_at: a.pubDate ?? a.addDate ?? new Date().toISOString(), url: a.url, image_url: a.imageUrl ?? null, language: a.language ?? 'en', media_type: 'web', ingestion_source: 'perigon-backfill', articles_era: setEra(a.pubDate ?? a.addDate), is_duplicate: false }))
+          const articles = (data.articles ?? []).filter((a: any) => a.title && a.url).map((a: any) => makeArticle({
+            external_id: hashUrl(a.url), topic_id: topic.id, user_id: topic.user_id,
+            source_name: a.source?.name ?? a.source?.domain ?? 'Unknown',
+            source_url: a.source?.domain ?? '', title: a.title,
+            description: a.description ?? a.summary ?? null,
+            author: a.authorsByline ?? null,
+            published_at: a.pubDate ?? a.addDate ?? new Date().toISOString(),
+            url: a.url, image_url: a.imageUrl ?? null,
+            language: a.language ?? 'en', media_type: 'web', ingestion_source: 'perigon-backfill',
+          }))
           allArticles.push(...articles)
           sourceCounts.perigon = articles.length
+          console.log(`Perigon: ${articles.length} results`)
+        } else {
+          console.error(`Perigon: HTTP ${res.status}`)
+          errors.push(`Perigon: HTTP ${res.status}`)
         }
-      } catch (err: any) { console.error('Perigon backfill:', err.message) }
+      } catch (err: any) { console.error('Perigon:', err.message); errors.push(`Perigon: ${err.message}`) }
     }
 
     // GOOGLE NEWS
     try {
       const gnQuery = keywords.slice(0, 3).map((k: string) => k.includes(' ') ? `"${k}"` : k).join(' OR ')
-      const res = await fetch(`https://news.google.com/rss/search?q=${encodeURIComponent(gnQuery)}&hl=en&gl=GB&ceid=GB:en`, { headers: { 'User-Agent': 'WaveWatch/1.0 media monitoring' } })
+      const res = await fetch(`https://news.google.com/rss/search?q=${encodeURIComponent(gnQuery)}&hl=en&gl=GB&ceid=GB:en`, {
+        headers: { 'User-Agent': 'WaveWatch/1.0 media monitoring' },
+        signal: AbortSignal.timeout(10000),
+      })
       if (res.ok) {
         const xml = await res.text()
         const items = parseRSSXML(xml)
-        const articles = items.filter((item: any) => item.title && item.link).map((item: any) => ({ external_id: hashUrl(item.link ?? ''), topic_id: topic.id, user_id: topic.user_id, source_name: extractDomainName(item.link ?? ''), source_url: extractDomainName(item.link ?? ''), title: item.title, description: item.description ?? null, author: null, published_at: item.pubDate ?? new Date().toISOString(), url: item.link, image_url: null, language: 'en', media_type: 'web', ingestion_source: 'google-news-backfill', articles_era: setEra(item.pubDate), is_duplicate: false }))
+        const articles = items.filter((item: any) => item.title && item.link).map((item: any) => makeArticle({
+          external_id: hashUrl(item.link ?? ''), topic_id: topic.id, user_id: topic.user_id,
+          source_name: extractDomainName(item.link ?? ''),
+          source_url: extractDomainName(item.link ?? ''),
+          title: item.title, description: item.description ?? null, author: null,
+          published_at: item.pubDate ?? new Date().toISOString(),
+          url: item.link, image_url: null, language: 'en',
+          media_type: 'web', ingestion_source: 'google-news-backfill',
+        }))
         allArticles.push(...articles)
         sourceCounts.google = articles.length
+        console.log(`Google News: ${articles.length} results`)
+      } else {
+        errors.push(`Google News: HTTP ${res.status}`)
       }
-    } catch (err: any) { console.error('Google News backfill:', err.message) }
+    } catch (err: any) { console.error('Google News:', err.message); errors.push(`Google News: ${err.message}`) }
 
-    if (!allArticles.length) return new Response(JSON.stringify({ inserted: 0, found: 0, message: 'No articles found' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    console.log(`Total found: ${allArticles.length}`)
 
+    if (!allArticles.length) return json({ inserted: 0, found: 0, sources: sourceCounts, errors })
+
+    // Dedupe by URL
     const seen = new Set<string>()
-    const deduped = allArticles.filter(a => { if (!a.external_id || seen.has(a.external_id)) return false; seen.add(a.external_id); return true })
+    const deduped = allArticles.filter(a => {
+      if (!a.url || seen.has(a.url)) return false
+      seen.add(a.url)
+      return true
+    })
 
-    const { data: inserted, error: insertError } = await supabase.from('articles').upsert(deduped, { onConflict: 'url', ignoreDuplicates: true }).select('id')
-    if (insertError) return new Response(JSON.stringify({ error: insertError.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    // Insert in batches of 50 to avoid timeouts
+    let insertedCount = 0
+    for (let i = 0; i < deduped.length; i += 50) {
+      const batch = deduped.slice(i, i + 50)
+      const { data: ins, error: insertError } = await supabase
+        .from('articles')
+        .upsert(batch, { onConflict: 'url', ignoreDuplicates: true })
+        .select('id')
+      if (insertError) {
+        console.error(`Insert batch ${i}: ${insertError.message}`)
+        errors.push(`DB: ${insertError.message}`)
+      } else {
+        insertedCount += ins?.length ?? 0
+      }
+    }
 
-    return new Response(JSON.stringify({ inserted: inserted?.length ?? 0, found: allArticles.length, days_back, sources: sourceCounts }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    console.log(`Inserted: ${insertedCount}`)
+    return json({ inserted: insertedCount, found: allArticles.length, days_back, sources: sourceCounts, errors: errors.length ? errors : undefined })
   } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    console.error('Backfill error:', err.message)
+    return json({ error: err.message }, 500)
   }
 })
 
+function json(data: any, status = 200) {
+  return new Response(JSON.stringify(data), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+}
 function hashUrl(url: string): string { let h = 0; for (let i = 0; i < url.length; i++) { h = ((h << 5) - h) + url.charCodeAt(i); h |= 0 } return Math.abs(h).toString(36) }
 function parseGDELTDate(d: string): string { if (!d || d.length < 14) return new Date().toISOString(); return `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}T${d.slice(8,10)}:${d.slice(10,12)}:${d.slice(12,14)}Z` }
 function extractDomainName(url: string): string { try { return new URL(url).hostname.replace('www.', '') } catch { return url } }
 function parseRSSXML(xml: string): any[] {
   const items: any[] = []
   const isAtom = xml.includes('<feed') && xml.includes('xmlns')
-  if (isAtom) { for (const m of xml.matchAll(/<entry[^>]*>([\s\S]*?)<\/entry>/gi)) { const e = m[1]; items.push({ title: extractXMLText(e,'title'), link: extractXMLAttr(e,'link','href') ?? extractXMLText(e,'link'), description: extractXMLText(e,'summary') ?? extractXMLText(e,'content'), pubDate: extractXMLText(e,'published') ?? extractXMLText(e,'updated'), guid: extractXMLText(e,'id') }) } }
-  else { for (const m of xml.matchAll(/<item[^>]*>([\s\S]*?)<\/item>/gi)) { const i = m[1]; items.push({ title: extractXMLText(i,'title'), link: extractXMLText(i,'link'), description: extractXMLText(i,'description'), pubDate: extractXMLText(i,'pubDate') ?? extractXMLText(i,'dc:date'), guid: extractXMLText(i,'guid') }) } }
+  if (isAtom) {
+    for (const m of xml.matchAll(/<entry[^>]*>([\s\S]*?)<\/entry>/gi)) {
+      const e = m[1]
+      items.push({ title: extractXMLText(e,'title'), link: extractXMLAttr(e,'link','href') ?? extractXMLText(e,'link'), description: extractXMLText(e,'summary') ?? extractXMLText(e,'content'), pubDate: extractXMLText(e,'published') ?? extractXMLText(e,'updated'), guid: extractXMLText(e,'id') })
+    }
+  } else {
+    for (const m of xml.matchAll(/<item[^>]*>([\s\S]*?)<\/item>/gi)) {
+      const i = m[1]
+      items.push({ title: extractXMLText(i,'title'), link: extractXMLText(i,'link'), description: extractXMLText(i,'description'), pubDate: extractXMLText(i,'pubDate') ?? extractXMLText(i,'dc:date'), guid: extractXMLText(i,'guid') })
+    }
+  }
   return items.filter(i => i.title && (i.link || i.guid))
 }
-function extractXMLText(xml: string, tag: string): string | null { const c = xml.match(new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\/${tag}>`, 'i')); if (c) return c[1].trim(); const t = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\/${tag}>`, 'i')); if (t) return t[1].replace(/<[^>]+>/g, '').trim() || null; return null }
-function extractXMLAttr(xml: string, tag: string, attr: string): string | null { const m = xml.match(new RegExp(`<${tag}[^>]*\\s${attr}="([^"]*)"`, 'i')); return m ? m[1] : null }
+function extractXMLText(xml: string, tag: string): string | null {
+  const c = xml.match(new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`, 'i'))
+  if (c) return c[1].trim()
+  const t = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i'))
+  if (t) return t[1].replace(/<[^>]+>/g, '').trim() || null
+  return null
+}
+function extractXMLAttr(xml: string, tag: string, attr: string): string | null {
+  const m = xml.match(new RegExp(`<${tag}[^>]*\\s${attr}="([^"]*)"`, 'i'))
+  return m ? m[1] : null
+}
