@@ -271,6 +271,13 @@ function json(data: any, status = 200) {
 function hashUrl(url: string): string { let h = 0; for (let i = 0; i < url.length; i++) { h = ((h << 5) - h) + url.charCodeAt(i); h |= 0 } return Math.abs(h).toString(36) }
 function parseGDELTDate(d: string): string { if (!d || d.length < 14) return new Date().toISOString(); return `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}T${d.slice(8,10)}:${d.slice(10,12)}:${d.slice(12,14)}Z` }
 function extractDomainName(url: string): string { try { return new URL(url).hostname.replace('www.', '') } catch { return url } }
+function isBlockedUrl(url: string): boolean {
+  try {
+    const h = new URL(url).hostname.replace('www.', '').toLowerCase()
+    const blocked = ['facebook.com','twitter.com','x.com','instagram.com','linkedin.com','youtube.com','reddit.com','tiktok.com','pinterest.com']
+    return blocked.some(d => h === d || h.endsWith('.' + d))
+  } catch { return false }
+}
 function parseRSSXML(xml: string): any[] {
   const items: any[] = []
   const isAtom = xml.includes('<feed') && xml.includes('xmlns')
