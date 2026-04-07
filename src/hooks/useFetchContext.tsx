@@ -67,30 +67,28 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       const counts: Record<string, number> = {};
 
       // ══════════════════════════════════════════════════════
-      // PRIORITY 1: Tier 1 Search (Firecrawl site: queries)
-      // Most important — finds articles from major publishers
+      // PRIORITY 0: Unified fetch (RSS + Guardian + Perigon + GDELT)
+      // This is the same pipeline the scheduled cron uses — most reliable
       // ══════════════════════════════════════════════════════
-      setState(s => ({ ...s, progress: 5, stage: { step: "discover", label: "Searching major publishers…" } }));
-      let t1sOff = 0;
-      let t1sMore = true;
-      let t1sBatch = 0;
-      counts.tier1_search = 0;
-      while (t1sMore) {
-        setState(s => ({
-          ...s,
-          progress: 5 + Math.min(t1sBatch * 3, 15),
-          stage: { step: "discover", label: `Searching publishers (batch ${t1sBatch + 1})…` },
-        }));
-        const data = await invokeStage("tier1_search", { offset: t1sOff, limit: 5 }, 90000);
-        if (data) {
-          counts.tier1_search += data.discovered || 0;
-          t1sMore = data.hasMore === true;
-          t1sOff += 5;
-        } else {
-          t1sMore = false;
+      setState(s => ({ ...s, progress: 5, stage: { step: "rss", label: "Fetching from all sources (RSS, Guardian, GDELT)…" } }));
+      counts.unified = 0;
+      try {
+        const ufResult = await withTimeout(
+          supabase.functions.invoke("fetch-articles", { body: {} }),
+          120000,
+        );
+        if (ufResult && !ufResult.error) {
+          counts.unified = ufResult.data?.total_inserted || 0;
         }
-        t1sBatch++;
-      }
+      } catch {}
+
+      // PRIORITY 1: Tier 1 Search (Firecrawl — only if credits available)
+      setState(s => ({ ...s, progress: 30, stage: { step: "discover", label: "Searching major publishers…" } }));
+      counts.tier1_search = 0;
+      try {
+        const data = await invokeStage("tier1_search", { offset: 0, limit: 5 }, 60000);
+        if (data) counts.tier1_search += data.discovered || 0;
+      } catch {}
 
       // PRIORITY 2: Tier 1 RSS/Sitemap
       setState(s => ({ ...s, progress: 22, stage: { step: "rss", label: "Scanning publisher feeds…" } }));
