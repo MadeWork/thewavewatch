@@ -238,6 +238,21 @@ Deno.serve(async (req) => {
 
     if (!allArticles.length) return json({ inserted: 0, found: 0, sources: sourceCounts, errors })
 
+    // Resolve Google News redirect URLs to actual publisher URLs
+    const gnArticles = allArticles.filter(a => a.url?.includes('news.google.com'))
+    if (gnArticles.length) {
+      console.log(`Resolving ${gnArticles.length} Google News URLs...`)
+      await Promise.allSettled(gnArticles.map(async (a) => {
+        const resolved = await resolveGoogleNewsUrl(a.url)
+        if (resolved !== a.url) {
+          a.url = resolved
+          a.source_domain = extractDomainName(resolved)
+          a.source_name = extractDomainName(resolved)
+          a.external_id = hashUrl(resolved)
+        }
+      }))
+    }
+
     // Dedupe by URL
     const seen = new Set<string>()
     const deduped = allArticles.filter(a => {
