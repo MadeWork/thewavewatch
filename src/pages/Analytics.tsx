@@ -364,6 +364,7 @@ export default function Insights() {
           ["sov",        "Share of Voice"],
           ["coverage",   "Coverage"],
           ["top_stories","Top Stories"],
+          ["owned",      "Owned Content"],
           ["export",     "Export"],
         ] as [Tab, string][]).map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)}
