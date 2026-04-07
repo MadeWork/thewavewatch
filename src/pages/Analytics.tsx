@@ -6,7 +6,7 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend
 } from "recharts";
 import { format, subDays } from "date-fns";
-import { Download, TrendingUp, TrendingDown, Minus, FileText, BarChart3, Lock, Upload, RefreshCw, Rss } from "lucide-react";
+import { Download, TrendingUp, TrendingDown, Minus, FileText, BarChart3, Lock, Upload, RefreshCw, Rss, Tag } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import SkeletonCard from "@/components/SkeletonCard";
 import ErrorBanner from "@/components/ErrorBanner";
@@ -69,7 +69,22 @@ export default function Insights() {
   const [csvResult, setCsvResult] = useState<any>(null);
   const [blogScraping, setBlogScraping] = useState(false);
   const [blogResult, setBlogResult] = useState<any>(null);
+  const [selectedKeywords, setSelectedKeywords] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch keywords from DB
+  const { data: keywords } = useQuery({
+    queryKey: ["insights-keywords"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("keywords")
+        .select("id, text, color_tag, active")
+        .eq("active", true)
+        .order("match_count", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
 
   const { data: articles, isLoading, error } = useQuery({
     queryKey: ["insights-articles"],
@@ -90,17 +105,36 @@ export default function Insights() {
   const cutoff = subDays(now, days);
   const prevCutoff = subDays(now, days * 2);
 
-  const periodArticles = useMemo(
+  const periodArticlesRaw = useMemo(
     () => (articles ?? []).filter(a => a.published_at && new Date(a.published_at) >= cutoff),
     [articles, cutoff]
   );
+
+  // Apply keyword filter
+  const periodArticles = useMemo(() => {
+    if (selectedKeywords.length === 0) return periodArticlesRaw;
+    return periodArticlesRaw.filter(a =>
+      (a.matched_keywords ?? []).some((k: string) =>
+        selectedKeywords.some(sk => k.toLowerCase() === sk.toLowerCase())
+      )
+    );
+  }, [periodArticlesRaw, selectedKeywords]);
+
   const prevPeriodArticles = useMemo(
-    () => (articles ?? []).filter(a =>
-      a.published_at &&
-      new Date(a.published_at) >= prevCutoff &&
-      new Date(a.published_at) < cutoff
-    ),
-    [articles, cutoff, prevCutoff]
+    () => {
+      const raw = (articles ?? []).filter(a =>
+        a.published_at &&
+        new Date(a.published_at) >= prevCutoff &&
+        new Date(a.published_at) < cutoff
+      );
+      if (selectedKeywords.length === 0) return raw;
+      return raw.filter(a =>
+        (a.matched_keywords ?? []).some((k: string) =>
+          selectedKeywords.some(sk => k.toLowerCase() === sk.toLowerCase())
+        )
+      );
+    },
+    [articles, cutoff, prevCutoff, selectedKeywords]
   );
 
   // ── Volume over time
@@ -377,6 +411,41 @@ export default function Insights() {
           </button>
         ))}
       </div>
+
+      {/* Keyword filter bar */}
+      {keywords && keywords.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <Tag className="w-3.5 h-3.5 text-text-muted shrink-0" />
+          <span className="text-[10px] text-text-muted shrink-0">Filter by keyword:</span>
+          {keywords.map(kw => {
+            const isSelected = selectedKeywords.includes(kw.text);
+            return (
+              <button
+                key={kw.id}
+                onClick={() => setSelectedKeywords(prev =>
+                  isSelected ? prev.filter(k => k !== kw.text) : [...prev, kw.text]
+                )}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition border ${
+                  isSelected
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-bg-elevated text-text-secondary border-border hover:border-primary/50"
+                }`}
+                style={isSelected && kw.color_tag ? { backgroundColor: kw.color_tag, borderColor: kw.color_tag } : undefined}
+              >
+                {kw.text}
+              </button>
+            );
+          })}
+          {selectedKeywords.length > 0 && (
+            <button
+              onClick={() => setSelectedKeywords([])}
+              className="px-2 py-1 rounded-full text-[10px] text-text-muted hover:text-foreground transition"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
