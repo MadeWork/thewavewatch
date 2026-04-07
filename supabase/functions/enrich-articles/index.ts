@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+// enrich-articles edge function
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -6,9 +6,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const BATCH_SIZE = 20;
+const BATCH_SIZE = 50;
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -69,6 +69,10 @@ serve(async (req) => {
     let enriched = 0;
     let duplicates = 0;
 
+    const updates: any[] = []
+    let enriched = 0
+    let duplicates = 0
+
     for (const article of articles) {
       const score = scores.find((s: any) => s.id === article.id) ?? {
         relevance_score: 0.5,
@@ -77,22 +81,20 @@ serve(async (req) => {
         sentiment: 'neutral',
         sentiment_score: 0,
         key_themes: []
-      };
+      }
 
-      // Check for duplicates
-      const existingDup = recentTitles.find(r => titlesAreSimilar(article.title, r.title));
+      const existingDup = recentTitles.find(r => titlesAreSimilar(article.title, r.title))
       const batchDup = articles.find(other =>
         other.id !== article.id &&
         (other.published_at || "") <= (article.published_at || "") &&
         titlesAreSimilar(article.title, other.title)
-      );
+      )
 
-      const isDuplicate = !!(existingDup || batchDup);
-      const duplicateOf = existingDup?.id || batchDup?.id || null;
+      const isDuplicate = !!(existingDup || batchDup)
+      if (isDuplicate) duplicates++
 
-      if (isDuplicate) duplicates++;
-
-      await supabase.from("articles").update({
+      updates.push({
+        id: article.id,
         relevance_score: score.relevance_score,
         relevance_label: score.relevance_label,
         relevance_reason: score.relevance_reason,
@@ -100,12 +102,19 @@ serve(async (req) => {
         sentiment_score: score.sentiment_score,
         key_themes: score.key_themes,
         is_duplicate: isDuplicate,
-        duplicate_of: duplicateOf,
+        duplicate_of: existingDup?.id || batchDup?.id || null,
         is_enriched: true,
         enriched_at: new Date().toISOString(),
-      }).eq("id", article.id);
+      })
+      enriched++
+    }
 
-      enriched++;
+    // Batch upsert all updates at once
+    if (updates.length > 0) {
+      const { error: updateError } = await supabase
+        .from("articles")
+        .upsert(updates, { onConflict: 'id' })
+      if (updateError) console.error("Batch update error:", updateError.message)
     }
 
     console.log(`Enriched ${enriched}, duplicates: ${duplicates}`);
@@ -202,7 +211,7 @@ async function getRecentTitles(supabase: any, excludeIds: string[]) {
     .from("articles")
     .select("id, title")
     .eq("is_duplicate", false)
-    .gte("published_at", new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString())
+    .gte("published_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
     .limit(200);
 
   return (data || []).filter((a: any) => !excludeIds.includes(a.id));

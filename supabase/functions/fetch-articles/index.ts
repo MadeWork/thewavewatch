@@ -122,12 +122,12 @@ Deno.serve(async (req) => {
     const startTime = Date.now()
 
     // 1. Fetch all active topics
-    const topicQuery = supabase
+    let topicQuery = supabase
       .from('monitored_topics')
       .select('*')
       .eq('is_active', true)
 
-    if (topic_id) topicQuery.eq('id', topic_id)
+    if (topic_id) topicQuery = topicQuery.eq('id', topic_id)
 
     const { data: topics, error } = await topicQuery
     if (error) {
@@ -411,15 +411,12 @@ async function fetchRSSUnified(
 
           for (const td of topicSearchData) {
             if (!td.topic.sources?.includes('rss')) continue
-            const matches = td.expandedTerms.some(term => textMatchesTerm(text, term))
-            // For high-priority sources, also match broad energy terms
-            if (!matches && (source.fetch_priority ?? 0) >= 80) {
-              const broadMatch = BROAD_ENERGY_TERMS.some(term => text.includes(term))
-              if (broadMatch) {
-                // Still require at least one topic term for high-priority broad match
-              }
-            }
-            if (matches) {
+            const exactMatch = td.expandedTerms.some(term => textMatchesTerm(text, term))
+            const broadMatch = !exactMatch
+              && (source.fetch_priority ?? 0) >= 80
+              && BROAD_ENERGY_TERMS.some(term => text.includes(term))
+
+            if (exactMatch || broadMatch) {
                 const domain = source.domain ?? extractDomainName(source.rss_url)
                 const pubDate = item.pubDate ? new Date(item.pubDate) : new Date()
                 const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
@@ -533,8 +530,7 @@ async function fetchPerigonUnified(topicSearchData: TopicSearchData[]): Promise<
   url.searchParams.set('q', globalQuery)
   url.searchParams.set('from', from)
   url.searchParams.set('sourceGroup', 'top100')
-  url.searchParams.set('source', MAJOR_OUTLET_DOMAINS.slice(0, 30).join(','))
-  url.searchParams.set('category', 'Energy,Environment,Science,Business,Tech')
+  url.searchParams.set('category', 'Energy,Environment,Science,Business,Tech,Politics')
   url.searchParams.set('sortBy', 'relevance')
   url.searchParams.set('showReprints', 'false')
   url.searchParams.set('size', '100')
@@ -636,7 +632,7 @@ async function fetchFromGuardian(topic: any): Promise<any[]> {
     .map((k: string) => k.includes(' ') ? `"${k}"` : k)
     .join(' OR ')
 
-  const fromDate = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const fromDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   const allArticles: any[] = []
   const editions = ['uk', 'us', 'au']
 
@@ -711,8 +707,8 @@ async function fetchFromGDELT(topic: any): Promise<any[]> {
     return []
   }
   const allTerms = expandKeywords(keywords)
-  const query = `(${allTerms.map((k: string) => k.includes(' ') ? `"${k}"` : k).join(' OR ')}) (theme:RENEWABLE_ENERGY OR theme:ENV_CLIMATECHANGE)`
-  const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&maxrecords=100&format=json&sort=HybridRel&timespan=2d`
+  const query = `(${allTerms.map((k: string) => k.includes(' ') ? `"${k}"` : k).join(' OR ')})`
+  const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&maxrecords=100&format=json&sort=HybridRel&timespan=7d`
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 15000)
