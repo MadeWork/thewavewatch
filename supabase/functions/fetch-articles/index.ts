@@ -91,23 +91,33 @@ const BROAD_ENERGY_TERMS = ['renewable','clean energy','offshore','ocean','marit
 // ─── MAJOR OUTLET DOMAINS ────────────────────────────────────────────────────
 
 const MAJOR_OUTLET_DOMAINS = [
+  // Wire services
   'reuters.com', 'apnews.com', 'bloomberg.com', 'afp.com',
+  // US majors
   'nytimes.com', 'washingtonpost.com', 'wsj.com', 'ft.com',
   'cnbc.com', 'cnn.com', 'nbcnews.com', 'abcnews.go.com',
   'cbsnews.com', 'npr.org', 'politico.com', 'theatlantic.com',
   'time.com', 'forbes.com', 'usatoday.com', 'latimes.com',
   'businessinsider.com',
+  // UK majors
   'theguardian.com', 'bbc.com', 'bbc.co.uk', 'thetimes.co.uk',
   'telegraph.co.uk', 'independent.co.uk', 'sky.com', 'standard.co.uk',
+  // European majors
+  'euronews.com', 'euractiv.com', 'politico.eu',
+  'spiegel.de', 'faz.net', 'sueddeutsche.de', 'dw.com', 'handelsblatt.com',
+  'lemonde.fr', 'lefigaro.fr', 'lecho.be',
+  'elpais.com', 'corriere.it', 'repubblica.it',
+  // Nordics
   'dn.se', 'svd.se', 'di.se', 'aftonbladet.se', 'expressen.se',
   'aftenposten.no', 'dn.no', 'vg.no', 'nrk.no', 'e24.no',
   'berlingske.dk', 'politiken.dk', 'borsen.dk', 'dr.dk',
   'yle.fi', 'hs.fi',
-  'spiegel.de', 'faz.net', 'sueddeutsche.de', 'dw.com',
-  'lemonde.fr', 'lefigaro.fr', 'euractiv.com', 'politico.eu',
+  // Australia/NZ
   'abc.net.au', 'smh.com.au', 'theage.com.au', 'afr.com',
   'theaustralian.com.au', 'news.com.au', 'sbs.com.au',
   'nzherald.co.nz', 'stuff.co.nz', 'rnz.co.nz', 'newsroom.co.nz',
+  // Key energy/climate
+  'carbonbrief.org', 'energymonitor.ai',
 ]
 
 // ─── MAIN HANDLER (UNIFIED) ─────────────────────────────────────────────────
