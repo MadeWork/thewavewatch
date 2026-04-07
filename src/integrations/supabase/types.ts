@@ -311,6 +311,7 @@ export type Database = {
           author_email: string | null
           author_name: string | null
           author_url: string | null
+          clicks: number | null
           comment_count: number | null
           confidence: number | null
           content: string | null
@@ -325,6 +326,7 @@ export type Database = {
           id: string
           image_url: string | null
           importance: string | null
+          impressions: number | null
           ingestion_run_id: string | null
           ingestion_source: string | null
           is_duplicate: boolean | null
@@ -344,6 +346,7 @@ export type Database = {
           relevance_score: number | null
           sentiment: string | null
           sentiment_score: number | null
+          shares: number | null
           snippet: string | null
           source_category: string
           source_domain: string | null
@@ -363,6 +366,7 @@ export type Database = {
           author_email?: string | null
           author_name?: string | null
           author_url?: string | null
+          clicks?: number | null
           comment_count?: number | null
           confidence?: number | null
           content?: string | null
@@ -377,6 +381,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           importance?: string | null
+          impressions?: number | null
           ingestion_run_id?: string | null
           ingestion_source?: string | null
           is_duplicate?: boolean | null
@@ -396,6 +401,7 @@ export type Database = {
           relevance_score?: number | null
           sentiment?: string | null
           sentiment_score?: number | null
+          shares?: number | null
           snippet?: string | null
           source_category?: string
           source_domain?: string | null
@@ -415,6 +421,7 @@ export type Database = {
           author_email?: string | null
           author_name?: string | null
           author_url?: string | null
+          clicks?: number | null
           comment_count?: number | null
           confidence?: number | null
           content?: string | null
@@ -429,6 +436,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           importance?: string | null
+          impressions?: number | null
           ingestion_run_id?: string | null
           ingestion_source?: string | null
           is_duplicate?: boolean | null
@@ -448,6 +456,7 @@ export type Database = {
           relevance_score?: number | null
           sentiment?: string | null
           sentiment_score?: number | null
+          shares?: number | null
           snippet?: string | null
           source_category?: string
           source_domain?: string | null
