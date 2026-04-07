@@ -60,9 +60,16 @@ function TrendBadge({ current, previous }: { current: number; previous: number }
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 
 export default function Insights() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [period, setPeriod] = useState<Period>("30d");
   const [tab, setTab] = useState<Tab>("overview");
   const [exportRange, setExportRange] = useState<Period>("30d");
+  const [csvUploading, setCsvUploading] = useState(false);
+  const [csvResult, setCsvResult] = useState<any>(null);
+  const [blogScraping, setBlogScraping] = useState(false);
+  const [blogResult, setBlogResult] = useState<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: articles, isLoading, error } = useQuery({
     queryKey: ["insights-articles"],
