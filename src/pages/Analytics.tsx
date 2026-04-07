@@ -813,13 +813,23 @@ export default function Insights() {
               .sort((a, b) => (b[1].owned + b[1].earned) - (a[1].owned + a[1].earned))
               .slice(0, 12);
 
-            const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+             const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
               const file = e.target.files?.[0];
               if (!file || !user) return;
               setCsvUploading(true);
               setCsvResult(null);
               try {
-                const text = await file.text();
+                let text: string;
+                const ext = file.name.split('.').pop()?.toLowerCase();
+                if (ext === 'xlsx' || ext === 'xls') {
+                  const XLSX = await import('xlsx');
+                  const buf = await file.arrayBuffer();
+                  const wb = XLSX.read(buf, { type: 'array' });
+                  const ws = wb.Sheets[wb.SheetNames[0]];
+                  text = XLSX.utils.sheet_to_csv(ws);
+                } else {
+                  text = await file.text();
+                }
                 const { data, error } = await supabase.functions.invoke('import-owned-content', {
                   body: { csv_text: text, user_id: user.id, platform: 'linkedin' },
                 });
@@ -859,12 +869,12 @@ export default function Insights() {
                   <div className="monitor-card space-y-3">
                     <p className="section-label">LinkedIn Import</p>
                     <p className="text-[10px] text-text-muted">
-                      Export your LinkedIn page analytics as CSV and upload here. Go to your Company Page → Analytics → Updates → Export.
+                      Export your LinkedIn page analytics and upload here. Supports .xlsx, .xls, or .csv. Go to your Company Page → Analytics → Updates → Export.
                     </p>
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept=".csv"
+                      accept=".csv,.xls,.xlsx"
                       onChange={handleCsvUpload}
                       className="hidden"
                     />
@@ -874,7 +884,7 @@ export default function Insights() {
                       className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition disabled:opacity-50 w-full justify-center"
                     >
                       {csvUploading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                      {csvUploading ? 'Importing…' : 'Upload LinkedIn CSV'}
+                      {csvUploading ? 'Importing…' : 'Upload LinkedIn File'}
                     </button>
                     {csvResult && (
                       <div className={`p-3 rounded-lg text-xs ${csvResult.error ? 'bg-red-500/10 border border-red-500/20 text-red-400' : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'}`}>
