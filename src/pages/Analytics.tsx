@@ -769,6 +769,271 @@ export default function Insights() {
             </div>
           )}
 
+          {/* ── OWNED CONTENT TAB ──────────────────────────────────────── */}
+          {tab === "owned" && (() => {
+            const ownedArticles = periodArticles.filter(a => a.source_category === 'owned');
+            const earnedArticles = periodArticles.filter(a => a.source_category !== 'owned');
+            const prevOwned = prevPeriodArticles.filter(a => a.source_category === 'owned');
+            
+            const linkedinPosts = ownedArticles.filter(a => a.ingestion_source === 'linkedin-csv');
+            const blogPosts = ownedArticles.filter(a => a.ingestion_source === 'blog-scrape');
+            
+            const totalImpressions = ownedArticles.reduce((s, a) => s + (a.impressions ?? 0), 0);
+            const totalEngagement = ownedArticles.reduce((s, a) => s + (a.engagement_score ?? 0), 0);
+            const totalClicks = ownedArticles.reduce((s, a) => s + (a.clicks ?? 0), 0);
+
+            // Content calendar data
+            const calendarData = Array.from({ length: Math.min(days, 60) }, (_, i) => {
+              const date = subDays(now, Math.min(days, 60) - 1 - i);
+              const dayStr = format(date, "yyyy-MM-dd");
+              const dayOwned = ownedArticles.filter(a => a.published_at && format(new Date(a.published_at), "yyyy-MM-dd") === dayStr);
+              const dayEarned = earnedArticles.filter(a => a.published_at && format(new Date(a.published_at), "yyyy-MM-dd") === dayStr);
+              return {
+                date: format(date, "MMM d"),
+                owned: dayOwned.length,
+                earned: dayEarned.length,
+              };
+            });
+
+            // Topic alignment: which owned content themes match earned coverage
+            const ownedThemes: Record<string, { owned: number; earned: number }> = {};
+            ownedArticles.forEach(a => {
+              (a.key_themes ?? a.matched_keywords ?? []).forEach((t: string) => {
+                if (!ownedThemes[t]) ownedThemes[t] = { owned: 0, earned: 0 };
+                ownedThemes[t].owned++;
+              });
+            });
+            earnedArticles.forEach(a => {
+              (a.key_themes ?? a.matched_keywords ?? []).forEach((t: string) => {
+                if (ownedThemes[t]) ownedThemes[t].earned++;
+              });
+            });
+            const topicAlignment = Object.entries(ownedThemes)
+              .filter(([, v]) => v.owned > 0)
+              .sort((a, b) => (b[1].owned + b[1].earned) - (a[1].owned + a[1].earned))
+              .slice(0, 12);
+
+            const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+              const file = e.target.files?.[0];
+              if (!file || !user) return;
+              setCsvUploading(true);
+              setCsvResult(null);
+              try {
+                const text = await file.text();
+                const { data, error } = await supabase.functions.invoke('import-owned-content', {
+                  body: { csv_text: text, user_id: user.id, platform: 'linkedin' },
+                });
+                if (error) throw error;
+                setCsvResult(data);
+                queryClient.invalidateQueries({ queryKey: ["insights-articles"] });
+              } catch (err: any) {
+                setCsvResult({ error: err.message });
+              } finally {
+                setCsvUploading(false);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+              }
+            };
+
+            const handleBlogScrape = async () => {
+              setBlogScraping(true);
+              setBlogResult(null);
+              try {
+                const { data, error } = await supabase.functions.invoke('scrape-blog', {
+                  body: { user_id: user?.id },
+                });
+                if (error) throw error;
+                setBlogResult(data);
+                queryClient.invalidateQueries({ queryKey: ["insights-articles"] });
+              } catch (err: any) {
+                setBlogResult({ error: err.message });
+              } finally {
+                setBlogScraping(false);
+              }
+            };
+
+            return (
+              <div className="space-y-5">
+
+                {/* Import controls */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="monitor-card space-y-3">
+                    <p className="section-label">LinkedIn Import</p>
+                    <p className="text-[10px] text-text-muted">
+                      Export your LinkedIn page analytics as CSV and upload here. Go to your Company Page → Analytics → Updates → Export.
+                    </p>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".csv"
+                      onChange={handleCsvUpload}
+                      className="hidden"
+                    />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={csvUploading}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition disabled:opacity-50 w-full justify-center"
+                    >
+                      {csvUploading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                      {csvUploading ? 'Importing…' : 'Upload LinkedIn CSV'}
+                    </button>
+                    {csvResult && (
+                      <div className={`p-3 rounded-lg text-xs ${csvResult.error ? 'bg-red-500/10 border border-red-500/20 text-red-400' : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'}`}>
+                        {csvResult.error ? csvResult.error : `✓ Parsed ${csvResult.parsed} rows, imported ${csvResult.inserted} posts`}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="monitor-card space-y-3">
+                    <p className="section-label">Blog Scrape</p>
+                    <p className="text-[10px] text-text-muted">
+                      Pull the latest posts from corpowerocean.com using Firecrawl. Uses ~1 credit per page.
+                    </p>
+                    <button
+                      onClick={handleBlogScrape}
+                      disabled={blogScraping}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition disabled:opacity-50 w-full justify-center"
+                    >
+                      {blogScraping ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Rss className="w-4 h-4" />}
+                      {blogScraping ? 'Scraping blog…' : 'Scrape Blog'}
+                    </button>
+                    {blogResult && (
+                      <div className={`p-3 rounded-lg text-xs ${blogResult.error ? 'bg-red-500/10 border border-red-500/20 text-red-400' : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'}`}>
+                        {blogResult.error ? blogResult.error : `✓ Found ${blogResult.found} posts, imported ${blogResult.inserted} new (${blogResult.credits_used} credits used)`}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* KPI row */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  <div className="monitor-card">
+                    <p className="text-[10px] text-text-muted">Owned Posts</p>
+                    <p className="text-2xl font-light text-foreground">{ownedArticles.length}</p>
+                    <TrendBadge current={ownedArticles.length} previous={prevOwned.length} />
+                  </div>
+                  <div className="monitor-card">
+                    <p className="text-[10px] text-text-muted">Earned Mentions</p>
+                    <p className="text-2xl font-light text-foreground">{earnedArticles.length}</p>
+                  </div>
+                  <div className="monitor-card">
+                    <p className="text-[10px] text-text-muted">Total Impressions</p>
+                    <p className="text-2xl font-light text-foreground">{totalImpressions.toLocaleString()}</p>
+                  </div>
+                  <div className="monitor-card">
+                    <p className="text-[10px] text-text-muted">Total Engagement</p>
+                    <p className="text-2xl font-light text-foreground">{totalEngagement.toLocaleString()}</p>
+                  </div>
+                  <div className="monitor-card">
+                    <p className="text-[10px] text-text-muted">Total Clicks</p>
+                    <p className="text-2xl font-light text-foreground">{totalClicks.toLocaleString()}</p>
+                  </div>
+                </div>
+
+                {/* Volume comparison: owned vs earned */}
+                <div className="monitor-card">
+                  <p className="section-label">Owned vs Earned Coverage</p>
+                  {calendarData.length === 0 ? <EmptyState message="No data" /> : (
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart data={calendarData}>
+                        <XAxis dataKey="date" tick={{ fill: "hsl(222,14%,60%)", fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fill: "hsl(222,14%,60%)", fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <Tooltip contentStyle={TOOLTIP_STYLE} />
+                        <Legend />
+                        <Bar dataKey="owned" stackId="a" fill="hsl(216,90%,66%)" name="Your Posts" radius={[0, 0, 0, 0]} />
+                        <Bar dataKey="earned" stackId="a" fill="hsl(160,64%,55%)" name="Earned Media" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+
+                {/* Content calendar timeline */}
+                <div className="monitor-card">
+                  <p className="section-label">Content Calendar</p>
+                  <p className="text-[10px] text-text-muted mb-3">Your published posts overlaid with media coverage spikes</p>
+                  {calendarData.length === 0 ? <EmptyState message="No data" /> : (
+                    <ResponsiveContainer width="100%" height={200}>
+                      <AreaChart data={calendarData}>
+                        <XAxis dataKey="date" tick={{ fill: "hsl(222,14%,60%)", fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fill: "hsl(222,14%,60%)", fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <Tooltip contentStyle={TOOLTIP_STYLE} />
+                        <Area type="monotone" dataKey="earned" stroke="hsl(160,64%,55%)" fill="hsl(160,64%,55%)" fillOpacity={0.15} name="Earned" />
+                        <Area type="monotone" dataKey="owned" stroke="hsl(216,90%,66%)" fill="hsl(216,90%,66%)" fillOpacity={0.3} name="Owned" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+
+                {/* Topic alignment */}
+                <div className="monitor-card">
+                  <p className="section-label">Topic Alignment</p>
+                  <p className="text-[10px] text-text-muted mb-3">Which topics from your owned content are generating earned media</p>
+                  {topicAlignment.length === 0 ? (
+                    <EmptyState message="Import owned content to see topic alignment" />
+                  ) : (
+                    <div className="space-y-2">
+                      {topicAlignment.map(([topic, counts]) => {
+                        const total = counts.owned + counts.earned;
+                        return (
+                          <div key={topic} className="flex items-center gap-3">
+                            <span className="text-xs text-foreground w-40 truncate">{topic}</span>
+                            <div className="flex-1 h-5 rounded-full bg-bg-elevated overflow-hidden flex">
+                              <div
+                                className="h-full rounded-l-full"
+                                style={{ width: `${(counts.owned / Math.max(total, 1)) * 100}%`, background: "hsl(216,90%,66%)" }}
+                              />
+                              <div
+                                className="h-full rounded-r-full"
+                                style={{ width: `${(counts.earned / Math.max(total, 1)) * 100}%`, background: "hsl(160,64%,55%)" }}
+                              />
+                            </div>
+                            <span className="text-[10px] text-text-muted w-20 text-right">
+                              {counts.owned} owned / {counts.earned} earned
+                            </span>
+                          </div>
+                        );
+                      })}
+                      <div className="flex items-center gap-4 mt-2 text-[10px] text-text-muted">
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: "hsl(216,90%,66%)" }} /> Your Posts</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: "hsl(160,64%,55%)" }} /> Earned Media</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Owned content list */}
+                <div className="monitor-card">
+                  <p className="section-label">Owned Content ({ownedArticles.length})</p>
+                  {ownedArticles.length === 0 ? (
+                    <EmptyState message="No owned content yet — upload a LinkedIn CSV or scrape your blog" />
+                  ) : (
+                    <div className="space-y-2 mt-3">
+                      {ownedArticles.slice(0, 20).map(a => (
+                        <div key={a.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-bg-elevated">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                            a.ingestion_source === 'linkedin-csv' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-orange-500/10 text-orange-400 border-orange-500/20'
+                          }`}>
+                            {a.ingestion_source === 'linkedin-csv' ? 'LinkedIn' : 'Blog'}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <a href={a.url} target="_blank" rel="noopener noreferrer" className="text-xs text-foreground hover:text-primary transition line-clamp-1">
+                              {a.title}
+                            </a>
+                            <div className="flex items-center gap-3 text-[10px] text-text-muted mt-0.5">
+                              {a.published_at && <span>{format(new Date(a.published_at), "MMM d")}</span>}
+                              {(a.impressions ?? 0) > 0 && <span>{a.impressions?.toLocaleString()} impressions</span>}
+                              {(a.engagement_score ?? 0) > 0 && <span>{a.engagement_score} reactions</span>}
+                              {(a.clicks ?? 0) > 0 && <span>{a.clicks} clicks</span>}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* ── EXPORT TAB ───────────────────────────────────────────────── */}
           {tab === "export" && (
             <div className="space-y-5">
