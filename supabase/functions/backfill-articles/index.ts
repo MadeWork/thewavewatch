@@ -268,18 +268,42 @@ Deno.serve(async (req) => {
     if (!allArticles.length) return json({ inserted: 0, found: 0, sources: sourceCounts, errors })
 
     // Resolve Google News redirect URLs to actual publisher URLs
+    const MAJOR = [
+      'reuters.com','apnews.com','bloomberg.com','afp.com','nytimes.com','washingtonpost.com',
+      'wsj.com','ft.com','cnbc.com','cnn.com','bbc.com','bbc.co.uk','theguardian.com',
+      'euronews.com','euractiv.com','politico.eu','politico.com',
+      'spiegel.de','faz.net','sueddeutsche.de','dw.com','handelsblatt.com',
+      'lemonde.fr','lefigaro.fr','elpais.com',
+      'heraldscotland.com','scotsman.com','pressandjournal.co.uk',
+      'telegraph.co.uk','independent.co.uk','sky.com','thetimes.co.uk',
+      'dn.se','svd.se','di.se','aftenposten.no','dn.no','vg.no','nrk.no',
+      'berlingske.dk','politiken.dk','yle.fi',
+      'abc.net.au','smh.com.au','nzherald.co.nz','stuff.co.nz','rnz.co.nz',
+      'carbonbrief.org','energymonitor.ai','npr.org','forbes.com',
+      'offshore-energy.biz','renews.biz','rechargenews.com',
+    ]
     const gnArticles = allArticles.filter(a => a.url?.includes('news.google.com'))
     if (gnArticles.length) {
       console.log(`Resolving ${gnArticles.length} Google News URLs...`)
+      let resolved = 0
       await Promise.allSettled(gnArticles.map(async (a) => {
-        const resolved = await resolveGoogleNewsUrl(a.url)
-        if (resolved !== a.url) {
-          a.url = resolved
-          a.source_domain = extractDomainName(resolved)
-          a.source_name = extractDomainName(resolved)
-          a.external_id = hashUrl(resolved)
+        const newUrl = await resolveGoogleNewsUrl(a.url)
+        if (newUrl !== a.url) {
+          a.url = newUrl
+          a.source_domain = extractDomainName(newUrl)
+          a.source_name = a.source_name || extractDomainName(newUrl)
+          a.external_id = hashUrl(newUrl)
+          a.is_major_outlet = MAJOR.some(m => (a.source_domain || '').includes(m))
+          resolved++
         }
       }))
+      console.log(`Resolved ${resolved}/${gnArticles.length} Google News URLs`)
+    }
+    // Re-check is_major_outlet for all articles
+    for (const a of allArticles) {
+      if (!a.is_major_outlet) {
+        a.is_major_outlet = MAJOR.some(m => (a.source_domain || '').includes(m))
+      }
     }
 
     // Dedupe by URL
