@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
       .select("id, title, description, source_name, source_url, url, published_at")
       .eq("is_enriched", false)
       .eq("is_duplicate", false)
-      .order("created_at", { ascending: true })
+      .order("fetched_at", { ascending: true })
       .limit(BATCH_SIZE);
 
     if (topic_id) query = query.eq("topic_id", topic_id);
@@ -65,9 +65,6 @@ Deno.serve(async (req) => {
 
     // 4. Near-duplicate detection
     const recentTitles = await getRecentTitles(supabase, articles.map(a => a.id));
-
-    let enriched = 0;
-    let duplicates = 0;
 
     const updates: any[] = []
     let enriched = 0
@@ -109,12 +106,13 @@ Deno.serve(async (req) => {
       enriched++
     }
 
-    // Batch upsert all updates at once
-    if (updates.length > 0) {
-      const { error: updateError } = await supabase
-        .from("articles")
-        .upsert(updates, { onConflict: 'id' })
-      if (updateError) console.error("Batch update error:", updateError.message)
+    // Parallel updates (10 at a time)
+    for (let i = 0; i < updates.length; i += 10) {
+      const batch = updates.slice(i, i + 10)
+      await Promise.all(batch.map(u => {
+        const { id, ...fields } = u
+        return supabase.from("articles").update(fields).eq("id", id)
+      }))
     }
 
     console.log(`Enriched ${enriched}, duplicates: ${duplicates}`);
