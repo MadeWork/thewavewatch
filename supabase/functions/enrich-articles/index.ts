@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
       .select("id, title, description, source_name, source_url, url, published_at")
       .eq("is_enriched", false)
       .eq("is_duplicate", false)
-      .order("created_at", { ascending: true })
+      .order("fetched_at", { ascending: true })
       .limit(BATCH_SIZE);
 
     if (topic_id) query = query.eq("topic_id", topic_id);
