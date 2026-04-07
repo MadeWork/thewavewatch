@@ -43,7 +43,7 @@ export default function Dashboard() {
   const { data: favKeywords } = useQuery({
     queryKey: ["keywords-favorites"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("keywords").select("text, color_tag").eq("favorite", true).eq("active", true);
+      const { data, error } = await supabase.from("keywords").select("text, color_tag").eq("favorite", true);
       if (error) throw error;
       return data;
     },
@@ -66,9 +66,15 @@ export default function Dashboard() {
 
   const favArticles = useMemo(() => {
     if (!articles || !favKeywords?.length) return [];
-    const favTexts = favKeywords.map(k => k.text);
+    const favTexts = favKeywords.map(k => k.text.toLowerCase());
     return articles
-      .filter(a => a.matched_keywords?.some((kw: string) => favTexts.includes(kw)))
+      .filter(a => {
+        // Check matched_keywords first
+        if (a.matched_keywords?.some((kw: string) => favTexts.includes(kw.toLowerCase()))) return true;
+        // Fallback: check title and description
+        const text = `${a.title ?? ''} ${a.description ?? ''}`.toLowerCase();
+        return favTexts.some(fav => text.includes(fav));
+      })
       .slice(0, 10);
   }, [articles, favKeywords]);
 
