@@ -243,6 +243,7 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       // Build result
       const grandTotal = Object.values(counts).reduce((a, b) => a + b, 0);
       const parts: string[] = [];
+      if (counts.unified > 0) parts.push(`${counts.unified} unified fetch`);
       if (counts.tier1_search > 0) parts.push(`${counts.tier1_search} publisher search`);
       if (counts.tier1_rss > 0) parts.push(`${counts.tier1_rss} publisher feeds`);
       if (counts.google_news > 0) parts.push(`${counts.google_news} Google News`);
