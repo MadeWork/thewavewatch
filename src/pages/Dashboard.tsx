@@ -251,9 +251,28 @@ export default function Dashboard() {
             <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
             <p className="section-label">Favorite Keyword Mentions</p>
             <div className="flex items-center gap-1.5 flex-wrap">
-              {favKeywords.map(k => (
-                <span key={k.text} className="px-2 py-0.5 rounded-full text-[10px] text-primary bg-primary/10">{k.text}</span>
-              ))}
+              {favKeywords.map(k => {
+                const isActive = activeKeywordFilters.size === 0 || activeKeywordFilters.has(k.text);
+                return (
+                  <button
+                    key={k.text}
+                    onClick={() => toggleKeywordFilter(k.text)}
+                    className={`px-2 py-0.5 rounded-full text-[10px] transition cursor-pointer ${
+                      isActive ? 'text-primary bg-primary/10' : 'text-muted-foreground bg-muted/30 opacity-50'
+                    }`}
+                  >
+                    {k.text}
+                  </button>
+                );
+              })}
+              {activeKeywordFilters.size > 0 && (
+                <button
+                  onClick={() => setActiveKeywordFilters(new Set())}
+                  className="px-2 py-0.5 rounded-full text-[10px] text-muted-foreground hover:text-foreground transition"
+                >
+                  Clear
+                </button>
+              )}
             </div>
           </div>
           {favArticles.length === 0 ? (
