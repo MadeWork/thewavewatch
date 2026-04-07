@@ -813,13 +813,23 @@ export default function Insights() {
               .sort((a, b) => (b[1].owned + b[1].earned) - (a[1].owned + a[1].earned))
               .slice(0, 12);
 
-            const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+             const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
               const file = e.target.files?.[0];
               if (!file || !user) return;
               setCsvUploading(true);
               setCsvResult(null);
               try {
-                const text = await file.text();
+                let text: string;
+                const ext = file.name.split('.').pop()?.toLowerCase();
+                if (ext === 'xlsx' || ext === 'xls') {
+                  const XLSX = await import('xlsx');
+                  const buf = await file.arrayBuffer();
+                  const wb = XLSX.read(buf, { type: 'array' });
+                  const ws = wb.Sheets[wb.SheetNames[0]];
+                  text = XLSX.utils.sheet_to_csv(ws);
+                } else {
+                  text = await file.text();
+                }
                 const { data, error } = await supabase.functions.invoke('import-owned-content', {
                   body: { csv_text: text, user_id: user.id, platform: 'linkedin' },
                 });
