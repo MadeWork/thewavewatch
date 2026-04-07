@@ -105,17 +105,36 @@ export default function Insights() {
   const cutoff = subDays(now, days);
   const prevCutoff = subDays(now, days * 2);
 
-  const periodArticles = useMemo(
+  const periodArticlesRaw = useMemo(
     () => (articles ?? []).filter(a => a.published_at && new Date(a.published_at) >= cutoff),
     [articles, cutoff]
   );
+
+  // Apply keyword filter
+  const periodArticles = useMemo(() => {
+    if (selectedKeywords.length === 0) return periodArticlesRaw;
+    return periodArticlesRaw.filter(a =>
+      (a.matched_keywords ?? []).some((k: string) =>
+        selectedKeywords.some(sk => k.toLowerCase() === sk.toLowerCase())
+      )
+    );
+  }, [periodArticlesRaw, selectedKeywords]);
+
   const prevPeriodArticles = useMemo(
-    () => (articles ?? []).filter(a =>
-      a.published_at &&
-      new Date(a.published_at) >= prevCutoff &&
-      new Date(a.published_at) < cutoff
-    ),
-    [articles, cutoff, prevCutoff]
+    () => {
+      const raw = (articles ?? []).filter(a =>
+        a.published_at &&
+        new Date(a.published_at) >= prevCutoff &&
+        new Date(a.published_at) < cutoff
+      );
+      if (selectedKeywords.length === 0) return raw;
+      return raw.filter(a =>
+        (a.matched_keywords ?? []).some((k: string) =>
+          selectedKeywords.some(sk => k.toLowerCase() === sk.toLowerCase())
+        )
+      );
+    },
+    [articles, cutoff, prevCutoff, selectedKeywords]
   );
 
   // ── Volume over time
