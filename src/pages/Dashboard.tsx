@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useFetch } from "@/hooks/useFetchContext";
@@ -64,19 +64,30 @@ export default function Dashboard() {
     refetchInterval: 60000,
   });
 
+  const [activeKeywordFilters, setActiveKeywordFilters] = useState<Set<string>>(new Set());
+
+  const toggleKeywordFilter = (keyword: string) => {
+    setActiveKeywordFilters(prev => {
+      const next = new Set(prev);
+      if (next.has(keyword)) next.delete(keyword);
+      else next.add(keyword);
+      return next;
+    });
+  };
+
   const favArticles = useMemo(() => {
     if (!articles || !favKeywords?.length) return [];
-    const favTexts = favKeywords.map(k => k.text.toLowerCase());
+    const filterTexts = activeKeywordFilters.size > 0
+      ? Array.from(activeKeywordFilters).map(k => k.toLowerCase())
+      : favKeywords.map(k => k.text.toLowerCase());
     return articles
       .filter(a => {
-        // Check matched_keywords first
-        if (a.matched_keywords?.some((kw: string) => favTexts.includes(kw.toLowerCase()))) return true;
-        // Fallback: check title and description
+        if (a.matched_keywords?.some((kw: string) => filterTexts.includes(kw.toLowerCase()))) return true;
         const text = `${a.title ?? ''} ${a.description ?? ''}`.toLowerCase();
-        return favTexts.some(fav => text.includes(fav));
+        return filterTexts.some(fav => text.includes(fav));
       })
       .slice(0, 10);
-  }, [articles, favKeywords]);
+  }, [articles, favKeywords, activeKeywordFilters]);
 
   const now = new Date();
 
@@ -240,9 +251,28 @@ export default function Dashboard() {
             <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
             <p className="section-label">Favorite Keyword Mentions</p>
             <div className="flex items-center gap-1.5 flex-wrap">
-              {favKeywords.map(k => (
-                <span key={k.text} className="px-2 py-0.5 rounded-full text-[10px] text-primary bg-primary/10">{k.text}</span>
-              ))}
+              {favKeywords.map(k => {
+                const isActive = activeKeywordFilters.size === 0 || activeKeywordFilters.has(k.text);
+                return (
+                  <button
+                    key={k.text}
+                    onClick={() => toggleKeywordFilter(k.text)}
+                    className={`px-2 py-0.5 rounded-full text-[10px] transition cursor-pointer ${
+                      isActive ? 'text-primary bg-primary/10' : 'text-muted-foreground bg-muted/30 opacity-50'
+                    }`}
+                  >
+                    {k.text}
+                  </button>
+                );
+              })}
+              {activeKeywordFilters.size > 0 && (
+                <button
+                  onClick={() => setActiveKeywordFilters(new Set())}
+                  className="px-2 py-0.5 rounded-full text-[10px] text-muted-foreground hover:text-foreground transition"
+                >
+                  Clear
+                </button>
+              )}
             </div>
           </div>
           {favArticles.length === 0 ? (
