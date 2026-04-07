@@ -448,6 +448,7 @@ export default function Insights() {
       )}
 
       {isLoading ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[1,2,3,4].map(i => <SkeletonCard key={i} />)}
         </div>
       ) : (
