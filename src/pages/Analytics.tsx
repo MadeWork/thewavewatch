@@ -6,7 +6,7 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend
 } from "recharts";
 import { format, subDays } from "date-fns";
-import { Download, TrendingUp, TrendingDown, Minus, FileText, BarChart3, Lock, Upload, RefreshCw, Rss } from "lucide-react";
+import { Download, TrendingUp, TrendingDown, Minus, FileText, BarChart3, Lock, Upload, RefreshCw, Rss, Tag } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import SkeletonCard from "@/components/SkeletonCard";
 import ErrorBanner from "@/components/ErrorBanner";
