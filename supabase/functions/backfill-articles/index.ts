@@ -238,6 +238,21 @@ Deno.serve(async (req) => {
 
     if (!allArticles.length) return json({ inserted: 0, found: 0, sources: sourceCounts, errors })
 
+    // Resolve Google News redirect URLs to actual publisher URLs
+    const gnArticles = allArticles.filter(a => a.url?.includes('news.google.com'))
+    if (gnArticles.length) {
+      console.log(`Resolving ${gnArticles.length} Google News URLs...`)
+      await Promise.allSettled(gnArticles.map(async (a) => {
+        const resolved = await resolveGoogleNewsUrl(a.url)
+        if (resolved !== a.url) {
+          a.url = resolved
+          a.source_domain = extractDomainName(resolved)
+          a.source_name = extractDomainName(resolved)
+          a.external_id = hashUrl(resolved)
+        }
+      }))
+    }
+
     // Dedupe by URL
     const seen = new Set<string>()
     const deduped = allArticles.filter(a => {
@@ -282,6 +297,16 @@ function isBlockedUrl(url: string): boolean {
     const blocked = ['facebook.com','twitter.com','x.com','instagram.com','linkedin.com','youtube.com','reddit.com','tiktok.com','pinterest.com']
     return blocked.some(d => h === d || h.endsWith('.' + d))
   } catch { return false }
+}
+async function resolveGoogleNewsUrl(gnUrl: string): Promise<string> {
+  if (!gnUrl.includes('news.google.com')) return gnUrl
+  try {
+    const resp = await fetch(gnUrl, { redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 (compatible; WaveWatch/1.0)' }, signal: AbortSignal.timeout(5000) })
+    const finalUrl = resp.url
+    await resp.text().catch(() => {})
+    if (finalUrl && !finalUrl.includes('news.google.com') && !finalUrl.includes('consent.google.com')) return finalUrl
+    return gnUrl
+  } catch { return gnUrl }
 }
 function parseRSSXML(xml: string): any[] {
   const items: any[] = []
