@@ -362,7 +362,7 @@ export default function Mentions() {
             <tbody>
               {paged.map(a => {
                 const src = a.sources as any;
-                const displayName = src?.name || a.source_name || a.source_domain || "Unknown";
+                const displayName = src?.name || a.source_name || a.source_url || "Unknown";
                 const showPaywall = isPaywalled(a.source_url || a.source_domain);
                 return (
                   <tr key={a.id} className="border-b border-bg-subtle/50 hover:bg-bg-elevated/50 transition cursor-pointer" onClick={() => setSelectedArticle(a)}>
@@ -413,7 +413,7 @@ export default function Mentions() {
         <div className="space-y-2">
           {paged.map(a => {
             const src = a.sources as any;
-            const displayName = src?.name || a.source_name || a.source_domain || "Unknown";
+            const displayName = src?.name || a.source_name || a.source_url || "Unknown";
             const showPaywall = isPaywalled(a.source_url || a.source_domain);
             return (
               <div key={a.id} className="monitor-card flex items-start gap-3 hover:bg-bg-elevated/80 transition group cursor-pointer" onClick={() => setSelectedArticle(a)}>
