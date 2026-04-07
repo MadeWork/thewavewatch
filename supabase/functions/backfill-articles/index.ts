@@ -36,12 +36,26 @@ Deno.serve(async (req) => {
       return 'archive'
     }
 
-    const makeArticle = (fields: any) => ({
-      source_category: 'media',
-      is_duplicate: false,
-      ...fields,
-      articles_era: setEra(fields.published_at),
-    })
+    const makeArticle = (fields: any) => {
+      const domain = fields.source_domain ?? extractDomainName(fields.url ?? '')
+      const MAJOR = [
+        'reuters.com','apnews.com','bloomberg.com','afp.com','nytimes.com','washingtonpost.com',
+        'wsj.com','ft.com','cnbc.com','cnn.com','bbc.com','bbc.co.uk','theguardian.com',
+        'euronews.com','euractiv.com','politico.eu','spiegel.de','dw.com','handelsblatt.com',
+        'lemonde.fr','lefigaro.fr','elpais.com','heraldscotland.com','scotsman.com',
+        'dn.se','svd.se','aftenposten.no','dn.no','carbonbrief.org','energymonitor.ai',
+        'abc.net.au','smh.com.au','nzherald.co.nz','stuff.co.nz','rnz.co.nz',
+      ]
+      return {
+        source_category: 'media',
+        is_duplicate: false,
+        ...fields,
+        source_domain: domain,
+        matched_keywords: fields.matched_keywords ?? keywords,
+        is_major_outlet: MAJOR.some(m => (domain || '').includes(m)),
+        articles_era: setEra(fields.published_at),
+      }
+    }
 
     // GUARDIAN
     const guardianKey = Deno.env.get('GUARDIAN_API_KEY')
