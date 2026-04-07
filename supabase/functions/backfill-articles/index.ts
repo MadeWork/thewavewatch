@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
     const fromDate = new Date(Date.now() - days_back * 24 * 60 * 60 * 1000)
     const fromDateStr = fromDate.toISOString().split('T')[0]
     const allArticles: any[] = []
-    const sourceCounts: Record<string, number> = { guardian: 0, gdelt: 0, perigon: 0, google: 0 }
+    const sourceCounts: Record<string, number> = { guardian: 0, gdelt: 0, perigon: 0, google: 0, firecrawl: 0 }
     const errors: string[] = []
 
     const setEra = (pubDate: string | null) => {
