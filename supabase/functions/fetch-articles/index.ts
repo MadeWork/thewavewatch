@@ -102,6 +102,7 @@ const MAJOR_OUTLET_DOMAINS = [
   // UK majors
   'theguardian.com', 'bbc.com', 'bbc.co.uk', 'thetimes.co.uk',
   'telegraph.co.uk', 'independent.co.uk', 'sky.com', 'standard.co.uk',
+  'heraldscotland.com', 'scotsman.com', 'pressandjournal.co.uk',
   // European majors
   'euronews.com', 'euractiv.com', 'politico.eu',
   'spiegel.de', 'faz.net', 'sueddeutsche.de', 'dw.com', 'handelsblatt.com',
@@ -119,6 +120,12 @@ const MAJOR_OUTLET_DOMAINS = [
   // Key energy/climate
   'carbonbrief.org', 'energymonitor.ai',
 ]
+
+function extractDomain(url: string): string | null {
+  try {
+    return new URL(url.startsWith('http') ? url : `https://${url}`).hostname.replace(/^www\./, '')
+  } catch { return null }
+}
 
 // ─── MAIN HANDLER (UNIFIED) ─────────────────────────────────────────────────
 
