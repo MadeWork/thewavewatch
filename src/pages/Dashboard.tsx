@@ -43,7 +43,7 @@ export default function Dashboard() {
   const { data: favKeywords } = useQuery({
     queryKey: ["keywords-favorites"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("keywords").select("text, color_tag").eq("favorite", true).eq("active", true);
+      const { data, error } = await supabase.from("keywords").select("text, color_tag").eq("favorite", true);
       if (error) throw error;
       return data;
     },
