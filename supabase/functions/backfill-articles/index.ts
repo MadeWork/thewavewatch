@@ -169,16 +169,20 @@ Deno.serve(async (req) => {
     const firecrawlKey = Deno.env.get('FIRECRAWL_API_KEY')
     if (firecrawlKey) {
       const MAJOR_OUTLETS = [
-        // Europe
+        // European majors
         'bbc.co.uk', 'bbc.com', 'theguardian.com', 'ft.com', 'reuters.com',
-        'euronews.com', 'politico.eu', 'spiegel.de', 'lemonde.fr', 'dn.se',
-        'thelocal.com', 'dw.com', 'rte.ie', 'irishtimes.com',
-        // US
+        'euronews.com', 'politico.eu', 'spiegel.de', 'lemonde.fr', 'lefigaro.fr',
+        'dw.com', 'handelsblatt.com', 'euractiv.com', 'elpais.com',
+        'corriere.it', 'repubblica.it', 'lecho.be',
+        'dn.se', 'svd.se', 'aftenposten.no', 'dn.no',
+        'berlingske.dk', 'politiken.dk', 'yle.fi',
+        'thelocal.com', 'rte.ie', 'irishtimes.com',
+        // US majors
         'nytimes.com', 'washingtonpost.com', 'bloomberg.com', 'cnbc.com',
         'forbes.com', 'wsj.com', 'apnews.com',
-        // Energy/Industry
-        'renewableenergyworld.com', 'rechargenews.com', 'energymonitor.ai',
-        'windpowermonthly.com', 'rivieramm.com', 'offshorewind.biz',
+        // Key energy/climate
+        'carbonbrief.org', 'energymonitor.ai', 'rechargenews.com',
+        'renewableenergyworld.com', 'offshore-energy.biz',
       ]
 
       // Build site-restricted queries: one per keyword, batching sites
