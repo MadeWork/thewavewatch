@@ -269,6 +269,14 @@ Deno.serve(async (req) => {
         return true
       })
 
+      // Sanitize dates to prevent "time zone not recognized" errors
+      for (const a of deduped) {
+        if (a.published_at) {
+          const d = new Date(a.published_at)
+          a.published_at = isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString()
+        }
+      }
+
       console.log(`Bulk upserting ${deduped.length} articles (from ${allArticles.length} raw)`)
 
       // Upsert in chunks of 200 to avoid payload limits
