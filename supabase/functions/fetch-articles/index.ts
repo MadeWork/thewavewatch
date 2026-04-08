@@ -773,7 +773,7 @@ async function fetchFromGuardian(topic: any): Promise<any[]> {
       url.searchParams.set('order-by', 'relevance')
       url.searchParams.set('show-fields', 'headline,trailText,bodyText,thumbnail,byline,wordcount')
       url.searchParams.set('show-tags', 'keyword')
-      url.searchParams.set('page-size', '30')
+      url.searchParams.set('page-size', '50')
       url.searchParams.set('edition', edition)
       url.searchParams.set('api-key', apiKey)
 
@@ -838,7 +838,7 @@ async function fetchFromGDELT(topic: any): Promise<any[]> {
     return []
   }
   const allTerms = expandKeywords(keywords)
-  const query = `(${allTerms.map((k: string) => k.includes(' ') ? `"${k}"` : k).join(' OR ')})`
+  const query = allTerms.map((k: string) => k.includes(' ') ? `"${k}"` : k).join(' OR ')
   const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&maxrecords=100&format=json&sort=HybridRel&timespan=7d`
 
   const controller = new AbortController()
