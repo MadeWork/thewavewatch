@@ -74,7 +74,7 @@ export function FetchProvider({ children }: { children: ReactNode }) {
       counts.unified = 0;
       try {
         const ufResult = await withTimeout(
-          supabase.functions.invoke("fetch-articles", { body: {} }),
+          supabase.functions.invoke("fetch-articles", { body: { include_newsapi: true } }),
           120000,
         );
         if (ufResult && !ufResult.error) {
