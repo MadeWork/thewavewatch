@@ -167,6 +167,25 @@ const PUBLISHER_DOMAIN_MAP: Record<string, string> = {
   'offshore energy': 'offshore-energy.biz', 'windpower monthly': 'windpowermonthly.com',
 }
 
+async function resolveGoogleNewsUrl(gnUrl: string): Promise<string> {
+  if (!gnUrl || !gnUrl.includes('news.google.com')) return gnUrl
+  try {
+    const res = await fetch(gnUrl, { redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0' } })
+    const finalUrl = res.url
+    // Google sometimes returns a consent/redirect page — check if we got a real URL
+    if (finalUrl && !finalUrl.includes('news.google.com') && !finalUrl.includes('consent.google')) {
+      return finalUrl
+    }
+    // Fallback: try to extract from HTML
+    const html = await res.text()
+    const match = html.match(/data-n-au="([^"]+)"/) || html.match(/href="(https?:\/\/(?!news\.google)[^"]+)"/)
+    if (match?.[1]) return match[1]
+  } catch (e) {
+    console.warn('Failed to resolve Google News URL:', (e as Error).message)
+  }
+  return gnUrl
+}
+
 function extractGoogleNewsPublisher(title: string): { cleanTitle: string; publisher: string; domain: string | null } {
   const dashIdx = title.lastIndexOf(' - ')
   if (dashIdx > 0) {
