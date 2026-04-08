@@ -604,6 +604,44 @@ async function fetchRSSUnified(
     }
   }
 
+  // Batch-resolve Google News redirect URLs
+  if (googleNewsPending.length > 0) {
+    const gnUrls = googleNewsPending.map(p => p.item.link ?? '')
+    const resolved = await resolveGoogleNewsUrls(gnUrls)
+    for (const { item, source, td } of googleNewsPending) {
+      const rawLink = item.link ?? ''
+      const resolvedUrl = resolved.get(rawLink) ?? rawLink
+      const { cleanTitle, publisher } = extractGoogleNewsPublisher(item.title ?? '')
+      const resolvedDomain = extractDomain(resolvedUrl) ?? 'news.google.com'
+      const pubDate = item.pubDate ? new Date(item.pubDate) : new Date()
+      const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
+      const isMajor = MAJOR_OUTLET_DOMAINS.some(m => resolvedDomain.includes(m))
+      allArticles.push({
+        external_id: hashUrl(resolvedUrl || rawLink || item.guid || ''),
+        source_name: publisher || source.name || '',
+        source_url: resolvedDomain,
+        source_domain: resolvedDomain,
+        title: cleanTitle,
+        description: item.description ?? null,
+        content: item.content ?? null,
+        author: item.author ?? null,
+        published_at: item.pubDate ?? new Date().toISOString(),
+        url: resolvedUrl || rawLink || '',
+        image_url: item.image ?? null,
+        language: source.language ?? 'en',
+        media_type: 'web',
+        country: source.country_code ?? null,
+        ingestion_source: 'rss',
+        topic_id: td.topic.id,
+        user_id: td.topic.user_id,
+        ingestion_run_id: undefined,
+        is_major_outlet: isMajor,
+        articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
+      })
+    }
+    console.log(`Google News: processed ${googleNewsPending.length} items, added to articles`)
+  }
+
   return allArticles
 }
 
