@@ -135,7 +135,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { topic_id } = await req.json().catch(() => ({}))
+    const { topic_id, include_newsapi } = await req.json().catch(() => ({}))
     const startTime = Date.now()
 
     // 1. Fetch all active topics
