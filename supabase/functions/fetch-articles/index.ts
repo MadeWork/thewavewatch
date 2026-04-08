@@ -167,6 +167,8 @@ const PUBLISHER_DOMAIN_MAP: Record<string, string> = {
   'offshore energy': 'offshore-energy.biz', 'windpower monthly': 'windpowermonthly.com',
 }
 
+
+
 function extractGoogleNewsPublisher(title: string): { cleanTitle: string; publisher: string; domain: string | null } {
   const dashIdx = title.lastIndexOf(' - ')
   if (dashIdx > 0) {
@@ -596,15 +598,28 @@ async function fetchRSSUnified(
     }
   }
 
-  // Process Google News items — extract publisher from title, no URL resolution needed
+  // Process Google News items — use <source url="..."> for real article URL
   if (googleNewsPending.length > 0) {
     for (const { item, source, td } of googleNewsPending) {
       const rawLink = item.link ?? ''
+      // Google News RSS provides real publisher URL in <source url="..."> tag
+      const realSourceUrl = item.sourceUrl ?? ''
       const { cleanTitle, publisher, domain: pubDomain } = extractGoogleNewsPublisher(item.title ?? '')
-      const resolvedDomain = pubDomain ?? 'news.google.com'
+      // Build the real article URL: use sourceUrl domain or pubDomain from title
+      let articleUrl = rawLink
+      let resolvedDomain = pubDomain ?? 'news.google.com'
+      if (realSourceUrl) {
+        try {
+          resolvedDomain = new URL(realSourceUrl).hostname.replace('www.', '')
+        } catch { /* keep pubDomain */ }
+        // The <source url> gives us the publisher domain — use title to search for real article
+        // For now, store the Google News redirect URL (it works in browsers via JS redirect)
+        // but set the domain correctly for attribution
+      }
+      if (pubDomain) resolvedDomain = pubDomain
       const pubDate = item.pubDate ? new Date(item.pubDate) : new Date()
       const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
-      const isMajor = pubDomain ? MAJOR_OUTLET_DOMAINS.some(m => resolvedDomain.includes(m)) : false
+      const isMajor = MAJOR_OUTLET_DOMAINS.some(m => resolvedDomain.includes(m))
       allArticles.push({
         external_id: hashUrl(rawLink || item.guid || ''),
         source_name: publisher || source.name || '',
@@ -628,7 +643,7 @@ async function fetchRSSUnified(
         articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
       })
     }
-    console.log(`Google News: processed ${googleNewsPending.length} items (${new Set(googleNewsPending.map(p => extractGoogleNewsPublisher(p.item.title ?? '').publisher)).size} publishers)`)
+    console.log(`Google News: processed ${googleNewsPending.length} items`)
   }
 
   return allArticles
@@ -956,9 +971,12 @@ function parseRSSXML(xml: string): any[] {
     const itemMatches = xml.matchAll(/<item[^>]*>([\s\S]*?)<\/item>/gi)
     for (const match of itemMatches) {
       const item = match[1]
+      // Google News RSS has <source url="https://real-url.com">Publisher</source>
+      const sourceUrl = extractXMLAttr(item, 'source', 'url')
       items.push({
         title: extractXMLText(item, 'title'),
         link: extractXMLText(item, 'link'),
+        sourceUrl,  // real publisher domain from Google News
         description: extractXMLText(item, 'description'),
         content: extractXMLText(item, 'content:encoded') ?? extractXMLText(item, 'content'),
         pubDate: extractXMLText(item, 'pubDate') ?? extractXMLText(item, 'dc:date'),
