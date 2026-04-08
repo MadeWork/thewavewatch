@@ -515,6 +515,7 @@ async function fetchRSSUnified(
   console.log(`RSS unified: processing ${sources.length} sources against ${topicSearchData.length} topics`)
 
   const allArticles: any[] = []
+  const googleNewsPending: { item: any; source: any; td: any }[] = []
   const BATCH_SIZE = 50
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
 
