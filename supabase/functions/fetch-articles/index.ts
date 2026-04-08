@@ -88,6 +88,18 @@ function buildPerigonQuery(keywords: string[]): string {
 // ─── BROAD ENERGY TERMS (for high-priority source matching) ─────────────────
 const BROAD_ENERGY_TERMS = ['renewable','clean energy','offshore','ocean','maritime','marine','tidal','wave power','corpower','minesto','orbital marine','energy transition','net zero','decarboni','floating wind','seabed','hydrokinetic','blue energy']
 
+// Major outlets that get relaxed matching — include if any monitored
+// keyword appears ANYWHERE in the title (not requiring body match)
+const MAJOR_OUTLET_DOMAINS_SET = new Set([
+  'reuters.com', 'bbc.com', 'bbc.co.uk', 'bloomberg.com', 'ft.com',
+  'nytimes.com', 'washingtonpost.com', 'wsj.com', 'theguardian.com',
+  'apnews.com', 'cnbc.com', 'forbes.com', 'economist.com',
+  'politico.com', 'politico.eu', 'euractiv.com',
+  'aftenposten.no', 'dn.se', 'svd.se', 'di.se', 'nrk.no',
+  'dn.no', 'vg.no', 'hs.fi', 'yle.fi', 'berlingske.dk',
+  'spiegel.de', 'faz.net', 'lemonde.fr', 'corriere.it',
+])
+
 // ─── MAJOR OUTLET DOMAINS ────────────────────────────────────────────────────
 
 const MAJOR_OUTLET_DOMAINS = [
@@ -479,12 +491,53 @@ async function fetchRSSUnified(
 
           for (const td of topicSearchData) {
             if (!td.topic.sources?.includes('rss')) continue
+
+            // Google News feeds are pre-filtered by Google's search — trust them
+            const isGoogleNews = (source.domain ?? '').includes('news.google.com')
+              || (source.rss_url ?? '').includes('news.google.com')
+
+            if (isGoogleNews) {
+              const domain = source.domain ?? extractDomainName(source.rss_url)
+              const pubDate = item.pubDate ? new Date(item.pubDate) : new Date()
+              const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
+              allArticles.push({
+                external_id: hashUrl(item.link ?? item.guid ?? ''),
+                source_name: source.name ?? source.domain ?? '',
+                source_url: domain,
+                title: item.title ?? '',
+                description: item.description ?? null,
+                content: item.content ?? null,
+                author: item.author ?? null,
+                published_at: item.pubDate ?? new Date().toISOString(),
+                url: item.link ?? '',
+                image_url: item.image ?? null,
+                language: source.language ?? 'en',
+                media_type: 'web',
+                country: source.country_code ?? null,
+                ingestion_source: 'rss',
+                topic_id: td.topic.id,
+                user_id: td.topic.user_id,
+                ingestion_run_id: undefined,
+                is_major_outlet: true,
+                articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
+              })
+              continue  // skip normal keyword matching for this item+topic combo
+            }
+
+            const isMajorOutlet = MAJOR_OUTLET_DOMAINS_SET.has(source.domain ?? '')
+              || MAJOR_OUTLET_DOMAINS.some(m => (source.domain ?? '').includes(m))
+
+            // For major outlets: match if keyword appears in title only
+            const titleText = (item.title ?? '').toLowerCase()
+            const titleMatch = isMajorOutlet
+              && td.expandedTerms.some(term => textMatchesTerm(titleText, term))
+
             const exactMatch = td.expandedTerms.some(term => textMatchesTerm(text, term))
             const broadMatch = !exactMatch
               && (source.fetch_priority ?? 0) >= 80
               && BROAD_ENERGY_TERMS.some(term => text.includes(term))
 
-            if (exactMatch || broadMatch) {
+            if (exactMatch || broadMatch || titleMatch) {
                 const domain = source.domain ?? extractDomainName(source.rss_url)
                 const resolvedDomain = extractDomain(item.link ?? '') ?? domain
                 const pubDate = item.pubDate ? new Date(item.pubDate) : new Date()
