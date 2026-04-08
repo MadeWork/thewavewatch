@@ -8,7 +8,7 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}))
     const { topic_id, days_back: rawDays = 30 } = body
-    const days_back = Math.min(Number(rawDays) || 30, 120)
+    const days_back = Math.min(Number(rawDays) || 30, 180)
     if (!topic_id) return json({ error: 'topic_id required' }, 400)
 
     const { data: topic } = await supabase.from('monitored_topics').select('*').eq('id', topic_id).single()
@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
     const guardianKey = Deno.env.get('GUARDIAN_API_KEY')
     if (guardianKey) {
       try {
-        const query = keywords.map((k: string) => k.includes(' ') ? `"${k}"` : k).join(' OR ')
+        const query = keywords.map((k: string) => k).join(' OR ')
         const url = new URL('https://content.guardianapis.com/search')
         url.searchParams.set('q', query)
         url.searchParams.set('from-date', fromDateStr)
@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
       const gdeltQuery = keywords.slice(0, 3).join(' ')
       const startDt = fromDate.toISOString().replace(/[-:T]/g, '').slice(0, 14)
       const endDt = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)
-      const res = await fetch(`https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(gdeltQuery)}&mode=artlist&maxrecords=100&format=json&startdatetime=${startDt}&enddatetime=${endDt}`, { signal: AbortSignal.timeout(15000) })
+      const res = await fetch(`https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(gdeltQuery)}&mode=artlist&maxrecords=250&format=json&startdatetime=${startDt}&enddatetime=${endDt}`, { signal: AbortSignal.timeout(15000) })
       if (res.ok) {
         const data = await res.json()
         const articles = (data.articles ?? []).filter((a: any) => a.title && a.url).map((a: any) => {
@@ -163,14 +163,21 @@ Deno.serve(async (req) => {
         const xml = await res.text()
         const items = parseRSSXML(xml)
         const articles = items.filter((item: any) => item.title && item.link).map((item: any) => {
-          // Google News titles often end with " - Source Name"
+          // Google News titles end with " - Source Name"
           const titleParts = (item.title ?? '').split(' - ')
           const sourceName = titleParts.length > 1 ? titleParts[titleParts.length - 1].trim() : ''
+          const cleanTitle = titleParts.length > 1 ? titleParts.slice(0, -1).join(' - ').trim() : item.title
+          // Use <source url="..."> from RSS for real publisher domain
+          let sourceDomain = ''
+          if (item.sourceUrl) {
+            try { sourceDomain = new URL(item.sourceUrl).hostname.replace('www.', '') } catch {}
+          }
           return makeArticle({
             external_id: hashUrl(item.link ?? ''), topic_id: topic.id, user_id: topic.user_id,
             source_name: sourceName || 'Google News',
-            source_url: '',
-            title: titleParts.length > 1 ? titleParts.slice(0, -1).join(' - ').trim() : item.title,
+            source_url: sourceDomain || '',
+            source_domain: sourceDomain || '',
+            title: cleanTitle,
             description: item.description ?? null, author: null,
             published_at: item.pubDate ?? new Date().toISOString(),
             url: item.link, image_url: null, language: 'en',
@@ -389,7 +396,7 @@ function parseRSSXML(xml: string): any[] {
   } else {
     for (const m of xml.matchAll(/<item[^>]*>([\s\S]*?)<\/item>/gi)) {
       const i = m[1]
-      items.push({ title: extractXMLText(i,'title'), link: extractXMLText(i,'link'), description: extractXMLText(i,'description'), pubDate: extractXMLText(i,'pubDate') ?? extractXMLText(i,'dc:date'), guid: extractXMLText(i,'guid') })
+      items.push({ title: extractXMLText(i,'title'), link: extractXMLText(i,'link'), sourceUrl: extractXMLAttr(i,'source','url'), description: extractXMLText(i,'description'), pubDate: extractXMLText(i,'pubDate') ?? extractXMLText(i,'dc:date'), guid: extractXMLText(i,'guid') })
     }
   }
   return items.filter(i => i.title && (i.link || i.guid))
