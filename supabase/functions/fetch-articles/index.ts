@@ -615,50 +615,52 @@ async function fetchRSSUnified(
     }
   }
 
-  // Process Google News items — resolve redirect URLs to real article URLs
+  // Process Google News items — use <source url="..."> for real article URL
   if (googleNewsPending.length > 0) {
-    // Resolve URLs in batches of 5 to avoid timeouts
-    const RESOLVE_BATCH = 5
-    for (let i = 0; i < googleNewsPending.length; i += RESOLVE_BATCH) {
-      const batch = googleNewsPending.slice(i, i + RESOLVE_BATCH)
-      const resolved = await Promise.allSettled(
-        batch.map(async ({ item, source, td }) => {
-          const rawLink = item.link ?? ''
-          const realUrl = await resolveGoogleNewsUrl(rawLink)
-          const { cleanTitle, publisher, domain: pubDomain } = extractGoogleNewsPublisher(item.title ?? '')
-          const resolvedDomain = pubDomain ?? new URL(realUrl).hostname.replace('www.', '')
-          const pubDate = item.pubDate ? new Date(item.pubDate) : new Date()
-          const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
-          const isMajor = MAJOR_OUTLET_DOMAINS.some(m => resolvedDomain.includes(m))
-          return {
-            external_id: hashUrl(realUrl || rawLink || item.guid || ''),
-            source_name: publisher || source.name || '',
-            source_url: resolvedDomain,
-            source_domain: resolvedDomain,
-            title: cleanTitle,
-            description: item.description ?? null,
-            content: item.content ?? null,
-            author: item.author ?? null,
-            published_at: item.pubDate ?? new Date().toISOString(),
-            url: realUrl || rawLink,
-            image_url: item.image ?? null,
-            language: source.language ?? 'en',
-            media_type: 'web',
-            country: source.country_code ?? null,
-            ingestion_source: 'rss',
-            topic_id: td.topic.id,
-            user_id: td.topic.user_id,
-            ingestion_run_id: undefined,
-            is_major_outlet: isMajor,
-            articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
-          }
-        })
-      )
-      for (const r of resolved) {
-        if (r.status === 'fulfilled') allArticles.push(r.value)
+    for (const { item, source, td } of googleNewsPending) {
+      const rawLink = item.link ?? ''
+      // Google News RSS provides real publisher URL in <source url="..."> tag
+      const realSourceUrl = item.sourceUrl ?? ''
+      const { cleanTitle, publisher, domain: pubDomain } = extractGoogleNewsPublisher(item.title ?? '')
+      // Build the real article URL: use sourceUrl domain or pubDomain from title
+      let articleUrl = rawLink
+      let resolvedDomain = pubDomain ?? 'news.google.com'
+      if (realSourceUrl) {
+        try {
+          resolvedDomain = new URL(realSourceUrl).hostname.replace('www.', '')
+        } catch { /* keep pubDomain */ }
+        // The <source url> gives us the publisher domain — use title to search for real article
+        // For now, store the Google News redirect URL (it works in browsers via JS redirect)
+        // but set the domain correctly for attribution
       }
+      if (pubDomain) resolvedDomain = pubDomain
+      const pubDate = item.pubDate ? new Date(item.pubDate) : new Date()
+      const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
+      const isMajor = MAJOR_OUTLET_DOMAINS.some(m => resolvedDomain.includes(m))
+      allArticles.push({
+        external_id: hashUrl(rawLink || item.guid || ''),
+        source_name: publisher || source.name || '',
+        source_url: resolvedDomain,
+        source_domain: resolvedDomain,
+        title: cleanTitle,
+        description: item.description ?? null,
+        content: item.content ?? null,
+        author: item.author ?? null,
+        published_at: item.pubDate ?? new Date().toISOString(),
+        url: rawLink,
+        image_url: item.image ?? null,
+        language: source.language ?? 'en',
+        media_type: 'web',
+        country: source.country_code ?? null,
+        ingestion_source: 'rss',
+        topic_id: td.topic.id,
+        user_id: td.topic.user_id,
+        ingestion_run_id: undefined,
+        is_major_outlet: isMajor,
+        articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
+      })
     }
-    console.log(`Google News: resolved & processed ${googleNewsPending.length} items`)
+    console.log(`Google News: processed ${googleNewsPending.length} items`)
   }
 
   return allArticles
