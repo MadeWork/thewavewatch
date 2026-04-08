@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
     const guardianKey = Deno.env.get('GUARDIAN_API_KEY')
     if (guardianKey) {
       try {
-        const query = keywords.map((k: string) => k.includes(' ') ? `"${k}"` : k).join(' OR ')
+        const query = keywords.map((k: string) => k).join(' OR ')
         const url = new URL('https://content.guardianapis.com/search')
         url.searchParams.set('q', query)
         url.searchParams.set('from-date', fromDateStr)
@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
       const gdeltQuery = keywords.slice(0, 3).join(' ')
       const startDt = fromDate.toISOString().replace(/[-:T]/g, '').slice(0, 14)
       const endDt = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)
-      const res = await fetch(`https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(gdeltQuery)}&mode=artlist&maxrecords=100&format=json&startdatetime=${startDt}&enddatetime=${endDt}`, { signal: AbortSignal.timeout(15000) })
+      const res = await fetch(`https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(gdeltQuery)}&mode=artlist&maxrecords=250&format=json&startdatetime=${startDt}&enddatetime=${endDt}`, { signal: AbortSignal.timeout(15000) })
       if (res.ok) {
         const data = await res.json()
         const articles = (data.articles ?? []).filter((a: any) => a.title && a.url).map((a: any) => {
