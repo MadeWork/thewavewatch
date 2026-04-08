@@ -142,6 +142,44 @@ function extractDomain(url: string): string | null {
   } catch { return null }
 }
 
+/** Resolve Google News redirect URL to actual publisher URL.
+ *  Uses HEAD request with redirect: 'manual' to get Location header,
+ *  falls back to original URL on failure. */
+async function resolveGoogleNewsUrl(googleUrl: string): Promise<string> {
+  if (!googleUrl || !googleUrl.includes('news.google.com')) return googleUrl
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 3000)
+    const res = await fetch(googleUrl, {
+      method: 'HEAD',
+      redirect: 'manual',
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)' },
+    })
+    clearTimeout(timeout)
+    const location = res.headers.get('location')
+    if (location && !location.includes('news.google.com')) {
+      return location
+    }
+    // Some Google News URLs require GET + follow to resolve
+    const controller2 = new AbortController()
+    const timeout2 = setTimeout(() => controller2.abort(), 3000)
+    const res2 = await fetch(googleUrl, {
+      method: 'GET',
+      redirect: 'follow',
+      signal: controller2.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)' },
+    })
+    clearTimeout(timeout2)
+    if (res2.url && !res2.url.includes('news.google.com')) {
+      return res2.url
+    }
+    return googleUrl
+  } catch {
+    return googleUrl
+  }
+}
+
 // ─── MAIN HANDLER (UNIFIED) ─────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
