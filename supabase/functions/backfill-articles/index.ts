@@ -163,14 +163,21 @@ Deno.serve(async (req) => {
         const xml = await res.text()
         const items = parseRSSXML(xml)
         const articles = items.filter((item: any) => item.title && item.link).map((item: any) => {
-          // Google News titles often end with " - Source Name"
+          // Google News titles end with " - Source Name"
           const titleParts = (item.title ?? '').split(' - ')
           const sourceName = titleParts.length > 1 ? titleParts[titleParts.length - 1].trim() : ''
+          const cleanTitle = titleParts.length > 1 ? titleParts.slice(0, -1).join(' - ').trim() : item.title
+          // Use <source url="..."> from RSS for real publisher domain
+          let sourceDomain = ''
+          if (item.sourceUrl) {
+            try { sourceDomain = new URL(item.sourceUrl).hostname.replace('www.', '') } catch {}
+          }
           return makeArticle({
             external_id: hashUrl(item.link ?? ''), topic_id: topic.id, user_id: topic.user_id,
             source_name: sourceName || 'Google News',
-            source_url: '',
-            title: titleParts.length > 1 ? titleParts.slice(0, -1).join(' - ').trim() : item.title,
+            source_url: sourceDomain || '',
+            source_domain: sourceDomain || '',
+            title: cleanTitle,
             description: item.description ?? null, author: null,
             published_at: item.pubDate ?? new Date().toISOString(),
             url: item.link, image_url: null, language: 'en',
