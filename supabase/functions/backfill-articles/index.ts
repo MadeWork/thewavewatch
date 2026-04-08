@@ -396,7 +396,7 @@ function parseRSSXML(xml: string): any[] {
   } else {
     for (const m of xml.matchAll(/<item[^>]*>([\s\S]*?)<\/item>/gi)) {
       const i = m[1]
-      items.push({ title: extractXMLText(i,'title'), link: extractXMLText(i,'link'), description: extractXMLText(i,'description'), pubDate: extractXMLText(i,'pubDate') ?? extractXMLText(i,'dc:date'), guid: extractXMLText(i,'guid') })
+      items.push({ title: extractXMLText(i,'title'), link: extractXMLText(i,'link'), sourceUrl: extractXMLAttr(i,'source','url'), description: extractXMLText(i,'description'), pubDate: extractXMLText(i,'pubDate') ?? extractXMLText(i,'dc:date'), guid: extractXMLText(i,'guid') })
     }
   }
   return items.filter(i => i.title && (i.link || i.guid))
