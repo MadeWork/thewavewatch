@@ -66,13 +66,13 @@ const API_SERVICES: ApiService[] = [
 function StatusBadge({ configured, free }: { configured: boolean; free: boolean }) {
   if (free) {
     return (
-      <span className="flex items-center gap-1 text-xs text-green-400">
+      <span className="flex items-center gap-1 text-xs text-primary">
         <CheckCircle2 className="w-3.5 h-3.5" /> Free
       </span>
     );
   }
   return configured ? (
-    <span className="flex items-center gap-1 text-xs text-green-400">
+    <span className="flex items-center gap-1 text-xs text-primary">
       <CheckCircle2 className="w-3.5 h-3.5" /> Connected
     </span>
   ) : (

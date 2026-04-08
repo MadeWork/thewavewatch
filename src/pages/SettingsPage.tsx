@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import ErrorBanner from "@/components/ErrorBanner";
 import { usePushSubscription } from "@/hooks/usePushSubscription";
 import { Bell, BellOff } from "lucide-react";
+import ApiIntegrations from "@/components/settings/ApiIntegrations";
 
 function PushNotificationToggle() {
   const { supported, subscribed, loading, permission, subscribe, unsubscribe } = usePushSubscription();
@@ -240,6 +241,7 @@ export default function SettingsPage() {
           </div>
 
           <PushNotificationToggle />
+          <ApiIntegrations />
 
           <div className="border-t border-border pt-5 mt-5">
             <h2 className="text-sm font-medium text-destructive mb-2">Danger Zone</h2>
