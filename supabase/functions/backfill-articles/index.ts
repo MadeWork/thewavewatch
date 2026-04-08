@@ -36,6 +36,12 @@ Deno.serve(async (req) => {
       return 'archive'
     }
 
+    // Only tag articles with keywords that actually appear in their text
+    function findMatchingKeywords(title: string, description: string | null, allKeywords: string[]): string[] {
+      const text = `${title} ${description ?? ''}`.toLowerCase()
+      return allKeywords.filter(kw => text.includes(kw.toLowerCase()))
+    }
+
     const makeArticle = (fields: any) => {
       const domain = fields.source_domain ?? extractDomainName(fields.url ?? '')
       const MAJOR = [
@@ -46,12 +52,15 @@ Deno.serve(async (req) => {
         'dn.se','svd.se','aftenposten.no','dn.no','carbonbrief.org','energymonitor.ai',
         'abc.net.au','smh.com.au','nzherald.co.nz','stuff.co.nz','rnz.co.nz',
       ]
+      // Determine actual matched keywords from content
+      const actualMatches = fields.matched_keywords
+        ?? findMatchingKeywords(fields.title ?? '', fields.description, keywords)
       return {
         source_category: 'media',
         is_duplicate: false,
         ...fields,
         source_domain: domain,
-        matched_keywords: fields.matched_keywords ?? keywords,
+        matched_keywords: actualMatches.length > 0 ? actualMatches : keywords.slice(0, 1),
         is_major_outlet: MAJOR.some(m => (domain || '').includes(m)),
         articles_era: setEra(fields.published_at),
       }
