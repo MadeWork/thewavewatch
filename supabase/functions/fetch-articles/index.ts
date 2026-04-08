@@ -135,7 +135,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { topic_id } = await req.json().catch(() => ({}))
+    const { topic_id, include_newsapi } = await req.json().catch(() => ({}))
     const startTime = Date.now()
 
     // 1. Fetch all active topics
@@ -250,6 +250,32 @@ Deno.serve(async (req) => {
         sourceResults.push({ source: `gdelt-${td.topic.name}`, count: mapped.length })
       } catch (err: any) {
         console.error(`GDELT failed for ${td.topic.name}:`, err.message)
+      }
+    }
+
+    // 5b. NewsAPI — ON-DEMAND ONLY (free tier: 100 req/day)
+    if (include_newsapi) {
+      const newsapiKey = Deno.env.get('NEWSAPI_KEY')
+      if (newsapiKey) {
+        for (const td of topicSearchData) {
+          try {
+            const newsapiArticles = await fetchFromNewsAPI(td, newsapiKey)
+            const mapped = newsapiArticles.map(a => ({
+              ...a,
+              topic_id: td.topic.id,
+              user_id: td.topic.user_id,
+              ingestion_run_id: runId,
+            }))
+            allArticles.push(...mapped)
+            sourceResults.push({ source: `newsapi-${td.topic.name}`, count: mapped.length })
+            console.log(`NewsAPI for "${td.topic.name}": ${mapped.length} articles`)
+          } catch (err: any) {
+            console.error(`NewsAPI failed for ${td.topic.name}:`, err.message)
+            sourceResults.push({ source: `newsapi-${td.topic.name}`, count: 0, error: err.message })
+          }
+        }
+      } else {
+        console.warn('NewsAPI key not configured, skipping')
       }
     }
 
@@ -864,4 +890,77 @@ function parseGDELTDate(dateStr: string): string {
   const y = dateStr.slice(0, 4), mo = dateStr.slice(4, 6), d = dateStr.slice(6, 8)
   const h = dateStr.slice(8, 10), mi = dateStr.slice(10, 12), s = dateStr.slice(12, 14)
   return `${y}-${mo}-${d}T${h}:${mi}:${s}Z`
+}
+
+// ─── NEWSAPI (ON-DEMAND) ────────────────────────────────────────────────────
+
+async function fetchFromNewsAPI(td: TopicSearchData, apiKey: string): Promise<any[]> {
+  const articles: any[] = []
+  // Use top 3 keywords to build a focused query (conserve API calls)
+  const queryTerms = td.keywords.slice(0, 3).map(k =>
+    k.includes(' ') ? `"${k}"` : k
+  )
+  const q = queryTerms.join(' OR ')
+  if (!q) return []
+
+  // Use 'everything' endpoint for broader coverage, 7-day lookback
+  const fromDate = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0]
+  const params = new URLSearchParams({
+    q,
+    from: fromDate,
+    sortBy: 'relevancy',
+    pageSize: '50',
+    language: 'en',
+    apiKey,
+  })
+
+  try {
+    const resp = await fetch(`https://newsapi.org/v2/everything?${params}`, {
+      headers: { 'User-Agent': 'WaveWatch/1.0' },
+    })
+
+    if (!resp.ok) {
+      const errBody = await resp.text()
+      console.error(`NewsAPI HTTP ${resp.status}: ${errBody.slice(0, 200)}`)
+      return []
+    }
+
+    const data = await resp.json()
+    if (data.status !== 'ok' || !data.articles?.length) return []
+
+    for (const item of data.articles) {
+      if (!item.title || !item.url || item.title === '[Removed]') continue
+      const domain = extractDomain(item.url) || ''
+      const isMajor = MAJOR_OUTLET_DOMAINS.some(d => domain.includes(d))
+      const text = `${item.title} ${item.description || ''}`.toLowerCase()
+      const matchedKws = td.keywords.filter(kw => textMatchesTerm(text, kw))
+      if (matchedKws.length === 0) continue
+
+      articles.push({
+        title: item.title,
+        url: item.url,
+        description: item.description || null,
+        snippet: item.description || null,
+        content: item.content || null,
+        author: item.author || null,
+        image_url: item.urlToImage || null,
+        published_at: item.publishedAt ? new Date(item.publishedAt).toISOString() : new Date().toISOString(),
+        source_name: item.source?.name || domain,
+        source_domain: domain,
+        source_category: 'media',
+        is_major_outlet: isMajor,
+        matched_keywords: matchedKws,
+        discovery_method: 'newsapi',
+        ingestion_source: 'newsapi',
+        language: 'en',
+        sentiment: 'neutral',
+        sentiment_score: 0.5,
+        fetched_at: new Date().toISOString(),
+      })
+    }
+  } catch (err: any) {
+    console.error('NewsAPI fetch error:', err.message)
+  }
+
+  return articles
 }
