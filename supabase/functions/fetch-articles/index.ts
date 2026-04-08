@@ -142,48 +142,40 @@ function extractDomain(url: string): string | null {
   } catch { return null }
 }
 
-/** Resolve Google News redirect URLs in parallel batches.
- *  Returns a Map of googleUrl → resolvedUrl */
-async function resolveGoogleNewsUrls(urls: string[]): Promise<Map<string, string>> {
-  const results = new Map<string, string>()
-  const unique = [...new Set(urls.filter(u => u.includes('news.google.com')))]
-  if (unique.length === 0) return results
-
-  // Resolve in batches of 10 with 2s timeout each
-  const BATCH = 10
-  for (let i = 0; i < unique.length; i += BATCH) {
-    const batch = unique.slice(i, i + BATCH)
-    const settled = await Promise.allSettled(batch.map(async (gUrl) => {
-      try {
-        const ctrl = new AbortController()
-        const t = setTimeout(() => ctrl.abort(), 2000)
-        const res = await fetch(gUrl, {
-          method: 'HEAD', redirect: 'manual', signal: ctrl.signal,
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)' },
-        })
-        clearTimeout(t)
-        const loc = res.headers.get('location')
-        if (loc && !loc.includes('news.google.com') && !loc.includes('consent.google')) {
-          return { gUrl, resolved: loc }
-        }
-      } catch { /* timeout/error — fall through */ }
-      return { gUrl, resolved: gUrl }
-    }))
-    for (const r of settled) {
-      if (r.status === 'fulfilled') results.set(r.value.gUrl, r.value.resolved)
-    }
-  }
-  console.log(`Resolved ${results.size} Google News URLs (${[...results.values()].filter(v => !v.includes('news.google.com')).length} to publisher)`)
-  return results
+/** Extract publisher name from Google News title format "Article Title - Publisher" 
+ *  and infer domain from known publisher names */
+const PUBLISHER_DOMAIN_MAP: Record<string, string> = {
+  'reuters': 'reuters.com', 'bbc': 'bbc.co.uk', 'bbc news': 'bbc.co.uk',
+  'the guardian': 'theguardian.com', 'the new york times': 'nytimes.com',
+  'bloomberg': 'bloomberg.com', 'financial times': 'ft.com', 'ft': 'ft.com',
+  'cnbc': 'cnbc.com', 'cnn': 'cnn.com', 'forbes': 'forbes.com',
+  'the washington post': 'washingtonpost.com', 'wsj': 'wsj.com',
+  'the wall street journal': 'wsj.com', 'associated press': 'apnews.com', 'ap': 'apnews.com',
+  'euronews': 'euronews.com', 'euractiv': 'euractiv.com', 'politico': 'politico.eu',
+  'the economist': 'economist.com', 'npr': 'npr.org',
+  'the telegraph': 'telegraph.co.uk', 'the independent': 'independent.co.uk',
+  'the times': 'thetimes.co.uk', 'the scotsman': 'scotsman.com',
+  'the herald': 'heraldscotland.com', 'the press and journal': 'pressandjournal.co.uk',
+  'sky news': 'sky.com', 'dw': 'dw.com', 'france 24': 'france24.com',
+  'spiegel': 'spiegel.de', 'der spiegel': 'spiegel.de', 'le monde': 'lemonde.fr',
+  'el país': 'elpais.com', 'carbon brief': 'carbonbrief.org',
+  'dn': 'dn.se', 'svd': 'svd.se', 'aftenposten': 'aftenposten.no', 'nrk': 'nrk.no',
+  'techcrunch': 'techcrunch.com', 'the verge': 'theverge.com', 'ars technica': 'arstechnica.com',
+  'axios': 'axios.com', 'pbs': 'pbs.org', 'nfl.com': 'nfl.com',
+  'abc news': 'abcnews.go.com', 'cbs news': 'cbsnews.com', 'nbc news': 'nbcnews.com',
+  'renewables now': 'renewablesnow.com', 'recharge': 'rechargenews.com',
+  'offshore energy': 'offshore-energy.biz', 'windpower monthly': 'windpowermonthly.com',
 }
 
-/** Extract publisher name from Google News title format "Article Title - Publisher" */
-function extractGoogleNewsPublisher(title: string): { cleanTitle: string; publisher: string } {
+function extractGoogleNewsPublisher(title: string): { cleanTitle: string; publisher: string; domain: string | null } {
   const dashIdx = title.lastIndexOf(' - ')
   if (dashIdx > 0) {
-    return { cleanTitle: title.slice(0, dashIdx).trim(), publisher: title.slice(dashIdx + 3).trim() }
+    const publisher = title.slice(dashIdx + 3).trim()
+    const cleanTitle = title.slice(0, dashIdx).trim()
+    const domain = PUBLISHER_DOMAIN_MAP[publisher.toLowerCase()] ?? null
+    return { cleanTitle, publisher, domain }
   }
-  return { cleanTitle: title, publisher: '' }
+  return { cleanTitle: title, publisher: '', domain: null }
 }
 
 // ─── MAIN HANDLER (UNIFIED) ─────────────────────────────────────────────────
