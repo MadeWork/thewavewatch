@@ -8,7 +8,7 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}))
     const { topic_id, days_back: rawDays = 30 } = body
-    const days_back = Math.min(Number(rawDays) || 30, 120)
+    const days_back = Math.min(Number(rawDays) || 30, 180)
     if (!topic_id) return json({ error: 'topic_id required' }, 400)
 
     const { data: topic } = await supabase.from('monitored_topics').select('*').eq('id', topic_id).single()
