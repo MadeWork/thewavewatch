@@ -253,6 +253,32 @@ Deno.serve(async (req) => {
       }
     }
 
+    // 5b. NewsAPI — ON-DEMAND ONLY (free tier: 100 req/day)
+    if (include_newsapi) {
+      const newsapiKey = Deno.env.get('NEWSAPI_KEY')
+      if (newsapiKey) {
+        for (const td of topicSearchData) {
+          try {
+            const newsapiArticles = await fetchFromNewsAPI(td, newsapiKey)
+            const mapped = newsapiArticles.map(a => ({
+              ...a,
+              topic_id: td.topic.id,
+              user_id: td.topic.user_id,
+              ingestion_run_id: runId,
+            }))
+            allArticles.push(...mapped)
+            sourceResults.push({ source: `newsapi-${td.topic.name}`, count: mapped.length })
+            console.log(`NewsAPI for "${td.topic.name}": ${mapped.length} articles`)
+          } catch (err: any) {
+            console.error(`NewsAPI failed for ${td.topic.name}:`, err.message)
+            sourceResults.push({ source: `newsapi-${td.topic.name}`, count: 0, error: err.message })
+          }
+        }
+      } else {
+        console.warn('NewsAPI key not configured, skipping')
+      }
+    }
+
     // 6. Bulk upsert all articles
     let insertedCount = 0
     if (allArticles.length > 0) {
