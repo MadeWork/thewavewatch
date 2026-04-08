@@ -94,10 +94,13 @@ const MAJOR_OUTLET_DOMAINS_SET = new Set([
   'reuters.com', 'bbc.com', 'bbc.co.uk', 'bloomberg.com', 'ft.com',
   'nytimes.com', 'washingtonpost.com', 'wsj.com', 'theguardian.com',
   'apnews.com', 'cnbc.com', 'forbes.com', 'economist.com',
-  'politico.com', 'politico.eu', 'euractiv.com',
+  'politico.com', 'politico.eu', 'euractiv.com', 'euronews.com',
   'aftenposten.no', 'dn.se', 'svd.se', 'di.se', 'nrk.no',
   'dn.no', 'vg.no', 'hs.fi', 'yle.fi', 'berlingske.dk',
   'spiegel.de', 'faz.net', 'lemonde.fr', 'corriere.it',
+  'dw.com', 'handelsblatt.com', 'independent.co.uk', 'thetimes.co.uk',
+  'telegraph.co.uk', 'heraldscotland.com', 'scotsman.com',
+  'carbonbrief.org', 'energymonitor.ai',
 ])
 
 // ─── MAJOR OUTLET DOMAINS ────────────────────────────────────────────────────
