@@ -142,42 +142,48 @@ function extractDomain(url: string): string | null {
   } catch { return null }
 }
 
-/** Resolve Google News redirect URL to actual publisher URL.
- *  Uses HEAD request with redirect: 'manual' to get Location header,
- *  falls back to original URL on failure. */
-async function resolveGoogleNewsUrl(googleUrl: string): Promise<string> {
-  if (!googleUrl || !googleUrl.includes('news.google.com')) return googleUrl
-  try {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 3000)
-    const res = await fetch(googleUrl, {
-      method: 'HEAD',
-      redirect: 'manual',
-      signal: controller.signal,
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)' },
-    })
-    clearTimeout(timeout)
-    const location = res.headers.get('location')
-    if (location && !location.includes('news.google.com')) {
-      return location
+/** Resolve Google News redirect URLs in parallel batches.
+ *  Returns a Map of googleUrl → resolvedUrl */
+async function resolveGoogleNewsUrls(urls: string[]): Promise<Map<string, string>> {
+  const results = new Map<string, string>()
+  const unique = [...new Set(urls.filter(u => u.includes('news.google.com')))]
+  if (unique.length === 0) return results
+
+  // Resolve in batches of 10 with 2s timeout each
+  const BATCH = 10
+  for (let i = 0; i < unique.length; i += BATCH) {
+    const batch = unique.slice(i, i + BATCH)
+    const settled = await Promise.allSettled(batch.map(async (gUrl) => {
+      try {
+        const ctrl = new AbortController()
+        const t = setTimeout(() => ctrl.abort(), 2000)
+        const res = await fetch(gUrl, {
+          method: 'HEAD', redirect: 'manual', signal: ctrl.signal,
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)' },
+        })
+        clearTimeout(t)
+        const loc = res.headers.get('location')
+        if (loc && !loc.includes('news.google.com') && !loc.includes('consent.google')) {
+          return { gUrl, resolved: loc }
+        }
+      } catch { /* timeout/error — fall through */ }
+      return { gUrl, resolved: gUrl }
+    }))
+    for (const r of settled) {
+      if (r.status === 'fulfilled') results.set(r.value.gUrl, r.value.resolved)
     }
-    // Some Google News URLs require GET + follow to resolve
-    const controller2 = new AbortController()
-    const timeout2 = setTimeout(() => controller2.abort(), 3000)
-    const res2 = await fetch(googleUrl, {
-      method: 'GET',
-      redirect: 'follow',
-      signal: controller2.signal,
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)' },
-    })
-    clearTimeout(timeout2)
-    if (res2.url && !res2.url.includes('news.google.com')) {
-      return res2.url
-    }
-    return googleUrl
-  } catch {
-    return googleUrl
   }
+  console.log(`Resolved ${results.size} Google News URLs (${[...results.values()].filter(v => !v.includes('news.google.com')).length} to publisher)`)
+  return results
+}
+
+/** Extract publisher name from Google News title format "Article Title - Publisher" */
+function extractGoogleNewsPublisher(title: string): { cleanTitle: string; publisher: string } {
+  const dashIdx = title.lastIndexOf(' - ')
+  if (dashIdx > 0) {
+    return { cleanTitle: title.slice(0, dashIdx).trim(), publisher: title.slice(dashIdx + 3).trim() }
+  }
+  return { cleanTitle: title, publisher: '' }
 }
 
 // ─── MAIN HANDLER (UNIFIED) ─────────────────────────────────────────────────
