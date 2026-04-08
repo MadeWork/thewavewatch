@@ -142,6 +142,42 @@ function extractDomain(url: string): string | null {
   } catch { return null }
 }
 
+/** Extract publisher name from Google News title format "Article Title - Publisher" 
+ *  and infer domain from known publisher names */
+const PUBLISHER_DOMAIN_MAP: Record<string, string> = {
+  'reuters': 'reuters.com', 'bbc': 'bbc.co.uk', 'bbc news': 'bbc.co.uk',
+  'the guardian': 'theguardian.com', 'the new york times': 'nytimes.com',
+  'bloomberg': 'bloomberg.com', 'financial times': 'ft.com', 'ft': 'ft.com',
+  'cnbc': 'cnbc.com', 'cnn': 'cnn.com', 'forbes': 'forbes.com',
+  'the washington post': 'washingtonpost.com', 'wsj': 'wsj.com',
+  'the wall street journal': 'wsj.com', 'associated press': 'apnews.com', 'ap': 'apnews.com',
+  'euronews': 'euronews.com', 'euractiv': 'euractiv.com', 'politico': 'politico.eu',
+  'the economist': 'economist.com', 'npr': 'npr.org',
+  'the telegraph': 'telegraph.co.uk', 'the independent': 'independent.co.uk',
+  'the times': 'thetimes.co.uk', 'the scotsman': 'scotsman.com',
+  'the herald': 'heraldscotland.com', 'the press and journal': 'pressandjournal.co.uk',
+  'sky news': 'sky.com', 'dw': 'dw.com', 'france 24': 'france24.com',
+  'spiegel': 'spiegel.de', 'der spiegel': 'spiegel.de', 'le monde': 'lemonde.fr',
+  'el país': 'elpais.com', 'carbon brief': 'carbonbrief.org',
+  'dn': 'dn.se', 'svd': 'svd.se', 'aftenposten': 'aftenposten.no', 'nrk': 'nrk.no',
+  'techcrunch': 'techcrunch.com', 'the verge': 'theverge.com', 'ars technica': 'arstechnica.com',
+  'axios': 'axios.com', 'pbs': 'pbs.org', 'nfl.com': 'nfl.com',
+  'abc news': 'abcnews.go.com', 'cbs news': 'cbsnews.com', 'nbc news': 'nbcnews.com',
+  'renewables now': 'renewablesnow.com', 'recharge': 'rechargenews.com',
+  'offshore energy': 'offshore-energy.biz', 'windpower monthly': 'windpowermonthly.com',
+}
+
+function extractGoogleNewsPublisher(title: string): { cleanTitle: string; publisher: string; domain: string | null } {
+  const dashIdx = title.lastIndexOf(' - ')
+  if (dashIdx > 0) {
+    const publisher = title.slice(dashIdx + 3).trim()
+    const cleanTitle = title.slice(0, dashIdx).trim()
+    const domain = PUBLISHER_DOMAIN_MAP[publisher.toLowerCase()] ?? null
+    return { cleanTitle, publisher, domain }
+  }
+  return { cleanTitle: title, publisher: '', domain: null }
+}
+
 // ─── MAIN HANDLER (UNIFIED) ─────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -471,6 +507,7 @@ async function fetchRSSUnified(
   console.log(`RSS unified: processing ${sources.length} sources against ${topicSearchData.length} topics`)
 
   const allArticles: any[] = []
+  const googleNewsPending: { item: any; source: any; td: any }[] = []
   const BATCH_SIZE = 50
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
 
@@ -500,31 +537,8 @@ async function fetchRSSUnified(
               || (source.rss_url ?? '').includes('news.google.com')
 
             if (isGoogleNews) {
-              const domain = source.domain ?? extractDomainName(source.rss_url)
-              const pubDate = item.pubDate ? new Date(item.pubDate) : new Date()
-              const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
-              allArticles.push({
-                external_id: hashUrl(item.link ?? item.guid ?? ''),
-                source_name: source.name ?? source.domain ?? '',
-                source_url: domain,
-                title: item.title ?? '',
-                description: item.description ?? null,
-                content: item.content ?? null,
-                author: item.author ?? null,
-                published_at: item.pubDate ?? new Date().toISOString(),
-                url: item.link ?? '',
-                image_url: item.image ?? null,
-                language: source.language ?? 'en',
-                media_type: 'web',
-                country: source.country_code ?? null,
-                ingestion_source: 'rss',
-                topic_id: td.topic.id,
-                user_id: td.topic.user_id,
-                ingestion_run_id: undefined,
-                is_major_outlet: true,
-                articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
-              })
-              continue  // skip normal keyword matching for this item+topic combo
+              googleNewsPending.push({ item, source, td })
+              continue
             }
 
             const isMajorOutlet = MAJOR_OUTLET_DOMAINS_SET.has(source.domain ?? '')
@@ -580,6 +594,41 @@ async function fetchRSSUnified(
         })
       }
     }
+  }
+
+  // Process Google News items — extract publisher from title, no URL resolution needed
+  if (googleNewsPending.length > 0) {
+    for (const { item, source, td } of googleNewsPending) {
+      const rawLink = item.link ?? ''
+      const { cleanTitle, publisher, domain: pubDomain } = extractGoogleNewsPublisher(item.title ?? '')
+      const resolvedDomain = pubDomain ?? 'news.google.com'
+      const pubDate = item.pubDate ? new Date(item.pubDate) : new Date()
+      const ageDays = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)
+      const isMajor = pubDomain ? MAJOR_OUTLET_DOMAINS.some(m => resolvedDomain.includes(m)) : false
+      allArticles.push({
+        external_id: hashUrl(rawLink || item.guid || ''),
+        source_name: publisher || source.name || '',
+        source_url: resolvedDomain,
+        source_domain: resolvedDomain,
+        title: cleanTitle,
+        description: item.description ?? null,
+        content: item.content ?? null,
+        author: item.author ?? null,
+        published_at: item.pubDate ?? new Date().toISOString(),
+        url: rawLink,
+        image_url: item.image ?? null,
+        language: source.language ?? 'en',
+        media_type: 'web',
+        country: source.country_code ?? null,
+        ingestion_source: 'rss',
+        topic_id: td.topic.id,
+        user_id: td.topic.user_id,
+        ingestion_run_id: undefined,
+        is_major_outlet: isMajor,
+        articles_era: ageDays <= 7 ? 'live' : ageDays <= 30 ? 'recent' : 'archive',
+      })
+    }
+    console.log(`Google News: processed ${googleNewsPending.length} items (${new Set(googleNewsPending.map(p => extractGoogleNewsPublisher(p.item.title ?? '').publisher)).size} publishers)`)
   }
 
   return allArticles
