@@ -286,9 +286,21 @@ Deno.serve(async (req) => {
       for (const a of allArticles) {
         if (!a.ingestion_run_id) a.ingestion_run_id = runId
       }
+      // Filter to English + European languages only
+      const ALLOWED_LANGUAGES = new Set([
+        'en', 'de', 'fr', 'es', 'it', 'pt', 'nl', 'da', 'sv', 'no', 'nb', 'nn', 'fi',
+        'pl', 'cs', 'hu', 'ro', 'bg', 'hr', 'sk', 'sl', 'et', 'lv', 'lt', 'el', 'ga',
+        'ca', 'eu', 'gl', 'is', 'mt', 'lb', 'cy',
+      ])
+      const langFiltered = allArticles.filter(a => {
+        const lang = (a.language || 'en').toLowerCase().split('-')[0]
+        return ALLOWED_LANGUAGES.has(lang)
+      })
+      console.log(`Language filter: ${allArticles.length} → ${langFiltered.length} (removed ${allArticles.length - langFiltered.length} non-EN/EU)`)
+
       // Deduplicate by URL (since url has a unique constraint)
       const seen = new Set<string>()
-      const deduped = allArticles.filter(a => {
+      const deduped = langFiltered.filter(a => {
         const key = a.url
         if (!key || seen.has(key)) return false
         seen.add(key)
