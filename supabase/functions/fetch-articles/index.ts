@@ -986,9 +986,12 @@ function parseRSSXML(xml: string): any[] {
     const itemMatches = xml.matchAll(/<item[^>]*>([\s\S]*?)<\/item>/gi)
     for (const match of itemMatches) {
       const item = match[1]
+      // Google News RSS has <source url="https://real-url.com">Publisher</source>
+      const sourceUrl = extractXMLAttr(item, 'source', 'url')
       items.push({
         title: extractXMLText(item, 'title'),
         link: extractXMLText(item, 'link'),
+        sourceUrl,  // real publisher domain from Google News
         description: extractXMLText(item, 'description'),
         content: extractXMLText(item, 'content:encoded') ?? extractXMLText(item, 'content'),
         pubDate: extractXMLText(item, 'pubDate') ?? extractXMLText(item, 'dc:date'),
