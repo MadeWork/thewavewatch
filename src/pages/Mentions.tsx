@@ -103,14 +103,21 @@ export default function Mentions() {
     // Exclude duplicates
     result = result.filter(a => !(a as any).is_duplicate);
 
-    // Relevance filter
+    // Relevance filter — always show unenriched articles (they haven't
+    // been scored yet so we can't exclude them based on relevance)
     if (relevanceFilter === "high") {
-      result = result.filter(a => (a as any).relevance_label === "high" || !(a as any).is_enriched);
+      result = result.filter(a =>
+        (a as any).relevance_label === "high" ||
+        !(a as any).is_enriched
+      )
     } else if (relevanceFilter === "medium") {
-      result = result.filter(a => ["high", "medium"].includes((a as any).relevance_label) || !(a as any).is_enriched);
+      result = result.filter(a =>
+        ["high", "medium"].includes((a as any).relevance_label) ||
+        !(a as any).is_enriched
+      )
     }
-    // "all" still excludes noise and duplicates
-    result = result.filter(a => (a as any).relevance_label !== "noise" || !(a as any).is_enriched);
+    // Never show noise, even if unenriched (unlikely but safe)
+    result = result.filter(a => (a as any).relevance_label !== "noise")
 
     // Major outlets filter
     if (majorOnly) {
@@ -439,7 +446,7 @@ export default function Mentions() {
                     {a.published_at ? (
                       <span className="text-xs text-text-muted">{format(new Date(a.published_at), "MMM d, yyyy HH:mm")}</span>
                     ) : (
-                      <span className="text-xs text-text-muted italic opacity-60">imported {format(new Date(a.created_at || a.fetched_at), "MMM d")}</span>
+                      <span className="text-xs text-text-muted italic opacity-60">imported {format(new Date(a.fetched_at), "MMM d")}</span>
                     )}
                     {(() => { const b = getEraBadge(a); return b ? <span className={b.className}>{b.label}</span> : null })()}
                     {a.published_at && dateField === "fetched_at" && (
