@@ -12,11 +12,11 @@ export function useArticles(topicId?: string) {
     setIsLoading(true)
     let query = supabase
       .from('articles')
-      .select('*')
-      .not('relevance_label', 'eq', 'noise')
+      .select('*, sources(name, region, country_code)')
       .or('is_duplicate.eq.false,is_duplicate.is.null')
+      .not('relevance_label', 'eq', 'noise')
       .order('published_at', { ascending: false })
-      .limit(200)
+      .limit(500)
     if (topicId) query = query.eq('topic_id', topicId)
     const { data, error } = await query
     if (error) console.error('useArticles load error:', error.message)
